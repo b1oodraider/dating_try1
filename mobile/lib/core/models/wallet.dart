@@ -34,6 +34,10 @@ class Wallet {
   List<WalletItem> get cosmetics =>
       items.where((item) => !item.isConsumable).toList();
 
+  /// True when [feature] is premium-only and premium is not active.
+  bool isFeatureLocked(String feature) =>
+      premiumFeatures.contains(feature) && !premium.active;
+
   bool isEquipped(WalletItem item) {
     final slot = item.equipSlot;
     return slot != null && equipped[slot] == item.code;

@@ -9,6 +9,7 @@ class ExclusionWords {
   const ExclusionWords({
     required this.words,
     this.maxWords = defaultMaxWords,
+    this.active = true,
   });
 
   static const int defaultMaxWords = 20;
@@ -20,6 +21,10 @@ class ExclusionWords {
 
   /// Upper bound for [words] reported by the server (20 by the contract).
   final int maxWords;
+
+  /// False when the list is saved but not applied (premium has ended);
+  /// editing then returns 403 PREMIUM_REQUIRED. Missing field = true.
+  final bool active;
 
   factory ExclusionWords.fromJson(Map<String, dynamic> json) {
     final rawWords = json['words'];
@@ -34,6 +39,7 @@ class ExclusionWords {
     return ExclusionWords(
       words: List<String>.unmodifiable(words),
       maxWords: (maxWords == null || maxWords <= 0) ? defaultMaxWords : maxWords,
+      active: asBool(json['active'], true),
     );
   }
 }

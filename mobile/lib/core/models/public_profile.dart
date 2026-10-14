@@ -1,4 +1,5 @@
 import 'decoration.dart';
+import 'goal.dart';
 import 'json_utils.dart';
 import 'photo.dart';
 import 'tag.dart';
@@ -16,6 +17,9 @@ class PublicProfile {
     required this.tags,
     required this.photos,
     this.decorations = const <String, ProfileDecoration>{},
+    this.heightCm,
+    this.goals = const <Goal>[],
+    this.premium = false,
   });
 
   final String id;
@@ -32,6 +36,15 @@ class PublicProfile {
   /// Public cosmetics by slot (PHOTO_FRAME, PROFILE_STATUS, ...); may be
   /// empty. Unknown slots are kept here but not rendered.
   final Map<String, ProfileDecoration> decorations;
+
+  /// Height in centimetres; null when not specified.
+  final int? heightCm;
+
+  /// Relationship goals, sorted by [Goal.sortOrder].
+  final List<Goal> goals;
+
+  /// Premium badge (shown to others in the feed).
+  final bool premium;
 
   Photo? get primaryPhoto {
     if (photos.isEmpty) return null;
@@ -54,6 +67,9 @@ class PublicProfile {
       tags: asList<Tag>(json['tags'], Tag.fromJson),
       photos: photos,
       decorations: ProfileDecoration.parseAll(json['decorations']),
+      heightCm: asIntOrNull(json['heightCm']),
+      goals: Goal.parseList(json['goals']),
+      premium: asBool(json['premium']),
     );
   }
 }

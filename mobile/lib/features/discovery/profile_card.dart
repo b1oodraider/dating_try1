@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/models/decoration.dart';
 import '../../core/models/public_profile.dart';
 import '../cosmetics/cosmetic_visuals.dart';
+import '../premium/premium_badge.dart';
 
 class ProfileCard extends StatelessWidget {
   const ProfileCard({super.key, required this.profile, this.photoUrl});
@@ -20,6 +21,12 @@ class ProfileCard extends StatelessWidget {
       if (profile.age != null) '${profile.age}',
     ].join(', ');
     final city = profile.city;
+    final height = profile.heightCm;
+    final details = [
+      if (city != null && city.isNotEmpty) city,
+      if (height != null && height > 0) '$height см',
+    ].join(' · ');
+    final goals = profile.goals.map((goal) => goal.displayLabel).join(', ');
     final status = profile.dailyStatusText;
     final about = profile.aboutText;
 
@@ -56,19 +63,47 @@ class ProfileCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: theme.textTheme.titleLarge),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(title, style: theme.textTheme.titleLarge),
+                    if (profile.premium) const PremiumBadge(),
+                  ],
+                ),
                 if (profileStatus != null) ...[
                   const SizedBox(height: 6),
                   ProfileStatusChip(status: profileStatus),
                   const SizedBox(height: 4),
                 ],
-                if (city != null && city.isNotEmpty)
+                if (details.isNotEmpty)
                   Text(
-                    city,
+                    details,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
+                if (goals.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.flag_outlined,
+                        size: 18,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Ищу: $goals',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 if (status != null && status.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(

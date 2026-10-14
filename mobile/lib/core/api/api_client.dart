@@ -6,8 +6,11 @@ import 'package:http/http.dart' as http;
 import '../models/account.dart';
 import '../models/achievement.dart';
 import '../models/auth.dart';
+import '../models/discovery_filters.dart';
 import '../models/discovery_page.dart';
+import '../models/excluded_goals.dart';
 import '../models/exclusion_words.dart';
+import '../models/goal.dart';
 import '../models/tag.dart';
 import '../models/testing_state.dart';
 import '../models/wallet.dart';
@@ -109,9 +112,22 @@ class DatingApiClient {
     return json.whereType<Map<String, dynamic>>().map(Tag.fromJson).toList();
   }
 
+  // --------------------------------------------------------------- Goals
+
+  /// Public. Relationship goals sorted by `sortOrder`.
+  Future<List<Goal>> getGoals() async {
+    final json = await _send('GET', '/goals', authenticated: false);
+    if (json is! List) throw _badResponse();
+    return Goal.parseList(json);
+  }
+
   // ----------------------------------------------------------- Discovery
 
   /// Requires auth. [page] is zero-based, [limit] is 1..50.
+  ///
+  /// [minHeight], [maxHeight] and [goalCodes] are premium
+  /// ([PremiumFeatureCodes.advancedFilters]); without premium the server
+  /// answers 403 PREMIUM_REQUIRED.
   Future<DiscoveryPage> getDiscoveryProfiles({
     int page = 0,
     int limit = 20,
@@ -120,6 +136,9 @@ class DatingApiClient {
     int? maxAge,
     List<String> tagCodes = const <String>[],
     String tagLogic = 'OR',
+    int? minHeight,
+    int? maxHeight,
+    List<String> goalCodes = const <String>[],
   }) async {
     final trimmedCity = city?.trim();
     final json = await _send(
@@ -135,9 +154,50 @@ class DatingApiClient {
           'tagCodes': tagCodes.join(','),
           'tagLogic': tagLogic,
         },
+        if (minHeight != null) 'minHeight': '$minHeight',
+        if (maxHeight != null) 'maxHeight': '$maxHeight',
+        if (goalCodes.isNotEmpty) 'goalCodes': goalCodes.join(','),
       },
     );
     return DiscoveryPage.fromJson(_expectMap(json));
+  }
+
+  /// [getDiscoveryProfiles] with the values of [filters].
+  Future<DiscoveryPage> getDiscoveryPage(
+    DiscoveryFilters filters, {
+    int page = 0,
+    int limit = 20,
+  }) =>
+      getDiscoveryProfiles(
+        page: page,
+        limit: limit,
+        city: filters.city,
+        minAge: filters.minAge,
+        maxAge: filters.maxAge,
+        minHeight: filters.minHeight,
+        maxHeight: filters.maxHeight,
+        goalCodes: filters.goalCodes,
+      );
+
+  // ------------------------------------------------------- Excluded goals
+
+  /// Requires auth. Saved goals whose profiles are hidden from the feed;
+  /// `active: false` = saved but not applied (no premium).
+  Future<ExcludedGoals> getExcludedGoals() async {
+    final json = await _send('GET', '/me/excluded-goals');
+    return ExcludedGoals.fromJson(_expectMap(json));
+  }
+
+  /// Requires auth and premium (403 PREMIUM_REQUIRED otherwise). Replaces
+  /// the whole list; an empty list disables the filter. 400 UNKNOWN_GOAL
+  /// for unknown codes.
+  Future<ExcludedGoals> updateExcludedGoals(List<String> goalCodes) async {
+    final json = await _send(
+      'PUT',
+      '/me/excluded-goals',
+      body: {'goalCodes': List<String>.of(goalCodes)},
+    );
+    return ExcludedGoals.fromJson(_expectMap(json));
   }
 
   // ----------------------------------------------------- Exclusion words
@@ -148,9 +208,10 @@ class DatingApiClient {
     return ExclusionWords.fromJson(_expectMap(json));
   }
 
-  /// Requires auth. Replaces the whole list (an empty list disables the
-  /// filter). Returns the list as normalized by the server; on validation
-  /// failure throws [ApiException] with `fieldErrors['words']`.
+  /// Requires auth and premium (403 PREMIUM_REQUIRED otherwise). Replaces
+  /// the whole list (an empty list disables the filter). Returns the list as
+  /// normalized by the server; on validation failure throws [ApiException]
+  /// with `fieldErrors['words']`.
   Future<ExclusionWords> updateExclusionWords(List<String> words) async {
     final json = await _send(
       'PUT',

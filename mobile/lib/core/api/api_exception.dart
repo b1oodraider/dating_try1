@@ -2,7 +2,8 @@ import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../models/json_utils.dart';
 
-/// Error returned by the API (body `{code, message, traceId, fieldErrors?}`)
+/// Error returned by the API
+/// (body `{code, message, traceId, fieldErrors?, details?}`)
 /// or produced locally for network failures / malformed responses.
 class ApiException implements Exception {
   const ApiException({
@@ -11,7 +12,10 @@ class ApiException implements Exception {
     required this.message,
     this.fieldErrors = const <String, String>{},
     this.traceId,
+    this.details = const <String, Object?>{},
   });
+
+  static const String premiumRequiredCode = 'PREMIUM_REQUIRED';
 
   /// HTTP status; 0 when no HTTP response was received (network, timeout).
   final int statusCode;
@@ -27,8 +31,18 @@ class ApiException implements Exception {
 
   final String? traceId;
 
+  /// Machine-readable context, e.g. `{feature}` for PREMIUM_REQUIRED or
+  /// `{itemCode, available}` for INSUFFICIENT_BALANCE; empty if none.
+  final Map<String, Object?> details;
+
   bool get isUnauthorized => statusCode == 401;
   bool get isNetworkError => statusCode == 0;
+
+  /// 403 PREMIUM_REQUIRED: the feature in [premiumFeature] needs premium.
+  bool get isPremiumRequired => code == premiumRequiredCode;
+
+  /// `details.feature` of PREMIUM_REQUIRED, null if absent.
+  String? get premiumFeature => asStringOrNull(details['feature']);
 
   factory ApiException.fromResponse(
     int statusCode,
@@ -54,6 +68,7 @@ class ApiException implements Exception {
           : serverMessage,
       fieldErrors: fieldErrors,
       traceId: asStringOrNull(json['traceId']) ?? traceIdHeader,
+      details: asAttributes(json['details']),
     );
   }
 

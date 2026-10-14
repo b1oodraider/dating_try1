@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_exception.dart';
 import '../../core/models/account.dart';
+import '../../core/models/discovery_filters.dart';
 import '../../core/models/public_profile.dart';
 import '../auth/session_controller.dart';
 import '../collection/collection_screen.dart';
 import '../exclusion_words/exclusion_words_screen.dart';
 import '../testing/test_panel_screen.dart';
+import 'discovery_filters_screen.dart';
 import 'profile_card.dart';
 
 /// Feed of published profiles with pull-to-refresh and load-more paging.
@@ -39,6 +41,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   /// The caller's account; decides whether the test panel is offered.
   Account? _account;
 
+  /// Query filters of the feed (set on the filters screen).
+  DiscoveryFilters _filters = DiscoveryFilters.none;
+
   @override
   void initState() {
     super.initState();
@@ -57,7 +62,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     final generation = ++_generation;
     try {
       final page = await widget.session.api
-          .getDiscoveryProfiles(page: 0, limit: _pageSize);
+          .getDiscoveryPage(_filters, page: 0, limit: _pageSize);
       if (!mounted) return;
       if (generation != _generation) return;
       setState(() {
@@ -76,6 +81,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (generation != _generation) return;
       // On 401 the SessionController already switches to the login screen.
       if (e is ApiException && e.isUnauthorized) return;
+      if (_dropAdvancedFiltersOn(e)) {
+        await _loadFirstPage();
+        return;
+      }
       final message = describeError(e);
       if (_items.isNotEmpty) {
         // Keep showing the old list, just report the failed refresh.
@@ -126,7 +135,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     });
     try {
       final page = await widget.session.api
-          .getDiscoveryProfiles(page: _page + 1, limit: _pageSize);
+          .getDiscoveryPage(_filters, page: _page + 1, limit: _pageSize);
       if (!mounted) return;
       if (generation != _generation) return;
       setState(() {
@@ -139,11 +148,68 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (!mounted) return;
       if (generation != _generation) return;
       if (e is ApiException && e.isUnauthorized) return;
+      if (_dropAdvancedFiltersOn(e)) {
+        await _restartFeed();
+        return;
+      }
       setState(() {
         _loadingMore = false;
         _loadMoreError = describeError(e);
       });
     }
+  }
+
+  /// Premium ended while height / goal filters were set (403
+  /// PREMIUM_REQUIRED): drop them, tell the user and return true so the
+  /// caller reloads the feed with the free filters only.
+  bool _dropAdvancedFiltersOn(Object error) {
+    if (error is! ApiException || !error.isPremiumRequired) return false;
+    if (!_filters.hasAdvanced) return false;
+    setState(() => _filters = _filters.withoutAdvanced());
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Фильтры по росту и целям доступны с премиумом — они сброшены',
+        ),
+      ),
+    );
+    return true;
+  }
+
+  /// Starts the feed over from the first page (filters changed).
+  Future<void> _restartFeed() async {
+    setState(() {
+      _items.clear();
+      _page = 0;
+      _hasMore = false;
+      _loading = true;
+      _error = null;
+      _loadingMore = false;
+      _loadMoreError = null;
+    });
+    await _loadFirstPage();
+  }
+
+  Future<void> _openFilters() async {
+    var savedFiltersChanged = false;
+    final result = await Navigator.of(context).push<DiscoveryFilters>(
+      MaterialPageRoute<DiscoveryFilters>(
+        builder: (_) => DiscoveryFiltersScreen(
+          session: widget.session,
+          initial: _filters,
+          onSavedFiltersChanged: () => savedFiltersChanged = true,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (result == null && !savedFiltersChanged) return;
+    if (result != null) _filters = result;
+    await _restartFeed();
+  }
+
+  void _resetFilters() {
+    _filters = DiscoveryFilters.none;
+    _restartFeed();
   }
 
   void _onScroll() {
@@ -164,16 +230,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       const SnackBar(content: Text('Слова-исключения сохранены')),
     );
     // The filter changed: start the feed over from the first page.
-    setState(() {
-      _items.clear();
-      _page = 0;
-      _hasMore = false;
-      _loading = true;
-      _error = null;
-      _loadingMore = false;
-      _loadMoreError = null;
-    });
-    await _loadFirstPage();
+    await _restartFeed();
   }
 
   void _openCollection() {
@@ -220,6 +277,15 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         title: const Text('Анкеты'),
         actions: [
           IconButton(
+            tooltip: 'Фильтры',
+            icon: Badge(
+              isLabelVisible: !_filters.isEmpty,
+              smallSize: 8,
+              child: const Icon(Icons.tune),
+            ),
+            onPressed: _openFilters,
+          ),
+          IconButton(
             tooltip: 'Слова-исключения',
             icon: const Icon(Icons.block),
             onPressed: _openExclusionWords,
@@ -261,9 +327,18 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         onRefresh: _refresh,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          children: const [
-            SizedBox(height: 160),
-            Center(child: Text('Пока нет подходящих анкет')),
+          children: [
+            const SizedBox(height: 160),
+            const Center(child: Text('Пока нет подходящих анкет')),
+            if (!_filters.isEmpty) ...[
+              const SizedBox(height: 12),
+              Center(
+                child: TextButton(
+                  onPressed: _resetFilters,
+                  child: const Text('Сбросить фильтры'),
+                ),
+              ),
+            ],
           ],
         ),
       );

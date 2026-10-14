@@ -3,12 +3,17 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/models/exclusion_words.dart';
 import '../auth/session_controller.dart';
+import '../premium/premium_badge.dart';
 import 'exclusion_word_rules.dart';
 
 /// Edits the caller's private list of exclusion words.
 ///
 /// Pops with `true` after a successful save so the caller can reload the
 /// discovery feed; pops with `null` when the user just goes back.
+///
+/// Saved words are premium (EXCLUSION_WORDS): without premium the server
+/// reports `active: false` (the list is kept but not applied) and answers
+/// 403 PREMIUM_REQUIRED to edits, so the screen becomes read-only.
 class ExclusionWordsScreen extends StatefulWidget {
   const ExclusionWordsScreen({super.key, required this.session});
 
@@ -23,7 +28,13 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
   final FocusNode _inputFocus = FocusNode();
 
   final List<String> _words = <String>[];
+
+  /// The list as last loaded / saved on the server.
+  List<String> _savedWords = const <String>[];
   int _maxWords = ExclusionWords.defaultMaxWords;
+
+  /// False = the feature is not available (no premium): read-only.
+  bool _active = true;
 
   bool _loading = true;
   String? _loadError;
@@ -55,7 +66,9 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
         _words
           ..clear()
           ..addAll(result.words);
+        _savedWords = result.words;
         _maxWords = result.maxWords;
+        _active = result.active;
         _loading = false;
         _loadError = null;
         _dirty = false;
@@ -103,7 +116,7 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
   }
 
   void _remove(String word) {
-    if (_saving) return;
+    if (_saving || !_active) return;
     setState(() {
       _words.remove(word);
       _dirty = true;
@@ -117,7 +130,7 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
   }
 
   Future<void> _save() async {
-    if (_saving || _loading) return;
+    if (_saving || _loading || !_active) return;
     // A word typed but not added yet is most likely meant to be saved too.
     if (_inputController.text.trim().isNotEmpty && !_addFromInput()) return;
 
@@ -133,7 +146,9 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
         _words
           ..clear()
           ..addAll(saved.words);
+        _savedWords = saved.words;
         _maxWords = saved.maxWords;
+        _active = saved.active;
         _saving = false;
         _dirty = false;
       });
@@ -143,6 +158,16 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
       if (e is ApiException && e.isUnauthorized) return;
       setState(() {
         _saving = false;
+        if (e is ApiException && e.isPremiumRequired) {
+          // Premium ended while the screen was open: switch to read-only
+          // and show what is actually saved.
+          _active = false;
+          _words
+            ..clear()
+            ..addAll(_savedWords);
+          _dirty = false;
+          _inputController.clear();
+        }
         _saveError = describeError(e, field: 'words');
       });
     }
@@ -185,11 +210,15 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
 
     final theme = Theme.of(context);
     final saveError = _saveError;
-    final inputEnabled = !_saving && !_limitReached;
+    final inputEnabled = _active && !_saving && !_limitReached;
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (!_active) ...[
+          _PremiumNotice(hasWords: _words.isNotEmpty),
+          const SizedBox(height: 16),
+        ],
         Text(
           'Список виден только вам. Анкеты, где в «О себе» или в статусе дня '
           'встречается любое из этих слов в любой форме (например, «курю» '
@@ -216,9 +245,12 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
                   labelText: 'Новое слово',
                   hintText: 'например, курю',
                   border: const OutlineInputBorder(),
-                  helperText: _limitReached
-                      ? 'Достигнут лимит: удалите слово, чтобы добавить новое'
-                      : null,
+                  helperText: !_active
+                      ? 'Доступно с премиумом'
+                      : _limitReached
+                          ? 'Достигнут лимит: удалите слово, '
+                              'чтобы добавить новое'
+                          : null,
                   errorText: _inputError,
                   errorMaxLines: 3,
                   helperMaxLines: 2,
@@ -266,9 +298,9 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
               for (final word in _words)
                 InputChip(
                   label: Text(word),
-                  isEnabled: !_saving,
+                  isEnabled: _active && !_saving,
                   deleteButtonTooltipMessage: 'Удалить',
-                  onDeleted: () => _remove(word),
+                  onDeleted: _active ? () => _remove(word) : null,
                 ),
             ],
           ),
@@ -283,7 +315,7 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
         ],
         const SizedBox(height: 24),
         FilledButton(
-          onPressed: _saving ? null : _save,
+          onPressed: (_saving || !_active) ? null : _save,
           child: _saving
               ? const SizedBox.square(
                   dimension: 20,
@@ -291,7 +323,7 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
                 )
               : const Text('Сохранить'),
         ),
-        if (_dirty && !_saving) ...[
+        if (_dirty && !_saving && _active) ...[
           const SizedBox(height: 8),
           Text(
             'Есть несохранённые изменения',
@@ -302,6 +334,39 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Shown when saved words are not available without premium.
+class _PremiumNotice extends StatelessWidget {
+  const _PremiumNotice({required this.hasWords});
+
+  final bool hasWords;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const PremiumBadge(),
+            const SizedBox(height: 8),
+            Text(
+              hasWords
+                  ? 'Список сохранён, но не применяется без премиума. '
+                      'Изменять его можно с премиумом.'
+                  : 'Слова-исключения доступны с премиумом.',
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -6,6 +6,7 @@ import '../../core/models/json_utils.dart';
 import '../../core/models/wallet.dart';
 import '../auth/session_controller.dart';
 import '../cosmetics/cosmetic_visuals.dart';
+import '../premium/premium_badge.dart';
 
 /// "Коллекция": premium status, consumables and owned cosmetics
 /// (`GET /me/wallet`); equippable cosmetics can be put on / taken off.
@@ -220,7 +221,11 @@ class _PremiumCard extends StatelessWidget {
         title: Text(text),
         subtitle: wallet.premiumFeatures.isEmpty
             ? null
-            : Text('Только с премиумом: ${wallet.premiumFeatures.join(', ')}'),
+            : Text(
+                'Только с премиумом: '
+                '${wallet.premiumFeatures.map(premiumFeatureLabel).join(', ')}',
+              ),
+        trailing: premium.active ? const PremiumBadge() : null,
       ),
     );
   }
