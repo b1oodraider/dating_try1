@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Modal } from '../../../shared/components/Modal';
 import { Button } from '../../../shared/components/Button';
 import { useAuth } from '../../../core/context/AuthContext';
+import { getErrorMessage } from '../../../core/api/client';
 import { Smartphone, KeyRound, ShieldCheck, ArrowRight, ArrowLeft } from 'lucide-react';
 
 interface AuthModalProps {
@@ -12,7 +13,7 @@ interface AuthModalProps {
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const { activeChallenge, requestOtp, verifyOtp, cancelChallenge } = useAuth();
 
-  const [phone, setPhone] = useState('+7 (999) 123-45-67');
+  const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -23,13 +24,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     setIsLoading(true);
     try {
       await requestOtp(phone);
-      setCode('123456'); // Pre-fill mock code in dev mode for convenience
+      setCode('');
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Ошибка отправки кода');
-      }
+      setError(getErrorMessage(err, 'Не удалось отправить код. Попробуйте ещё раз.'));
     } finally {
       setIsLoading(false);
     }
@@ -41,21 +38,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     setIsLoading(true);
     try {
       await verifyOtp(code);
+      setCode('');
       onClose();
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Неверный код подтверждения');
-      }
+      setError(getErrorMessage(err, 'Не удалось подтвердить код. Попробуйте ещё раз.'));
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleClose = () => {
+  const handleBack = () => {
     cancelChallenge();
+    setCode('');
     setError(null);
+  };
+
+  const handleClose = () => {
+    handleBack();
     onClose();
   };
 
@@ -89,6 +88,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 <input
                   type="tel"
                   required
+                  autoComplete="tel"
+                  inputMode="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="+7 (999) 000-00-00"
@@ -99,12 +100,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                 Номер не передаётся третьим лицам и не виден в анкете.
               </p>
-            </div>
-
-            {/* Dev Mock Notice as specified in docs/requirements.md */}
-            <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-amber-900 text-xs leading-relaxed">
-              <span className="font-semibold block mb-0.5">Тестовый режим (Mock OTP):</span>
-              До подключения SMS-шлюза код подтверждения для любого номера: <strong className="font-mono text-zinc-900 bg-amber-100 px-1 py-0.5 rounded">123456</strong>.
             </div>
 
             <Button
@@ -126,26 +121,38 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 <KeyRound className="w-4 h-4 text-zinc-400 absolute left-3 top-3" />
                 <input
                   type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="\d{6}"
+                  title="Введите 6 цифр из SMS"
+                  minLength={6}
                   maxLength={6}
                   required
+                  autoFocus
                   value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  placeholder="123456"
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="••••••"
                   className="w-full pl-9 pr-3 py-2.5 text-center text-lg tracking-widest font-mono font-semibold bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all"
                 />
               </div>
             </div>
 
-            <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl text-stone-600 text-xs">
-              Тестовый код: <span className="font-mono font-bold text-zinc-900">123456</span>
-            </div>
+            {activeChallenge.devMockCode && (
+              <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-amber-900 text-xs leading-relaxed">
+                <span className="font-semibold block mb-0.5">Тестовый режим (Mock OTP):</span>
+                SMS не отправляется, сервер вернул код:{' '}
+                <strong className="font-mono text-zinc-900 bg-amber-100 px-1 py-0.5 rounded">
+                  {activeChallenge.devMockCode}
+                </strong>
+              </div>
+            )}
 
             <div className="flex gap-2">
               <Button
                 type="button"
                 variant="outline"
                 className="w-1/3"
-                onClick={cancelChallenge}
+                onClick={handleBack}
               >
                 <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Назад
               </Button>

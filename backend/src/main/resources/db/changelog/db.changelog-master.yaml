@@ -3,3 +3,5 @@ databaseChangeLog:
       file: db/changelog/changesets/001-initial-schema.yaml
   - include:
       file: db/changelog/changesets/002-seed-communication-tags.yaml
+  - include:
+      file: db/changelog/changesets/003-security-and-integrity.yaml

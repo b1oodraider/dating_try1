@@ -25,7 +25,7 @@ public class AccountController {
 
     @DeleteMapping
     public ResponseEntity<Void> deleteAccount(@AuthenticationPrincipal AuthenticatedUser user) {
-        accountService.markAccountDeleted(user.accountId());
+        accountService.deleteAccount(user.accountId());
         return ResponseEntity.noContent().build();
     }
 }

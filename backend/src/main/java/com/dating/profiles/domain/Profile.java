@@ -1,6 +1,8 @@
 package com.dating.profiles.domain;
 
+import com.dating.common.persistence.AssignedIdEntity;
 import jakarta.persistence.*;
+
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
@@ -8,7 +10,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "profiles")
-public class Profile {
+public class Profile extends AssignedIdEntity {
 
     @Id
     private UUID id;
@@ -16,13 +18,14 @@ public class Profile {
     @Column(name = "account_id", nullable = false, unique = true)
     private UUID accountId;
 
-    @Column(name = "display_name", nullable = false, length = 50)
+    // Nullable until the user fills them in: no fake defaults like "age 18, Moscow".
+    @Column(name = "display_name", length = 50)
     private String displayName;
 
-    @Column(nullable = false)
-    private int age;
+    @Column(name = "age")
+    private Integer age;
 
-    @Column(nullable = false, length = 60)
+    @Column(name = "city", length = 60)
     private String city;
 
     @Column(name = "about_text", length = 1000)
@@ -59,18 +62,16 @@ public class Profile {
     protected Profile() {
     }
 
-    public Profile(UUID id, UUID accountId, String displayName, int age, String city) {
+    public Profile(UUID id, UUID accountId) {
         this.id = id;
         this.accountId = accountId;
-        this.displayName = displayName;
-        this.age = age;
-        this.city = city;
         this.publicationStatus = PublicationStatus.DRAFT;
         this.visibilityStatus = VisibilityStatus.PUBLIC;
         this.createdAt = Instant.now();
-        this.updatedAt = Instant.now();
+        this.updatedAt = this.createdAt;
     }
 
+    @Override
     public UUID getId() {
         return id;
     }
@@ -85,16 +86,16 @@ public class Profile {
 
     public void setDisplayName(String displayName) {
         this.displayName = displayName;
-        this.updatedAt = Instant.now();
+        touch();
     }
 
-    public int getAge() {
+    public Integer getAge() {
         return age;
     }
 
-    public void setAge(int age) {
+    public void setAge(Integer age) {
         this.age = age;
-        this.updatedAt = Instant.now();
+        touch();
     }
 
     public String getCity() {
@@ -103,7 +104,7 @@ public class Profile {
 
     public void setCity(String city) {
         this.city = city;
-        this.updatedAt = Instant.now();
+        touch();
     }
 
     public String getAboutText() {
@@ -112,7 +113,7 @@ public class Profile {
 
     public void setAboutText(String aboutText) {
         this.aboutText = aboutText;
-        this.updatedAt = Instant.now();
+        touch();
     }
 
     public PublicationStatus getPublicationStatus() {
@@ -121,7 +122,7 @@ public class Profile {
 
     public void setPublicationStatus(PublicationStatus publicationStatus) {
         this.publicationStatus = publicationStatus;
-        this.updatedAt = Instant.now();
+        touch();
     }
 
     public VisibilityStatus getVisibilityStatus() {
@@ -130,33 +131,39 @@ public class Profile {
 
     public void setVisibilityStatus(VisibilityStatus visibilityStatus) {
         this.visibilityStatus = visibilityStatus;
-        this.updatedAt = Instant.now();
+        touch();
     }
 
+    public boolean isDailyStatusActive() {
+        return dailyStatusText != null
+                && (dailyStatusExpiresAt == null || Instant.now().isBefore(dailyStatusExpiresAt));
+    }
+
+    /**
+     * @return the status text, or null once the 24h window has passed
+     */
     public String getDailyStatusText() {
-        if (dailyStatusExpiresAt != null && Instant.now().isAfter(dailyStatusExpiresAt)) {
-            return null; // Expired 24h status
-        }
-        return dailyStatusText;
+        return isDailyStatusActive() ? dailyStatusText : null;
     }
 
     public Instant getDailyStatusExpiresAt() {
-        return dailyStatusExpiresAt;
+        return isDailyStatusActive() ? dailyStatusExpiresAt : null;
     }
 
     public void setDailyStatus(String text, Instant expiresAt) {
         this.dailyStatusText = text;
         this.dailyStatusExpiresAt = expiresAt;
-        this.updatedAt = Instant.now();
+        touch();
     }
 
     public Set<CommunicationTag> getTags() {
         return tags;
     }
 
-    public void setTags(Set<CommunicationTag> tags) {
-        this.tags = tags;
-        this.updatedAt = Instant.now();
+    public void replaceTags(Set<CommunicationTag> newTags) {
+        this.tags.clear();
+        this.tags.addAll(newTags);
+        touch();
     }
 
     public Instant getCreatedAt() {
@@ -165,5 +172,9 @@ public class Profile {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    private void touch() {
+        this.updatedAt = Instant.now();
     }
 }

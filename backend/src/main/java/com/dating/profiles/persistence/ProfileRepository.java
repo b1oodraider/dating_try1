@@ -1,41 +1,38 @@
 package com.dating.profiles.persistence;
 
 import com.dating.profiles.domain.Profile;
-import com.dating.profiles.domain.PublicationStatus;
-import com.dating.profiles.domain.VisibilityStatus;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 @Repository
-public interface ProfileRepository extends JpaRepository<Profile, UUID> {
+public interface ProfileRepository extends JpaRepository<Profile, UUID>, JpaSpecificationExecutor<Profile> {
 
     Optional<Profile> findByAccountId(UUID accountId);
 
-    @Query("""
-        SELECT DISTINCT p FROM Profile p
-        LEFT JOIN p.tags t
-        WHERE p.publicationStatus = :pubStatus
-          AND p.visibilityStatus = :visStatus
-          AND (:excludeAccountId IS NULL OR p.accountId != :excludeAccountId)
-          AND (:city IS NULL OR LOWER(p.city) = LOWER(:city))
-          AND (:minAge IS NULL OR p.age >= :minAge)
-          AND (:maxAge IS NULL OR p.age <= :maxAge)
-    """)
-    Page<Profile> findDiscoveryProfiles(
-            @Param("pubStatus") PublicationStatus pubStatus,
-            @Param("visStatus") VisibilityStatus visStatus,
-            @Param("excludeAccountId") UUID excludeAccountId,
-            @Param("city") String city,
-            @Param("minAge") Integer minAge,
-            @Param("maxAge") Integer maxAge,
-            Pageable pageable
-    );
+    /**
+     * Serializes concurrent changes of one profile (photo limit, primary photo, publication).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Profile p where p.accountId = :accountId")
+    Optional<Profile> findByAccountIdForUpdate(@Param("accountId") UUID accountId);
+
+    /**
+     * Race-safe lazy creation of the (empty) profile on first access.
+     */
+    @Modifying
+    @Query(value = """
+            INSERT INTO profiles (id, account_id, publication_status, visibility_status, created_at, updated_at)
+            VALUES (:id, :accountId, 'DRAFT', 'PUBLIC', now(), now())
+            ON CONFLICT (account_id) DO NOTHING
+            """, nativeQuery = true)
+    int insertIfAbsent(@Param("id") UUID id, @Param("accountId") UUID accountId);
 }

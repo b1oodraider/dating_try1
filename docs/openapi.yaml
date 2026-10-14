@@ -1,18 +1,24 @@
 openapi: 3.1.0
 info:
   title: Dating API
-  version: 1.0.0
-  description: REST API закрытого MVP сервиса комфортных знакомств (модульный монолит).
+  version: 1.1.0
+  description: |
+    REST API закрытого MVP сервиса комфортных знакомств (модульный монолит).
+    Краткая человекочитаемая версия контракта — docs/api-contract.md.
+    Все ошибки имеют формат Error; заголовок X-Trace-Id есть в каждом ответе.
 
 servers:
   - url: /api/v1
     description: Основной сервер API v1
 
+security:
+  - bearerAuth: []
+
 paths:
   /auth/otp/request:
     post:
-      summary: Запрос одноразового OTP-кода по номеру телефона
-      operationId: requestOtp
+      summary: Запрос одноразового кода
+      security: []
       requestBody:
         required: true
         content:
@@ -23,41 +29,23 @@ paths:
               properties:
                 phone:
                   type: string
-                  example: "+79991234567"
+                  maxLength: 32
+                  description: Любое написание номера ("+7 (999) 123-45-67", "89991234567"), сервер нормализует.
       responses:
         '200':
-          description: Challenge успешно создан
+          description: Код отправлен
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  challengeId:
-                    type: string
-                    format: uuid
-                  expiresAt:
-                    type: string
-                    format: date-time
-                  maskedPhone:
-                    type: string
-                    example: "+7 (***) ***-**-67"
-                  devMockCode:
-                    type: string
-                    nullable: true
-                    description: Доступен только в dev/test окружении
-        '400':
-          $ref: '#/components/responses/ApiError'
+              schema: { $ref: '#/components/schemas/AuthChallenge' }
+        '400': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Error' }
 
   /auth/otp/verify:
     post:
       summary: Подтверждение кода и выдача сессии
-      operationId: verifyOtp
-      parameters:
-        - name: phone
-          in: query
-          required: true
-          schema:
-            type: string
+      description: Номер телефона берётся из challenge; клиент его не передаёт.
+      security: []
       requestBody:
         required: true
         content:
@@ -66,130 +54,120 @@ paths:
               type: object
               required: [challengeId, code]
               properties:
-                challengeId:
-                  type: string
-                  format: uuid
-                code:
-                  type: string
-                  pattern: '^[0-9]{6}$'
-                  example: "123456"
+                challengeId: { type: string, format: uuid }
+                code: { type: string, pattern: '^[0-9]{6}$' }
       responses:
         '200':
-          description: Успешная авторизация
+          description: Сессия создана
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  token:
-                    type: string
-                  expiresAt:
-                    type: string
-                    format: date-time
-                  accountId:
-                    type: string
-                    format: uuid
+              schema: { $ref: '#/components/schemas/AuthSession' }
         '400':
-          $ref: '#/components/responses/ApiError'
+          description: INVALID_CHALLENGE | CHALLENGE_ALREADY_USED | CHALLENGE_EXPIRED | MAX_ATTEMPTS_EXCEEDED | INVALID_CODE
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403': { $ref: '#/components/responses/Error' }
 
   /auth/logout:
     post:
       summary: Отзыв текущей сессии
-      security:
-        - bearerAuth: []
       responses:
-        '204':
-          description: Сессия успешно отозвана
+        '204': { description: Сессия отозвана }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   /me:
     get:
-      summary: Получение данных текущего аккаунта
-      security:
-        - bearerAuth: []
+      summary: Текущий аккаунт
       responses:
         '200':
-          description: Данные аккаунта
+          description: OK
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Account'
+              schema: { $ref: '#/components/schemas/Account' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
     delete:
-      summary: Запрос на каскадное удаление аккаунта
-      security:
-        - bearerAuth: []
+      summary: Удаление аккаунта
+      description: Удаляет анкету, фото и все сессии; телефон отвязывается и может быть зарегистрирован заново.
       responses:
-        '204':
-          description: Запрос на удаление принят
+        '204': { description: Удалено }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   /me/profile:
     get:
-      summary: Получение собственной анкеты
-      security:
-        - bearerAuth: []
+      summary: Собственная анкета (создаётся пустой при первом обращении)
       responses:
         '200':
+          description: OK
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Profile'
+              schema: { $ref: '#/components/schemas/MyProfile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
     put:
-      summary: Обновление собственной анкеты
-      security:
-        - bearerAuth: []
+      summary: Частичное обновление анкеты (null/отсутствие поля = без изменений)
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/ProfileUpdate'
+            schema: { $ref: '#/components/schemas/ProfileUpdate' }
       responses:
         '200':
+          description: OK
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Profile'
+              schema: { $ref: '#/components/schemas/MyProfile' }
+        '400':
+          description: VALIDATION_ERROR | UNKNOWN_TAG (fieldErrors)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   /me/profile/publish:
     post:
-      summary: Публикация анкеты в поиск
-      security:
-        - bearerAuth: []
+      summary: Публикация анкеты
+      description: Требует имя, возраст, город и хотя бы одно фото.
       responses:
         '200':
+          description: OK
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Profile'
+              schema: { $ref: '#/components/schemas/MyProfile' }
+        '400':
+          description: PROFILE_INCOMPLETE, fieldErrors перечисляет недостающие поля
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   /me/profile/hide:
     post:
-      summary: Скрытие анкеты из поиска
-      security:
-        - bearerAuth: []
+      summary: Скрытие анкеты
       responses:
         '200':
+          description: OK
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Profile'
+              schema: { $ref: '#/components/schemas/MyProfile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   /me/profile/photos:
     get:
-      summary: Список фотографий текущего пользователя
-      security:
-        - bearerAuth: []
+      summary: Мои фотографии
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
                 type: array
-                items:
-                  $ref: '#/components/schemas/Photo'
+                items: { $ref: '#/components/schemas/Photo' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
     post:
-      summary: Загрузка новой фотографии (макс 6 шт, до 5 МБ)
-      security:
-        - bearerAuth: []
+      summary: Загрузка фото
+      description: |
+        JPEG/PNG/WebP определяются по содержимому файла, до 5 МБ, максимум 6 фото.
+        EXIF/XMP и текстовые метаданные удаляются (ориентация JPEG сохраняется).
       requestBody:
         required: true
         content:
@@ -198,122 +176,86 @@ paths:
               type: object
               required: [file]
               properties:
-                file:
-                  type: string
-                  format: binary
+                file: { type: string, format: binary }
       responses:
         '200':
+          description: Фото сохранено
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Photo'
+              schema: { $ref: '#/components/schemas/Photo' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
 
   /me/profile/photos/{photoId}:
+    parameters:
+      - { name: photoId, in: path, required: true, schema: { type: string, format: uuid } }
     patch:
-      summary: Назначение фотографии основной
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: photoId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+      summary: Сделать фото главным
       responses:
-        '204':
-          description: Успешно обновлено
+        '204': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/Error' }
     delete:
-      summary: Удаление фотографии
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: photoId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+      summary: Удалить фото
+      description: Если удалено последнее фото опубликованной анкеты, она возвращается в DRAFT.
       responses:
-        '204':
-          description: Фотография удалена
+        '204': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /media/photos/{photoId}:
+    get:
+      summary: Изображение по подписанной ссылке
+      description: Публичный адрес, авторизация — HMAC-подпись в ссылке (работает в <img src>). Ссылку выдаёт API в поле Photo.url.
+      security: []
+      parameters:
+        - { name: photoId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: exp, in: query, required: true, schema: { type: integer, format: int64 } }
+        - { name: sig, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Изображение
+          content:
+            image/jpeg: {}
+            image/png: {}
+            image/webp: {}
+        '404': { $ref: '#/components/responses/Error' }
 
   /discovery/profiles:
     get:
-      summary: Поиск опубликованных анкет с фильтрами
+      summary: Лента анкет
+      description: Только для авторизованных. Только опубликованные анкеты активных аккаунтов, без собственной. Все фильтры применяются в БД до пагинации.
       parameters:
-        - name: city
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: minAge
-          in: query
-          required: false
-          schema:
-            type: integer
-        - name: maxAge
-          in: query
-          required: false
-          schema:
-            type: integer
-        - name: tagCodes
-          in: query
-          required: false
-          schema:
-            type: array
-            items:
-              type: string
-        - name: tagLogic
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [AND, OR]
-            default: OR
-        - name: page
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 0
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 20
+        - { name: city, in: query, schema: { type: string }, description: Без учёта регистра; ALL или пусто — любой город }
+        - { name: minAge, in: query, schema: { type: integer } }
+        - { name: maxAge, in: query, schema: { type: integer } }
+        - { name: tagCodes, in: query, schema: { type: string }, description: Коды карточек через запятую (до 10) }
+        - { name: tagLogic, in: query, schema: { type: string, enum: [AND, OR], default: OR } }
+        - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
       responses:
         '200':
+          description: Страница анкет
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Profile'
-                  page:
-                    type: integer
-                  limit:
-                    type: integer
-                  totalElements:
-                    type: integer
-                  totalPages:
-                    type: integer
+              schema: { $ref: '#/components/schemas/DiscoveryPage' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   /tags:
     get:
-      summary: Справочник активных функциональных карточек
+      summary: Справочник карточек общения
+      security: []
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
                 type: array
-                items:
-                  $ref: '#/components/schemas/CommunicationTag'
+                items: { $ref: '#/components/schemas/Tag' }
 
 components:
   securitySchemes:
@@ -322,129 +264,129 @@ components:
       scheme: bearer
 
   responses:
-    ApiError:
-      description: Единый формат ошибок API
+    Error:
+      description: Ошибка
       content:
         application/json:
-          schema:
-            type: object
-            required: [code, message, traceId]
-            properties:
-              code:
-                type: string
-              message:
-                type: string
-              traceId:
-                type: string
-              fieldErrors:
-                type: object
-                additionalProperties:
-                  type: string
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Нет токена, токен истёк/отозван или аккаунт не активен
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: RATE_LIMITED
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Через сколько секунд можно повторить
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    Error:
+      type: object
+      required: [code, message, traceId]
+      properties:
+        code: { type: string }
+        message: { type: string, description: Сообщение для пользователя (рус.) }
+        traceId: { type: string }
+        fieldErrors:
+          type: object
+          additionalProperties: { type: string }
+
+    AuthChallenge:
+      type: object
+      properties:
+        challengeId: { type: string, format: uuid }
+        expiresAt: { type: string, format: date-time }
+        maskedPhone: { type: string, example: '+7 *** ***-**-67' }
+        devMockCode: { type: string, description: Только в dev-режиме с mock OTP }
+
+    AuthSession:
+      type: object
+      properties:
+        token: { type: string }
+        expiresAt: { type: string, format: date-time }
+        accountId: { type: string, format: uuid }
+
     Account:
       type: object
       properties:
-        id:
-          type: string
-          format: uuid
-        phoneMasked:
-          type: string
-        status:
-          type: string
-          enum: [ACTIVE, SUSPENDED, DELETION_PENDING, DELETED]
-        createdAt:
-          type: string
-          format: date-time
+        id: { type: string, format: uuid }
+        phoneMasked: { type: string }
+        status: { type: string, enum: [ACTIVE, SUSPENDED, DELETION_PENDING, DELETED] }
+        createdAt: { type: string, format: date-time }
 
-    Profile:
+    Tag:
       type: object
       properties:
-        id:
-          type: string
-          format: uuid
-        accountId:
-          type: string
-          format: uuid
-        displayName:
-          type: string
-        age:
-          type: integer
-        city:
-          type: string
-        aboutText:
-          type: string
-          nullable: true
-        publicationStatus:
-          type: string
-          enum: [DRAFT, PUBLISHED, HIDDEN]
-        visibilityStatus:
-          type: string
-          enum: [PUBLIC, HIDDEN]
-        dailyStatusText:
-          type: string
-          nullable: true
-        tags:
-          type: array
-          items:
-            $ref: '#/components/schemas/CommunicationTag'
-        completenessPercent:
-          type: integer
-
-    ProfileUpdate:
-      type: object
-      properties:
-        displayName:
-          type: string
-        age:
-          type: integer
-          minimum: 18
-        city:
-          type: string
-        aboutText:
-          type: string
-        tagCodes:
-          type: array
-          items:
-            type: string
-        dailyStatusText:
-          type: string
-
-    CommunicationTag:
-      type: object
-      properties:
-        code:
-          type: string
-        category:
-          type: string
-        categoryLabel:
-          type: string
-        label:
-          type: string
-        description:
-          type: string
-        sortOrder:
-          type: integer
+        code: { type: string }
+        category: { type: string, enum: [pace, format, calls, boundaries, social] }
+        categoryLabel: { type: string }
+        label: { type: string }
+        description: { type: string }
+        sortOrder: { type: integer }
 
     Photo:
       type: object
       properties:
-        id:
-          type: string
-          format: uuid
-        profileId:
-          type: string
-          format: uuid
-        url:
-          type: string
-        mimeType:
-          type: string
-        sizeBytes:
-          type: integer
-        sortOrder:
-          type: integer
-        isPrimary:
-          type: boolean
-        createdAt:
-          type: string
-          format: date-time
+        id: { type: string, format: uuid }
+        url: { type: string, description: Относительная подписанная ссылка, действует ~1 час }
+        mimeType: { type: string }
+        sizeBytes: { type: integer, format: int64 }
+        sortOrder: { type: integer }
+        isPrimary: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    MyProfile:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: [string, 'null'] }
+        age: { type: [integer, 'null'] }
+        city: { type: [string, 'null'] }
+        aboutText: { type: [string, 'null'] }
+        publicationStatus: { type: string, enum: [DRAFT, PUBLISHED, HIDDEN] }
+        dailyStatusText: { type: [string, 'null'], description: null после истечения 24 часов }
+        dailyStatusExpiresAt: { type: [string, 'null'], format: date-time }
+        tags: { type: array, items: { $ref: '#/components/schemas/Tag' } }
+        photos: { type: array, items: { $ref: '#/components/schemas/Photo' } }
+        completenessPercent: { type: integer, minimum: 0, maximum: 100 }
+        missingForPublish:
+          type: array
+          items: { type: string, enum: [displayName, age, city, photos] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    PublicProfile:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        age: { type: integer }
+        city: { type: string }
+        aboutText: { type: [string, 'null'] }
+        dailyStatusText: { type: [string, 'null'] }
+        tags: { type: array, items: { $ref: '#/components/schemas/Tag' } }
+        photos: { type: array, items: { $ref: '#/components/schemas/Photo' } }
+
+    ProfileUpdate:
+      type: object
+      properties:
+        displayName: { type: string, minLength: 2, maxLength: 50, description: После trim }
+        age: { type: integer, minimum: 18, maximum: 100 }
+        city: { type: string, minLength: 1, maxLength: 60 }
+        aboutText: { type: string, maxLength: 1000, description: Пустая строка очищает }
+        tagCodes: { type: array, maxItems: 10, items: { type: string } }
+        dailyStatusText: { type: string, maxLength: 200, description: Пустая строка очищает; иначе действует 24 часа }
+
+    DiscoveryPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/PublicProfile' } }
+        page: { type: integer }
+        limit: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }

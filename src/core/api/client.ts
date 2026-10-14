@@ -1,399 +1,365 @@
-import {
+import type {
   Account,
+  ApiErrorBody,
   AuthChallenge,
-  DiscoveryFilterParams,
-  Profile,
-  ProfilePhoto,
-  Session,
-  ProductEvent,
+  AuthToken,
+  DiscoveryPage,
+  DiscoveryQuery,
+  MyProfile,
+  Photo,
+  ProfileUpdate,
+  Tag,
 } from '../types';
-import { INITIAL_PROFILES } from './mockData';
 
+const API_BASE = '/api/v1';
 const STORAGE_KEY_TOKEN = 'dating_mvp_token_v1';
-const STORAGE_KEY_SESSION = 'dating_mvp_session_v1';
-const STORAGE_KEY_ACCOUNT = 'dating_mvp_account_v1';
-const STORAGE_KEY_PROFILES = 'dating_mvp_profiles_v1';
-const STORAGE_KEY_EVENTS = 'dating_mvp_events_v1';
+
+const NETWORK_ERROR_MESSAGE =
+  'Нет соединения с сервером. Проверьте подключение к интернету и попробуйте ещё раз.';
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+export class ApiError extends Error {
+  readonly code: string;
+  /** HTTP status; 0 means the request never reached the server (network error). */
+  readonly status: number;
+  readonly traceId?: string;
+  readonly fieldErrors?: Record<string, string>;
+  /** Seconds from the Retry-After header (429). */
+  readonly retryAfterSeconds?: number;
+
+  constructor(params: {
+    code: string;
+    message: string;
+    status: number;
+    traceId?: string;
+    fieldErrors?: Record<string, string>;
+    retryAfterSeconds?: number;
+  }) {
+    super(params.message);
+    this.name = 'ApiError';
+    this.code = params.code;
+    this.status = params.status;
+    this.traceId = params.traceId;
+    this.fieldErrors = params.fieldErrors;
+    this.retryAfterSeconds = params.retryAfterSeconds;
+  }
+
+  get isNetworkError(): boolean {
+    return this.status === 0;
+  }
+
+  get isUnauthorized(): boolean {
+    return this.status === 401;
+  }
+}
+
+export function isAbortError(e: unknown): boolean {
+  return e instanceof DOMException && e.name === 'AbortError';
+}
+
+/** User-facing message for any thrown value. */
+export function getErrorMessage(e: unknown, fallback = 'Что-то пошло не так. Попробуйте ещё раз.'): string {
+  if (e instanceof ApiError) {
+    if (e.status === 429 && e.retryAfterSeconds) {
+      return `${e.message} Повторите через ${e.retryAfterSeconds} с.`;
+    }
+    return e.message || fallback;
+  }
+  if (e instanceof Error && e.message) return e.message;
+  return fallback;
+}
+
+function defaultMessageForStatus(status: number): string {
+  if (status === 401) return 'Сессия истекла. Войдите снова.';
+  if (status === 403) return 'Недостаточно прав для этого действия.';
+  if (status === 404) return 'Не найдено.';
+  if (status === 413) return 'Файл слишком большой.';
+  if (status === 415) return 'Неподдерживаемый формат файла.';
+  if (status === 429) return 'Слишком много запросов.';
+  if (status >= 500) return 'Сервер временно недоступен. Попробуйте позже.';
+  return 'Ошибка запроса.';
+}
+
+function isApiErrorBody(value: unknown): value is ApiErrorBody {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as ApiErrorBody).code === 'string' &&
+    typeof (value as ApiErrorBody).message === 'string'
+  );
+}
+
+async function parseError(res: Response): Promise<ApiError> {
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  const retryAfterRaw = res.headers.get('Retry-After');
+  const retryAfter = retryAfterRaw ? Number.parseInt(retryAfterRaw, 10) : NaN;
+  const traceId = res.headers.get('X-Trace-Id') ?? undefined;
+
+  if (isApiErrorBody(body)) {
+    return new ApiError({
+      code: body.code,
+      message: body.message,
+      status: res.status,
+      traceId: body.traceId ?? traceId,
+      fieldErrors: body.fieldErrors,
+      retryAfterSeconds: Number.isFinite(retryAfter) ? retryAfter : undefined,
+    });
+  }
+  return new ApiError({
+    code: res.status >= 500 ? 'INTERNAL_ERROR' : 'HTTP_' + res.status,
+    message: defaultMessageForStatus(res.status),
+    status: res.status,
+    traceId,
+    retryAfterSeconds: Number.isFinite(retryAfter) ? retryAfter : undefined,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Token storage & unauthorized notifications
+// ---------------------------------------------------------------------------
 
 function getToken(): string | null {
-  return localStorage.getItem(STORAGE_KEY_TOKEN);
+  try {
+    return localStorage.getItem(STORAGE_KEY_TOKEN);
+  } catch {
+    return null;
+  }
 }
 
 function setToken(token: string | null): void {
-  if (token) {
-    localStorage.setItem(STORAGE_KEY_TOKEN, token);
-  } else {
-    localStorage.removeItem(STORAGE_KEY_TOKEN);
-  }
-}
-
-function getHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  const token = getToken();
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...extra,
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
-}
-
-export function logProductEvent(eventType: string, attributes: Record<string, string | number | boolean> = {}): void {
   try {
-    const existingRaw = localStorage.getItem(STORAGE_KEY_EVENTS);
-    const events: ProductEvent[] = existingRaw ? JSON.parse(existingRaw) : [];
-    const event: ProductEvent = {
-      eventId: 'evt-' + Math.random().toString(36).substring(2, 11),
-      eventType,
-      schemaVersion: 1,
-      occurredAt: new Date().toISOString(),
-      attributes,
-    };
-    events.push(event);
-    localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(events.slice(-100)));
-  } catch (e) {
-    console.warn('Could not persist product event', e);
+    if (token) {
+      localStorage.setItem(STORAGE_KEY_TOKEN, token);
+    } else {
+      localStorage.removeItem(STORAGE_KEY_TOKEN);
+    }
+  } catch {
+    // Storage unavailable (private mode etc.) — the session simply won't survive a reload.
   }
 }
 
-export const api = {
-  // --- AUTH & CHALLENGE ---
-  async requestOtp(phone: string): Promise<AuthChallenge> {
-    try {
-      const res = await fetch('/api/v1/auth/otp/request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || 'Ошибка запроса кода');
-      }
-      const data = await res.json();
-      logProductEvent('auth_otp_requested', { hasMock: !!data.devMockCode });
-      return data;
-    } catch (e: unknown) {
-      if (e instanceof Error && e.message !== 'Failed to fetch') {
-        throw e;
-      }
-      // Local fallback
-      const cleaned = phone.replace(/[^\d+]/g, '');
-      const last2 = cleaned.slice(-2);
-      const masked = `+7 (***) ***-**-${last2}`;
-      return {
-        challengeId: 'chal-local-' + Date.now().toString(36),
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-        maskedPhone: masked,
-        devMockCode: '123456',
-      };
-    }
-  },
+export function hasToken(): boolean {
+  return getToken() !== null;
+}
 
-  async verifyOtp(
-    challengeId: string,
-    code: string,
-    maskedPhone: string
-  ): Promise<{ session: Session; account: Account; profile: Profile }> {
-    try {
-      const res = await fetch(`/api/v1/auth/otp/verify?phone=${encodeURIComponent(maskedPhone)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ challengeId, code }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || 'Неверный код подтверждения');
-      }
-      const data = await res.json();
-      setToken(data.token);
+type UnauthorizedListener = () => void;
+const unauthorizedListeners = new Set<UnauthorizedListener>();
 
-      const session: Session = {
-        id: 'sess-' + Math.random().toString(36).substring(2, 9),
-        accountId: data.accountId,
-        expiresAt: data.expiresAt,
-      };
-      const account: Account = {
-        id: data.account?.id || data.accountId,
-        phoneMasked: data.account?.phoneMasked || maskedPhone,
-        status: 'ACTIVE',
-        phoneVerifiedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+/** Subscribe to "token is no longer valid" events. Returns an unsubscribe function. */
+export function onUnauthorized(listener: UnauthorizedListener): () => void {
+  unauthorizedListeners.add(listener);
+  return () => {
+    unauthorizedListeners.delete(listener);
+  };
+}
 
-      localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(session));
-      localStorage.setItem(STORAGE_KEY_ACCOUNT, JSON.stringify(account));
+function handleUnauthorized(): void {
+  setToken(null);
+  unauthorizedListeners.forEach((listener) => listener());
+}
 
-      // Fetch user profile
-      const profRes = await fetch('/api/v1/me/profile', { headers: getHeaders() });
-      let profile: Profile;
-      if (profRes.ok) {
-        profile = await profRes.json();
-      } else {
-        profile = {
-          id: 'prof-' + account.id,
-          accountId: account.id,
-          displayName: 'Новая анкета',
-          age: 24,
-          city: 'Москва',
-          aboutText: '',
-          publicationStatus: 'DRAFT',
-          visibilityStatus: 'PUBLIC',
-          tags: [],
-          photos: [],
-          dailyStatus: null,
-          completenessPercent: 50,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-      }
+// ---------------------------------------------------------------------------
+// Request helper
+// ---------------------------------------------------------------------------
 
-      logProductEvent('auth_otp_verified', { accountId: account.id });
-      return { session, account, profile };
-    } catch (e: unknown) {
-      if (e instanceof Error && e.message !== 'Failed to fetch') {
-        throw e;
-      }
-      // Local fallback
-      if (code !== '123456') {
-        throw new Error('Неверный код подтверждения. Для теста введите 123456');
-      }
-      const accId = 'acc-local-' + Math.random().toString(36).substring(2, 9);
-      const session: Session = {
-        id: 'sess-' + Math.random().toString(36).substring(2, 9),
-        accountId: accId,
-        expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
-      };
-      const account: Account = {
-        id: accId,
-        phoneMasked: maskedPhone,
-        status: 'ACTIVE',
-        phoneVerifiedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      setToken('mock-local-token-' + accId);
-      localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(session));
-      localStorage.setItem(STORAGE_KEY_ACCOUNT, JSON.stringify(account));
+interface RequestOptions {
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  /** JSON-serialisable body or FormData (multipart; Content-Type is set by the browser). */
+  body?: unknown;
+  /** Whether to send the bearer token. Default: true. */
+  auth?: boolean;
+  signal?: AbortSignal;
+}
 
-      const profile: Profile = {
-        id: 'prof-' + accId,
-        accountId: accId,
-        displayName: 'Моя анкета',
-        age: 25,
-        city: 'Москва',
-        aboutText: 'Привет! Заполняю анкету.',
-        publicationStatus: 'DRAFT',
-        visibilityStatus: 'PUBLIC',
-        tags: [],
-        photos: [],
-        dailyStatus: null,
-        completenessPercent: 60,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      return { session, account, profile };
-    }
-  },
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { method = 'GET', body, auth = true, signal } = options;
+  const headers: Record<string, string> = { Accept: 'application/json' };
 
-  async getSession(): Promise<{ session: Session | null; account: Account | null; profile: Profile | null }> {
+  if (auth) {
     const token = getToken();
     if (!token) {
-      return { session: null, account: null, profile: null };
+      handleUnauthorized();
+      throw new ApiError({ code: 'UNAUTHORIZED', message: 'Требуется авторизация.', status: 401 });
     }
+    headers['Authorization'] = `Bearer ${token}`;
+  }
 
+  let requestBody: BodyInit | undefined;
+  if (body instanceof FormData) {
+    requestBody = body;
+  } else if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    requestBody = JSON.stringify(body);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(API_BASE + path, { method, headers, body: requestBody, signal });
+  } catch (e) {
+    if (isAbortError(e)) throw e;
+    // fetch() rejects with a TypeError for network failures in every browser.
+    if (e instanceof TypeError) {
+      throw new ApiError({ code: 'NETWORK_ERROR', message: NETWORK_ERROR_MESSAGE, status: 0 });
+    }
+    throw e;
+  }
+
+  if (!res.ok) {
+    const error = await parseError(res);
+    if (res.status === 401 && auth) {
+      handleUnauthorized();
+    }
+    throw error;
+  }
+
+  if (res.status === 204) {
+    return undefined as T;
+  }
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
+// ---------------------------------------------------------------------------
+// API surface
+// ---------------------------------------------------------------------------
+
+export type SessionState =
+  | { status: 'anonymous' }
+  | { status: 'authenticated'; account: Account; profile: MyProfile }
+  | { status: 'error'; error: ApiError };
+
+export const api = {
+  // --- AUTH ---
+  requestOtp(phone: string): Promise<AuthChallenge> {
+    return request<AuthChallenge>('/auth/otp/request', {
+      method: 'POST',
+      body: { phone },
+      auth: false,
+    });
+  },
+
+  async verifyOtp(challengeId: string, code: string): Promise<AuthToken> {
+    const result = await request<AuthToken>('/auth/otp/verify', {
+      method: 'POST',
+      body: { challengeId, code },
+      auth: false,
+    });
+    setToken(result.token);
+    return result;
+  },
+
+  /**
+   * Restores the session from the stored token.
+   * 401 → token cleared, anonymous. Network/5xx → error state (the token is kept for a retry).
+   */
+  async getSession(): Promise<SessionState> {
+    if (!getToken()) {
+      return { status: 'anonymous' };
+    }
     try {
-      const [accRes, profRes] = await Promise.all([
-        fetch('/api/v1/me', { headers: getHeaders() }),
-        fetch('/api/v1/me/profile', { headers: getHeaders() }),
+      const [account, profile] = await Promise.all([
+        request<Account>('/me'),
+        request<MyProfile>('/me/profile'),
       ]);
-
-      if (accRes.ok && profRes.ok) {
-        const account = await accRes.json();
-        const profile = await profRes.json();
-        const session: Session = {
-          id: 'sess-active',
-          accountId: account.id,
-          expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
-        };
-        return { session, account, profile };
+      return { status: 'authenticated', account, profile };
+    } catch (e) {
+      if (e instanceof ApiError && e.isUnauthorized) {
+        return { status: 'anonymous' };
       }
-    } catch {
-      // Fallback to local storage if server offline
-    }
-
-    try {
-      const rawSession = localStorage.getItem(STORAGE_KEY_SESSION);
-      const rawAccount = localStorage.getItem(STORAGE_KEY_ACCOUNT);
-      if (!rawSession || !rawAccount) {
-        return { session: null, account: null, profile: null };
-      }
-      return {
-        session: JSON.parse(rawSession),
-        account: JSON.parse(rawAccount),
-        profile: null,
-      };
-    } catch {
-      return { session: null, account: null, profile: null };
+      const error =
+        e instanceof ApiError
+          ? e
+          : new ApiError({ code: 'UNKNOWN', message: getErrorMessage(e), status: 0 });
+      return { status: 'error', error };
     }
   },
 
+  /** Revokes the session on the server; the local token is cleared even if the request fails. */
   async logout(): Promise<void> {
+    if (!getToken()) return;
     try {
-      await fetch('/api/v1/auth/logout', { method: 'POST', headers: getHeaders() });
-    } catch {
+      await request<void>('/auth/logout', { method: 'POST' });
+    } finally {
+      setToken(null);
     }
+  },
+
+  /** Clears only the local token (e.g. when the server is unreachable and the user wants out). */
+  forgetLocalSession(): void {
     setToken(null);
-    localStorage.removeItem(STORAGE_KEY_SESSION);
-    localStorage.removeItem(STORAGE_KEY_ACCOUNT);
-    logProductEvent('auth_logout');
+  },
+
+  // --- ACCOUNT ---
+  getAccount(): Promise<Account> {
+    return request<Account>('/me');
   },
 
   async deleteAccount(): Promise<void> {
-    try {
-      await fetch('/api/v1/me', { method: 'DELETE', headers: getHeaders() });
-    } catch {
-    }
+    await request<void>('/me', { method: 'DELETE' });
     setToken(null);
-    localStorage.removeItem(STORAGE_KEY_SESSION);
-    localStorage.removeItem(STORAGE_KEY_ACCOUNT);
-    logProductEvent('account_deletion_completed');
   },
 
-  // --- PROFILE API ---
-  async getMyProfile(_accountId: string): Promise<Profile> {
-    const res = await fetch('/api/v1/me/profile', { headers: getHeaders() });
-    if (!res.ok) {
-      throw new Error('Не удалось загрузить анкету');
-    }
-    return res.json();
+  // --- TAGS ---
+  getTags(signal?: AbortSignal): Promise<Tag[]> {
+    return request<Tag[]>('/tags', { auth: false, signal });
   },
 
-  async updateMyProfile(_accountId: string, updates: Partial<Profile>): Promise<Profile> {
-    const payload = {
-      displayName: updates.displayName,
-      age: updates.age,
-      city: updates.city,
-      aboutText: updates.aboutText,
-      tagCodes: updates.tags?.map((t) => t.code),
-      dailyStatusText: updates.dailyStatus ? updates.dailyStatus.text : (updates.dailyStatus === null ? '' : undefined),
-    };
-
-    const res = await fetch('/api/v1/me/profile', {
-      method: 'PUT',
-      headers: getHeaders(),
-      body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'Ошибка обновления профиля');
-    }
-    const updated = await res.json();
-    logProductEvent('profile_updated', { profileId: updated.id, completeness: updated.completenessPercent });
-    return updated;
+  // --- MY PROFILE ---
+  getMyProfile(): Promise<MyProfile> {
+    return request<MyProfile>('/me/profile');
   },
 
-  async publishProfile(_accountId: string): Promise<Profile> {
-    const res = await fetch('/api/v1/me/profile/publish', {
-      method: 'POST',
-      headers: getHeaders(),
-    });
-    if (!res.ok) {
-      throw new Error('Ошибка публикации профиля');
-    }
-    const updated = await res.json();
-    logProductEvent('profile_published', { profileId: updated.id });
-    return updated;
+  updateMyProfile(update: ProfileUpdate): Promise<MyProfile> {
+    return request<MyProfile>('/me/profile', { method: 'PUT', body: update });
   },
 
-  async hideProfile(_accountId: string): Promise<Profile> {
-    const res = await fetch('/api/v1/me/profile/hide', {
-      method: 'POST',
-      headers: getHeaders(),
-    });
-    if (!res.ok) {
-      throw new Error('Ошибка сокрытия профиля');
-    }
-    const updated = await res.json();
-    logProductEvent('profile_hidden', { profileId: updated.id });
-    return updated;
+  publishProfile(): Promise<MyProfile> {
+    return request<MyProfile>('/me/profile/publish', { method: 'POST' });
   },
 
-  // --- PHOTOS API ---
-  async addPhoto(_accountId: string, fileDataUrl: string, mimeType: string, sizeBytes: number): Promise<ProfilePhoto> {
-    const res = await fetch('/api/v1/me/profile/photos', {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ dataUrl: fileDataUrl, mimeType, sizeBytes }),
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'Ошибка загрузки фотографии');
-    }
-    const newPhoto = await res.json();
-    logProductEvent('profile_photo_added', { photoId: newPhoto.id });
-    return newPhoto;
+  hideProfile(): Promise<MyProfile> {
+    return request<MyProfile>('/me/profile/hide', { method: 'POST' });
   },
 
-  async deletePhoto(_accountId: string, photoId: string): Promise<void> {
-    const res = await fetch(`/api/v1/me/profile/photos/${photoId}`, {
-      method: 'DELETE',
-      headers: getHeaders(),
-    });
-    if (!res.ok) {
-      throw new Error('Ошибка удаления фотографии');
-    }
-    logProductEvent('profile_photo_removed', { photoId });
+  // --- PHOTOS ---
+  listPhotos(): Promise<Photo[]> {
+    return request<Photo[]>('/me/profile/photos');
   },
 
-  async setPrimaryPhoto(_accountId: string, photoId: string): Promise<void> {
-    const res = await fetch(`/api/v1/me/profile/photos/${photoId}`, {
-      method: 'PATCH',
-      headers: getHeaders(),
-    });
-    if (!res.ok) {
-      throw new Error('Ошибка назначения главного фото');
-    }
+  uploadPhoto(file: File): Promise<Photo> {
+    const form = new FormData();
+    form.append('file', file);
+    return request<Photo>('/me/profile/photos', { method: 'POST', body: form });
   },
 
-  // --- DISCOVERY API ---
-  async getDiscoveryProfiles(
-    _myAccountId: string | null,
-    params: DiscoveryFilterParams = {}
-  ): Promise<{ profiles: Profile[]; total: number }> {
-    const query = new URLSearchParams();
-    if (params.city && params.city !== 'ALL') query.set('city', params.city);
-    if (params.minAge) query.set('minAge', String(params.minAge));
-    if (params.maxAge) query.set('maxAge', String(params.maxAge));
-    if (params.selectedTagCodes && params.selectedTagCodes.length > 0) {
-      query.set('tagCodes', params.selectedTagCodes.join(','));
-      query.set('tagLogic', params.tagFilterLogic || 'OR');
-    }
-    if (params.page !== undefined) query.set('page', String(params.page));
-    if (params.limit !== undefined) query.set('limit', String(params.limit));
+  deletePhoto(photoId: string): Promise<void> {
+    return request<void>(`/me/profile/photos/${encodeURIComponent(photoId)}`, { method: 'DELETE' });
+  },
 
-    try {
-      const res = await fetch(`/api/v1/discovery/profiles?${query.toString()}`, {
-        headers: getHeaders(),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        logProductEvent('discovery_query_executed', { resultsCount: data.items?.length || 0 });
-        return {
-          profiles: data.items || [],
-          total: data.totalElements || data.items?.length || 0,
-        };
-      }
-    } catch {
-      // Fallback to initial seed profiles if server is booting
-    }
+  setPrimaryPhoto(photoId: string): Promise<void> {
+    return request<void>(`/me/profile/photos/${encodeURIComponent(photoId)}`, { method: 'PATCH' });
+  },
 
-    return {
-      profiles: INITIAL_PROFILES,
-      total: INITIAL_PROFILES.length,
-    };
+  // --- DISCOVERY ---
+  getDiscoveryProfiles(query: DiscoveryQuery = {}, signal?: AbortSignal): Promise<DiscoveryPage> {
+    const params = new URLSearchParams();
+    if (query.city) params.set('city', query.city);
+    if (query.minAge !== undefined) params.set('minAge', String(query.minAge));
+    if (query.maxAge !== undefined) params.set('maxAge', String(query.maxAge));
+    if (query.tagCodes && query.tagCodes.length > 0) {
+      params.set('tagCodes', query.tagCodes.join(','));
+      params.set('tagLogic', query.tagLogic ?? 'OR');
+    }
+    params.set('page', String(query.page ?? 0));
+    params.set('limit', String(query.limit ?? 20));
+    return request<DiscoveryPage>(`/discovery/profiles?${params.toString()}`, { signal });
   },
 };

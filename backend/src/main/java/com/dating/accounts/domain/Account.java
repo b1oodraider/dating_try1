@@ -1,12 +1,14 @@
 package com.dating.accounts.domain;
 
+import com.dating.common.persistence.AssignedIdEntity;
 import jakarta.persistence.*;
+
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
 @Table(name = "accounts")
-public class Account {
+public class Account extends AssignedIdEntity {
 
     @Id
     private UUID id;
@@ -34,16 +36,7 @@ public class Account {
         // JPA requirement
     }
 
-    public Account(UUID id, String phoneHash, String phoneMasked) {
-        this.id = id;
-        this.phoneHash = phoneHash;
-        this.phoneMasked = phoneMasked;
-        this.status = AccountStatus.ACTIVE;
-        this.phoneVerifiedAt = Instant.now();
-        this.createdAt = Instant.now();
-        this.updatedAt = Instant.now();
-    }
-
+    @Override
     public UUID getId() {
         return id;
     }
@@ -60,9 +53,8 @@ public class Account {
         return status;
     }
 
-    public void setStatus(AccountStatus status) {
-        this.status = status;
-        this.updatedAt = Instant.now();
+    public boolean isActive() {
+        return status == AccountStatus.ACTIVE;
     }
 
     public Instant getPhoneVerifiedAt() {
@@ -75,5 +67,16 @@ public class Account {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    /**
+     * Irreversibly detaches the account from the phone number. The row is kept only as a tombstone
+     * (foreign keys, analytics), the same phone can register a brand-new account afterwards.
+     */
+    public void markDeleted() {
+        this.phoneHash = "deleted:" + id;
+        this.phoneMasked = "удалён";
+        this.status = AccountStatus.DELETED;
+        this.updatedAt = Instant.now();
     }
 }

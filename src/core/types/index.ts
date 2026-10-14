@@ -1,33 +1,20 @@
-export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'DELETION_PENDING' | 'DELETED';
+// Types mirror docs/api-contract.md (API v1). Keep them in sync with the contract.
 
-export interface Account {
-  id: string;
-  phoneMasked: string; // e.g. +7 (999) ***-**-42 (never log or expose raw phone publicly)
-  status: AccountStatus;
-  phoneVerifiedAt: string;
-  createdAt: string;
-  updatedAt: string;
-}
+export type TagCategory = 'pace' | 'format' | 'calls' | 'boundaries' | 'social';
 
-export type ProfileVisibilityStatus = 'PUBLIC' | 'HIDDEN';
-export type ProfilePublicationStatus = 'DRAFT' | 'PUBLISHED' | 'HIDDEN';
-
-export interface CommunicationTag {
-  id: string;
+export interface Tag {
   code: string;
-  category: 'pace' | 'format' | 'calls' | 'social' | 'boundaries';
+  category: TagCategory;
   categoryLabel: string;
   label: string;
   description: string;
-  active: boolean;
   sortOrder: number;
 }
 
-export interface ProfilePhoto {
+export interface Photo {
   id: string;
-  profileId: string;
-  storageKey: string;
-  url: string; // Authorized URL or data URL
+  /** Relative signed URL (valid ~1h), usable directly in <img src> without Authorization. */
+  url: string;
   mimeType: string;
   sizeBytes: number;
   sortOrder: number;
@@ -35,62 +22,99 @@ export interface ProfilePhoto {
   createdAt: string;
 }
 
-export interface DailyStatus {
-  text: string;
-  expiresAt: string; // 24h expiration
-}
+export type PublicationStatus = 'DRAFT' | 'PUBLISHED' | 'HIDDEN';
 
-export interface Profile {
+/** Fields that must be filled before the profile can be published. */
+export type PublishRequirement = 'displayName' | 'age' | 'city' | 'photos';
+
+export interface MyProfile {
   id: string;
-  accountId: string;
-  displayName: string;
-  age: number; // 18+
-  city: string;
-  aboutText?: string;
-  publicationStatus: ProfilePublicationStatus;
-  visibilityStatus: ProfileVisibilityStatus;
-  tags: CommunicationTag[];
-  photos: ProfilePhoto[];
-  dailyStatus?: DailyStatus | null;
+  displayName: string | null;
+  age: number | null;
+  city: string | null;
+  aboutText: string | null;
+  publicationStatus: PublicationStatus;
+  dailyStatusText: string | null;
+  /** Already null when the status has expired. */
+  dailyStatusExpiresAt: string | null;
+  tags: Tag[];
+  photos: Photo[];
   completenessPercent: number;
+  missingForPublish: PublishRequirement[];
   createdAt: string;
   updatedAt: string;
 }
 
-export interface Session {
+export interface PublicProfile {
   id: string;
-  accountId: string;
-  expiresAt: string;
+  displayName: string;
+  age: number;
+  city: string;
+  aboutText: string | null;
+  dailyStatusText: string | null;
+  tags: Tag[];
+  photos: Photo[];
+}
+
+export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'DELETED';
+
+export interface Account {
+  id: string;
+  phoneMasked: string;
+  status: AccountStatus;
+  createdAt: string;
 }
 
 export interface AuthChallenge {
   challengeId: string;
   expiresAt: string;
   maskedPhone: string;
-  devMockCode?: string; // only provided in dev/test environment
+  /** Present only when the server runs in OTP mock mode. */
+  devMockCode?: string;
 }
 
-export interface DiscoveryFilterParams {
-  selectedTagCodes?: string[];
-  tagFilterLogic?: 'AND' | 'OR';
+export interface AuthToken {
+  token: string;
+  expiresAt: string;
+  accountId: string;
+}
+
+export interface DiscoveryPage {
+  items: PublicProfile[];
+  page: number;
+  limit: number;
+  totalElements: number;
+  totalPages: number;
+}
+
+export type TagLogic = 'AND' | 'OR';
+
+export interface DiscoveryQuery {
   city?: string;
   minAge?: number;
   maxAge?: number;
+  tagCodes?: string[];
+  tagLogic?: TagLogic;
   page?: number;
   limit?: number;
 }
 
-export interface ApiError {
-  code: string;
-  message: string;
-  traceId?: string;
-  fieldErrors?: Record<string, string>;
+/** PUT /me/profile body: every field optional, omitted = unchanged. */
+export interface ProfileUpdate {
+  displayName?: string;
+  age?: number;
+  city?: string;
+  /** "" clears. */
+  aboutText?: string;
+  tagCodes?: string[];
+  /** "" clears; any other value sets a 24h expiry. */
+  dailyStatusText?: string;
 }
 
-export interface ProductEvent {
-  eventId: string;
-  eventType: string;
-  schemaVersion: number;
-  occurredAt: string;
-  attributes: Record<string, string | number | boolean>;
+/** Error body returned by every failing API call. */
+export interface ApiErrorBody {
+  code: string;
+  message: string;
+  traceId: string;
+  fieldErrors?: Record<string, string>;
 }

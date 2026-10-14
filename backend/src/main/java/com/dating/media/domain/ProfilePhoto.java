@@ -1,12 +1,14 @@
 package com.dating.media.domain;
 
+import com.dating.common.persistence.AssignedIdEntity;
 import jakarta.persistence.*;
+
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
 @Table(name = "profile_photos")
-public class ProfilePhoto {
+public class ProfilePhoto extends AssignedIdEntity {
 
     @Id
     private UUID id;
@@ -49,6 +51,7 @@ public class ProfilePhoto {
         this.createdAt = Instant.now();
     }
 
+    @Override
     public UUID getId() {
         return id;
     }
@@ -73,10 +76,6 @@ public class ProfilePhoto {
         return sortOrder;
     }
 
-    public void setSortOrder(int sortOrder) {
-        this.sortOrder = sortOrder;
-    }
-
     public boolean isPrimary() {
         return isPrimary;
     }
@@ -95,5 +94,6 @@ public class ProfilePhoto {
 
     public void markDeleted() {
         this.deletedAt = Instant.now();
+        this.isPrimary = false;
     }
 }

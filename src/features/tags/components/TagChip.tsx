@@ -1,12 +1,12 @@
 import React from 'react';
-import { CommunicationTag } from '../../../core/types';
+import type { Tag } from '../../../core/types';
 import { X, Check } from 'lucide-react';
 
 interface TagChipProps {
-  tag: CommunicationTag;
+  tag: Tag;
   isSelected?: boolean;
-  onToggle?: (tag: CommunicationTag) => void;
-  onRemove?: (tag: CommunicationTag) => void;
+  onToggle?: (tag: Tag) => void;
+  onRemove?: (tag: Tag) => void;
   showDescriptionTooltip?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }
@@ -19,7 +19,7 @@ export const TagChip: React.FC<TagChipProps> = ({
   size = 'md',
 }) => {
   // Category-specific subtle tint
-  const getCategoryStyles = (category: CommunicationTag['category'], selected: boolean) => {
+  const getCategoryStyles = (category: Tag['category'], selected: boolean) => {
     if (selected) {
       switch (category) {
         case 'pace':

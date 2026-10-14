@@ -1,23 +1,21 @@
 import React from 'react';
-import { Profile } from '../../../core/types';
+import type { PublicProfile } from '../../../core/types';
 import { TagChip } from '../../tags/components/TagChip';
 import { MapPin, Sparkles, MessageCircleHeart } from 'lucide-react';
 
 interface ProfileFeedCardProps {
-  profile: Profile;
-  onOpenDetails: (profile: Profile) => void;
+  profile: PublicProfile;
+  onOpenDetails: (profile: PublicProfile) => void;
 }
 
 export const ProfileFeedCard: React.FC<ProfileFeedCardProps> = ({
   profile,
   onOpenDetails,
 }) => {
-  const primaryPhoto =
-    profile.photos.find((p) => p.isPrimary) || profile.photos[0];
-
-  const hasActiveDailyStatus =
-    profile.dailyStatus &&
-    new Date(profile.dailyStatus.expiresAt).getTime() > Date.now();
+  const photos = profile.photos ?? [];
+  const tags = profile.tags ?? [];
+  const primaryPhoto = photos.find((p) => p.isPrimary) ?? photos[0];
+  const dailyStatusText = profile.dailyStatusText?.trim() || null;
 
   return (
     <div
@@ -41,17 +39,17 @@ export const ProfileFeedCard: React.FC<ProfileFeedCardProps> = ({
           )}
 
           {/* Photo count indicator */}
-          {profile.photos.length > 1 && (
+          {photos.length > 1 && (
             <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full bg-zinc-900/60 backdrop-blur-xs text-white text-[10px] font-medium">
-              1/{profile.photos.length}
+              1/{photos.length}
             </div>
           )}
 
           {/* 24-hour status badge overlay */}
-          {hasActiveDailyStatus && (
+          {dailyStatusText && (
             <div className="absolute top-2 left-2 right-2 bg-zinc-900/80 backdrop-blur-md text-white text-[11px] p-2 rounded-xl flex items-center gap-1.5 shadow-sm">
               <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span className="truncate italic">«{profile.dailyStatus?.text}»</span>
+              <span className="truncate italic">«{dailyStatusText}»</span>
             </div>
           )}
         </div>
@@ -77,12 +75,12 @@ export const ProfileFeedCard: React.FC<ProfileFeedCardProps> = ({
 
           {/* Communication Tags */}
           <div className="flex flex-wrap gap-1.5 pt-1">
-            {profile.tags.slice(0, 4).map((tag) => (
+            {tags.slice(0, 4).map((tag) => (
               <TagChip key={tag.code} tag={tag} size="sm" />
             ))}
-            {profile.tags.length > 4 && (
+            {tags.length > 4 && (
               <span className="text-[11px] text-zinc-400 self-center pl-1 font-medium">
-                +{profile.tags.length - 4} ещё
+                +{tags.length - 4} ещё
               </span>
             )}
           </div>

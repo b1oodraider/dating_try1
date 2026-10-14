@@ -1,137 +1,170 @@
 package com.dating.media.application;
 
+import com.dating.accounts.application.AccountDeletedEvent;
 import com.dating.common.errors.ApiException;
-import com.dating.media.api.PhotoResponseDto;
 import com.dating.media.domain.ProfilePhoto;
 import com.dating.media.persistence.ProfilePhotoRepository;
+import com.dating.productevents.application.ProductEventPublisher;
+import com.dating.profiles.api.PhotoDto;
 import com.dating.profiles.application.ProfileService;
 import com.dating.profiles.domain.Profile;
+import com.dating.profiles.domain.PublicationStatus;
+import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Path;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
 public class MediaService {
 
-    private static final Set<String> ALLOWED_MIME_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
-    private static final long MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
-
     private final ProfilePhotoRepository photoRepository;
-    private final FileStorageService fileStorageService;
+    private final FileStorageService fileStorage;
     private final ProfileService profileService;
+    private final PhotoQueryService photoQuery;
+    private final PhotoUrlSigner urlSigner;
+    private final MediaProperties properties;
+    private final ProductEventPublisher productEvents;
 
     public MediaService(ProfilePhotoRepository photoRepository,
-                        FileStorageService fileStorageService,
-                        ProfileService profileService) {
+                        FileStorageService fileStorage,
+                        ProfileService profileService,
+                        PhotoQueryService photoQuery,
+                        PhotoUrlSigner urlSigner,
+                        MediaProperties properties,
+                        ProductEventPublisher productEvents) {
         this.photoRepository = photoRepository;
-        this.fileStorageService = fileStorageService;
+        this.fileStorage = fileStorage;
         this.profileService = profileService;
+        this.photoQuery = photoQuery;
+        this.urlSigner = urlSigner;
+        this.properties = properties;
+        this.productEvents = productEvents;
+    }
+
+    public record PhotoContent(Path path, String mimeType, long cacheSeconds) {
     }
 
     @Transactional
-    public PhotoResponseDto uploadPhoto(UUID accountId, MultipartFile file) {
-        Profile profile = profileService.getOrCreateProfile(accountId);
+    public PhotoDto uploadPhoto(UUID accountId, MultipartFile file) {
+        // Row lock on the profile: two parallel uploads cannot both pass the photo limit.
+        Profile profile = profileService.lockOrCreateProfile(accountId);
 
         long currentCount = photoRepository.countByProfileIdAndDeletedAtIsNull(profile.getId());
-        if (currentCount >= 6) {
-            throw ApiException.badRequest("PHOTO_LIMIT_EXCEEDED", "Максимум 6 фотографий в профиле");
+        if (currentCount >= properties.maxPhotosPerProfile()) {
+            throw ApiException.badRequest("PHOTO_LIMIT_EXCEEDED",
+                    "Максимум " + properties.maxPhotosPerProfile() + " фотографий в профиле");
+        }
+        if (file.isEmpty()) {
+            throw ApiException.badRequest("EMPTY_FILE", "Файл пустой");
+        }
+        if (file.getSize() > properties.maxFileSize().toBytes()) {
+            throw ApiException.payloadTooLarge("FILE_TOO_LARGE", "Размер файла превышает 5 МБ");
         }
 
-        if (file.getSize() > MAX_FILE_SIZE) {
-            throw ApiException.badRequest("FILE_TOO_LARGE", "Размер файла превышает 5 МБ");
-        }
-
-        String contentType = file.getContentType();
-        if (contentType == null || !ALLOWED_MIME_TYPES.contains(contentType.toLowerCase())) {
-            throw ApiException.badRequest("UNSUPPORTED_MEDIA_TYPE", "Поддерживаются только форматы JPEG, PNG и WebP");
-        }
-
-        String extension = switch (contentType.toLowerCase()) {
-            case "image/png" -> ".png";
-            case "image/webp" -> ".webp";
-            default -> ".jpg";
-        };
-
+        byte[] original;
         try {
-            String storageKey = fileStorageService.saveFile(file.getInputStream(), extension);
-            boolean isPrimary = currentCount == 0;
-
-            ProfilePhoto photo = new ProfilePhoto(
-                    UUID.randomUUID(),
-                    profile.getId(),
-                    storageKey,
-                    contentType,
-                    file.getSize(),
-                    (int) currentCount,
-                    isPrimary
-            );
-
-            ProfilePhoto saved = photoRepository.save(photo);
-            return PhotoResponseDto.from(saved);
+            original = file.getBytes();
         } catch (IOException e) {
-            throw new RuntimeException("Could not process uploaded file", e);
+            throw new UncheckedIOException("Could not read uploaded file", e);
         }
+        ImageFormat format = ImageFormat.detect(original).orElseThrow(() ->
+                ApiException.unsupportedMediaType("Поддерживаются только изображения JPEG, PNG и WebP"));
+
+        byte[] cleaned;
+        try {
+            cleaned = ImageMetadataStripper.strip(original, format);
+        } catch (IllegalArgumentException e) {
+            throw ApiException.unsupportedMediaType("Файл повреждён или не является изображением");
+        }
+
+        String storageKey = fileStorage.save(cleaned, format.extension());
+        ProfilePhoto photo = new ProfilePhoto(
+                UUID.randomUUID(),
+                profile.getId(),
+                storageKey,
+                format.mimeType(),
+                cleaned.length,
+                photoRepository.findMaxSortOrder(profile.getId()) + 1,
+                currentCount == 0
+        );
+        photoRepository.save(photo);
+        productEvents.publish("profile_photo_added", Map.of("photoCount", currentCount + 1));
+        return photoQuery.toDto(photo);
     }
 
     @Transactional(readOnly = true)
-    public List<PhotoResponseDto> getMyPhotos(UUID accountId) {
-        Profile profile = profileService.getOrCreateProfile(accountId);
-        return photoRepository.findAllByProfileIdAndDeletedAtIsNullOrderBySortOrderAsc(profile.getId())
-                .stream()
-                .map(PhotoResponseDto::from)
-                .toList();
+    public List<PhotoDto> getMyPhotos(UUID accountId) {
+        return profileService.findProfile(accountId)
+                .map(profile -> photoQuery.photosOf(profile.getId()))
+                .orElse(List.of());
     }
 
     @Transactional
     public void setPrimaryPhoto(UUID accountId, UUID photoId) {
-        Profile profile = profileService.getOrCreateProfile(accountId);
+        Profile profile = profileService.lockOrCreateProfile(accountId);
         List<ProfilePhoto> photos = photoRepository.findAllByProfileIdAndDeletedAtIsNullOrderBySortOrderAsc(profile.getId());
-
-        boolean found = false;
-        for (ProfilePhoto photo : photos) {
-            if (photo.getId().equals(photoId)) {
-                photo.setPrimary(true);
-                found = true;
-            } else {
-                photo.setPrimary(false);
-            }
+        if (photos.stream().noneMatch(p -> p.getId().equals(photoId))) {
+            throw ApiException.notFound("PHOTO_NOT_FOUND", "Фотография не найдена");
         }
-
-        if (!found) {
-            throw ApiException.notFound("Фотография не найдена");
-        }
-
-        photoRepository.saveAll(photos);
+        photos.forEach(p -> p.setPrimary(p.getId().equals(photoId)));
     }
 
     @Transactional
     public void deletePhoto(UUID accountId, UUID photoId) {
-        Profile profile = profileService.getOrCreateProfile(accountId);
+        Profile profile = profileService.lockOrCreateProfile(accountId);
         ProfilePhoto photo = photoRepository.findByIdAndProfileIdAndDeletedAtIsNull(photoId, profile.getId())
-                .orElseThrow(() -> ApiException.notFound("Фотография не найдена"));
+                .orElseThrow(() -> ApiException.notFound("PHOTO_NOT_FOUND", "Фотография не найдена"));
 
         photo.markDeleted();
-        photoRepository.save(photo);
-        fileStorageService.deleteFile(photo.getStorageKey());
+        photoRepository.saveAndFlush(photo);
+        fileStorage.deleteAfterCommit(List.of(photo.getStorageKey()));
 
-        // Reassign primary if needed
         List<ProfilePhoto> remaining = photoRepository.findAllByProfileIdAndDeletedAtIsNullOrderBySortOrderAsc(profile.getId());
         if (!remaining.isEmpty() && remaining.stream().noneMatch(ProfilePhoto::isPrimary)) {
             remaining.get(0).setPrimary(true);
-            photoRepository.save(remaining.get(0));
         }
+        // A published profile must always have a photo (same rule as on publish).
+        if (remaining.isEmpty() && profile.getPublicationStatus() == PublicationStatus.PUBLISHED) {
+            profile.setPublicationStatus(PublicationStatus.DRAFT);
+        }
+        productEvents.publish("profile_photo_removed", Map.of("photoCount", remaining.size()));
     }
 
+    /**
+     * Serves a photo by signed URL. Any invalid, expired or tampered link looks exactly like a missing photo.
+     */
     @Transactional(readOnly = true)
-    public byte[] downloadPhoto(UUID profileId, UUID photoId) {
-        ProfilePhoto photo = photoRepository.findByIdAndProfileIdAndDeletedAtIsNull(photoId, profileId)
-                .orElseThrow(() -> ApiException.notFound("Фотография не найдена"));
+    public PhotoContent loadPhoto(UUID photoId, long expiresAt, String signature) {
+        if (!urlSigner.isValid(photoId, expiresAt, signature)) {
+            throw photoNotFound();
+        }
+        ProfilePhoto photo = photoRepository.findByIdAndDeletedAtIsNull(photoId).orElseThrow(this::photoNotFound);
+        Path path = fileStorage.find(photo.getStorageKey()).orElseThrow(this::photoNotFound);
+        return new PhotoContent(path, photo.getMimeType(), urlSigner.secondsUntil(expiresAt));
+    }
 
-        return fileStorageService.loadFile(photo.getStorageKey());
+    private ApiException photoNotFound() {
+        return ApiException.notFound("PHOTO_NOT_FOUND", "Фотография не найдена");
+    }
+
+    /**
+     * Runs first among deletion listeners: rows go now, files after the transaction commits.
+     */
+    @EventListener
+    @Order(1)
+    public void onAccountDeleted(AccountDeletedEvent event) {
+        profileService.findProfile(event.accountId()).ifPresent(profile -> {
+            List<ProfilePhoto> photos = photoRepository.findAllByProfileId(profile.getId());
+            fileStorage.deleteAfterCommit(photos.stream().map(ProfilePhoto::getStorageKey).toList());
+            photoRepository.deleteAll(photos);
+        });
     }
 }

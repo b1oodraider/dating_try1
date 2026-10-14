@@ -1,0 +1,435 @@
+package com.dating;
+
+import com.dating.support.TestImages;
+import com.jayway.jsonpath.JsonPath;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.ResultActions;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
+
+import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+/**
+ * End-to-end checks of the defects found in review, against a real PostgreSQL (Testcontainers).
+ * Skipped automatically when Docker is not available.
+ */
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+@Testcontainers(disabledWithoutDocker = true)
+class ApiIntegrationTest {
+
+    @Container
+    @ServiceConnection
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
+
+    private static final Path MEDIA_DIR = createTempDir();
+    private static final AtomicLong PHONE_SEQ = new AtomicLong(System.nanoTime() % 1_000_000);
+    private static final String MOCK_CODE = "123456";
+
+    @DynamicPropertySource
+    static void mediaProperties(DynamicPropertyRegistry registry) {
+        registry.add("app.media.storage-path", MEDIA_DIR::toString);
+    }
+
+    @Autowired
+    MockMvc mvc;
+
+    @Autowired
+    JdbcTemplate jdbc;
+
+    // ------------------------------------------------------------------ auth
+
+    @Test
+    void verifyIgnoresClientSuppliedPhone_noAccountTakeover() throws Exception {
+        String victimPhone = newPhone();
+        String victimToken = login(victimPhone);
+        String victimAccountId = json(get("/api/v1/me"), victimToken, "$.id");
+
+        String attackerPhone = newPhone();
+        String challengeId = requestOtp(attackerPhone);
+        MvcResult result = mvc.perform(post("/api/v1/auth/otp/verify")
+                        .queryParam("phone", victimPhone)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody(challengeId, MOCK_CODE)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String attackerAccountId = JsonPath.read(body(result), "$.accountId");
+        assertNotEquals(victimAccountId, attackerAccountId);
+    }
+
+    @Test
+    void differentSpellingsOfOnePhoneLogIntoOneAccount() throws Exception {
+        String digits = newPhoneDigits();
+        String first = json(get("/api/v1/me"), login("+7 (" + digits.substring(0, 3) + ") " + digits.substring(3)), "$.id");
+        Thread.sleep(1100); // resend cooldown in the test profile
+        String second = json(get("/api/v1/me"), login("8" + digits), "$.id");
+        assertEquals(first, second);
+    }
+
+    @Test
+    void failedAttemptsArePersistedAndCodeCannotBeBruteForced() throws Exception {
+        String challengeId = requestOtp(newPhone());
+
+        for (int i = 1; i <= 4; i++) {
+            verify(challengeId, "000000").andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_CODE"));
+        }
+        verify(challengeId, "000000").andExpect(jsonPath("$.code").value("MAX_ATTEMPTS_EXCEEDED"));
+        // Even the right code is refused now: the counter survived the error responses.
+        verify(challengeId, MOCK_CODE).andExpect(jsonPath("$.code").value("MAX_ATTEMPTS_EXCEEDED"));
+
+        Integer attempts = jdbc.queryForObject("select attempt_count from auth_challenges where id = ?",
+                Integer.class, UUID.fromString(challengeId));
+        assertEquals(5, attempts);
+    }
+
+    @Test
+    void challengeIsSingleUse() throws Exception {
+        String challengeId = requestOtp(newPhone());
+        verify(challengeId, MOCK_CODE).andExpect(status().isOk());
+        verify(challengeId, MOCK_CODE).andExpect(jsonPath("$.code").value("CHALLENGE_ALREADY_USED"));
+    }
+
+    @Test
+    void otpResendIsRateLimited() throws Exception {
+        String phone = newPhone();
+        requestOtp(phone);
+        mvc.perform(post("/api/v1/auth/otp/request").contentType(MediaType.APPLICATION_JSON).content(phoneBody(phone)))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().exists("Retry-After"))
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+    }
+
+    @Test
+    void invalidPhoneIsRejected() throws Exception {
+        mvc.perform(post("/api/v1/auth/otp/request").contentType(MediaType.APPLICATION_JSON).content(phoneBody("12-34")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_PHONE"));
+    }
+
+    @Test
+    void logoutRevokesToken() throws Exception {
+        String token = login(newPhone());
+        mvc.perform(post("/api/v1/auth/logout").header("Authorization", bearer(token))).andExpect(status().isNoContent());
+        mvc.perform(get("/api/v1/me").header("Authorization", bearer(token))).andExpect(status().isUnauthorized());
+    }
+
+    // ------------------------------------------------------------------ errors
+
+    @Test
+    void unauthenticatedRequestsGetJson401() throws Exception {
+        mvc.perform(get("/api/v1/me"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.traceId").isNotEmpty())
+                .andExpect(header().exists("X-Trace-Id"));
+        mvc.perform(get("/api/v1/discovery/profiles")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void malformedRequestsGet400Not500() throws Exception {
+        mvc.perform(post("/api/v1/auth/otp/verify").contentType(MediaType.APPLICATION_JSON).content("{not json"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
+
+        String token = login(newPhone());
+        mvc.perform(get("/api/v1/discovery/profiles").queryParam("minAge", "abc").header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/v1/discovery/profiles").queryParam("tagLogic", "XOR").header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest());
+    }
+
+    // ------------------------------------------------------------------ profile
+
+    @Test
+    void newProfileIsPersistedEmptyAndCannotBePublished() throws Exception {
+        String token = login(newPhone());
+
+        String firstId = json(get("/api/v1/me/profile"), token, "$.id");
+        mvc.perform(get("/api/v1/me/profile").header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(firstId))
+                .andExpect(jsonPath("$.displayName").value(nullValue()))
+                .andExpect(jsonPath("$.age").value(nullValue()))
+                .andExpect(jsonPath("$.missingForPublish", contains("displayName", "age", "city", "photos")));
+
+        mvc.perform(post("/api/v1/me/profile/publish").header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PROFILE_INCOMPLETE"))
+                .andExpect(jsonPath("$.fieldErrors.photos").exists());
+    }
+
+    @Test
+    void profileUpdateValidatesAfterTrimmingAndRejectsUnknownTags() throws Exception {
+        String token = login(newPhone());
+
+        putProfile(token, "{\"displayName\":\"   \"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.displayName").exists());
+        putProfile(token, "{\"age\":17}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.age").exists());
+        putProfile(token, "{\"tagCodes\":[\"PACE_ASYNCHRONOUS\",\"NO_SUCH_TAG\"]}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("UNKNOWN_TAG"));
+
+        putProfile(token, "{\"displayName\":\"  Анна \",\"age\":26,\"city\":\"Москва\",\"dailyStatusText\":\"Иду на выставку\",\"tagCodes\":[\"PACE_ASYNCHRONOUS\"]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayName").value("Анна"))
+                .andExpect(jsonPath("$.dailyStatusText").value("Иду на выставку"))
+                .andExpect(jsonPath("$.dailyStatusExpiresAt").isNotEmpty())
+                .andExpect(jsonPath("$.tags[0].code").value("PACE_ASYNCHRONOUS"))
+                .andExpect(jsonPath("$.missingForPublish", contains("photos")));
+    }
+
+    // ------------------------------------------------------------------ photos
+
+    @Test
+    void uploadedPhotoIsStrippedAndServedBySignedUrlOnly() throws Exception {
+        String token = login(newPhone());
+        byte[] png = TestImages.pngWithText(TestImages.png(6, 6), "SECRET-LOCATION");
+
+        MvcResult upload = mvc.perform(multipart("/api/v1/me/profile/photos")
+                        .file(new MockMultipartFile("file", "photo.jpg", "image/jpeg", png)) // lying name/type
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mimeType").value("image/png"))
+                .andExpect(jsonPath("$.isPrimary").value(true))
+                .andReturn();
+        String url = JsonPath.read(body(upload), "$.url");
+
+        MvcResult image = mvc.perform(get(url))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("image/png"))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
+                .andReturn();
+        byte[] served = image.getResponse().getContentAsByteArray();
+        assertTrue(served.length > 0);
+        assertFalse(TestImages.contains(served, "SECRET-LOCATION"), "metadata must be stripped");
+
+        String tampered = url.replaceAll("sig=.", "sig=0");
+        if (tampered.equals(url)) {
+            tampered = url.replaceAll("sig=.", "sig=1");
+        }
+        mvc.perform(get(tampered)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void nonImagesAndPhotoLimitAreRejected() throws Exception {
+        String token = login(newPhone());
+        mvc.perform(multipart("/api/v1/me/profile/photos")
+                        .file(new MockMultipartFile("file", "x.png", "image/png", "<html>hi</html>".getBytes(StandardCharsets.UTF_8)))
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isUnsupportedMediaType());
+
+        for (int i = 0; i < 6; i++) {
+            uploadPng(token);
+        }
+        mvc.perform(multipart("/api/v1/me/profile/photos")
+                        .file(new MockMultipartFile("file", "p.png", "image/png", TestImages.png(2, 2)))
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PHOTO_LIMIT_EXCEEDED"));
+    }
+
+    @Test
+    void deletingLastPhotoUnpublishesProfile() throws Exception {
+        String token = login(newPhone());
+        String photoId = publishWith(token, "Ольга", uniqueCity(), List.of());
+
+        mvc.perform(delete("/api/v1/me/profile/photos/" + photoId).header("Authorization", bearer(token)))
+                .andExpect(status().isNoContent());
+        mvc.perform(get("/api/v1/me/profile").header("Authorization", bearer(token)))
+                .andExpect(jsonPath("$.publicationStatus").value("DRAFT"))
+                .andExpect(jsonPath("$.photos", hasSize(0)));
+    }
+
+    // ------------------------------------------------------------------ discovery
+
+    @Test
+    void discoveryFiltersTagsInSqlBeforePagination() throws Exception {
+        String city = uniqueCity();
+        publishWith(login(newPhone()), "Анна", city, List.of("PACE_ASYNCHRONOUS", "FORMAT_WALK_FIRST"));
+        publishWith(login(newPhone()), "Борис", city, List.of("PACE_ASYNCHRONOUS"));
+        publishWith(login(newPhone()), "Вера", city, List.of("FORMAT_WALK_FIRST"));
+        String viewer = login(newPhone());
+        publishWith(viewer, "Зритель", city, List.of("PACE_ASYNCHRONOUS", "FORMAT_WALK_FIRST"));
+
+        discovery(viewer, city, "PACE_ASYNCHRONOUS", "OR", 20)
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.items[*].displayName", containsInAnyOrder("Анна", "Борис")));
+
+        discovery(viewer, city, "PACE_ASYNCHRONOUS,FORMAT_WALK_FIRST", "AND", 20)
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.items[0].displayName").value("Анна"))
+                .andExpect(jsonPath("$.items[0].accountId").doesNotExist())
+                .andExpect(jsonPath("$.items[0].photos[0].url").value(startsWith("/api/v1/media/photos/")));
+
+        // Exact totals with a small page; the viewer's own profile is excluded.
+        discovery(viewer, city.toUpperCase(), "PACE_ASYNCHRONOUS,FORMAT_WALK_FIRST", "OR", 1)
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.totalElements").value(3))
+                .andExpect(jsonPath("$.totalPages").value(3));
+    }
+
+    // ------------------------------------------------------------------ account deletion
+
+    @Test
+    void deletedAccountLosesAccessDisappearsAndPhoneCanRegisterAgain() throws Exception {
+        String city = uniqueCity();
+        String phone = newPhone();
+        String token = login(phone);
+        String oldAccountId = json(get("/api/v1/me"), token, "$.id");
+        publishWith(token, "Удаляемый", city, List.of());
+        String photoUrl = json(get("/api/v1/me/profile"), token, "$.photos[0].url");
+
+        String viewer = login(newPhone());
+        discovery(viewer, city, null, null, 20).andExpect(jsonPath("$.totalElements").value(1));
+
+        mvc.perform(delete("/api/v1/me").header("Authorization", bearer(token))).andExpect(status().isNoContent());
+
+        mvc.perform(get("/api/v1/me").header("Authorization", bearer(token))).andExpect(status().isUnauthorized());
+        discovery(viewer, city, null, null, 20).andExpect(jsonPath("$.totalElements").value(0));
+        mvc.perform(get(photoUrl)).andExpect(status().isNotFound());
+
+        Thread.sleep(1100); // resend cooldown in the test profile
+        String newToken = login(phone);
+        String newAccountId = json(get("/api/v1/me"), newToken, "$.id");
+        assertNotEquals(oldAccountId, newAccountId);
+        mvc.perform(get("/api/v1/me/profile").header("Authorization", bearer(newToken)))
+                .andExpect(jsonPath("$.displayName").value(nullValue()));
+    }
+
+    // ------------------------------------------------------------------ helpers
+
+    private String publishWith(String token, String name, String city, List<String> tags) throws Exception {
+        String tagJson = tags.stream().map(t -> "\"" + t + "\"").reduce((a, b) -> a + "," + b).orElse("");
+        putProfile(token, "{\"displayName\":\"" + name + "\",\"age\":30,\"city\":\"" + city + "\",\"tagCodes\":[" + tagJson + "]}")
+                .andExpect(status().isOk());
+        String photoId = uploadPng(token);
+        mvc.perform(post("/api/v1/me/profile/publish").header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.publicationStatus").value("PUBLISHED"));
+        return photoId;
+    }
+
+    private String uploadPng(String token) throws Exception {
+        MvcResult result = mvc.perform(multipart("/api/v1/me/profile/photos")
+                        .file(new MockMultipartFile("file", "p.png", "image/png", TestImages.png(3, 3)))
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return JsonPath.read(body(result), "$.id");
+    }
+
+    private ResultActions discovery(String token, String city, String tagCodes, String tagLogic, int limit) throws Exception {
+        var request = get("/api/v1/discovery/profiles")
+                .header("Authorization", bearer(token))
+                .queryParam("city", city)
+                .queryParam("limit", String.valueOf(limit));
+        if (tagCodes != null) {
+            request.queryParam("tagCodes", tagCodes).queryParam("tagLogic", tagLogic);
+        }
+        return mvc.perform(request).andExpect(status().isOk());
+    }
+
+    private ResultActions putProfile(String token, String json) throws Exception {
+        return mvc.perform(put("/api/v1/me/profile")
+                .header("Authorization", bearer(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .characterEncoding(StandardCharsets.UTF_8)
+                .content(json));
+    }
+
+    private String login(String phone) throws Exception {
+        MvcResult result = verify(requestOtp(phone), MOCK_CODE).andExpect(status().isOk()).andReturn();
+        return JsonPath.read(body(result), "$.token");
+    }
+
+    private String requestOtp(String phone) throws Exception {
+        MvcResult result = mvc.perform(post("/api/v1/auth/otp/request")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(phoneBody(phone)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.devMockCode").value(MOCK_CODE))
+                .andReturn();
+        return JsonPath.read(body(result), "$.challengeId");
+    }
+
+    private ResultActions verify(String challengeId, String code) throws Exception {
+        return mvc.perform(post("/api/v1/auth/otp/verify")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(verifyBody(challengeId, code)));
+    }
+
+    private String json(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request,
+                        String token, String path) throws Exception {
+        MvcResult result = mvc.perform(request.header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return JsonPath.read(body(result), path);
+    }
+
+    private static String body(MvcResult result) throws Exception {
+        return result.getResponse().getContentAsString(StandardCharsets.UTF_8);
+    }
+
+    private static String bearer(String token) {
+        return "Bearer " + token;
+    }
+
+    private static String phoneBody(String phone) {
+        return "{\"phone\":\"" + phone + "\"}";
+    }
+
+    private static String verifyBody(String challengeId, String code) {
+        return "{\"challengeId\":\"" + challengeId + "\",\"code\":\"" + code + "\"}";
+    }
+
+    private static String newPhoneDigits() {
+        return String.format("9%09d", PHONE_SEQ.incrementAndGet() % 1_000_000_000L);
+    }
+
+    private static String newPhone() {
+        return "+7" + newPhoneDigits();
+    }
+
+    private static String uniqueCity() {
+        return "Тестоград-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    private static Path createTempDir() {
+        try {
+            return Files.createTempDirectory("dating-media-test");
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+}

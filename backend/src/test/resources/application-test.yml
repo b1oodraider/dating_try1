@@ -1,0 +1,10 @@
+app:
+  auth:
+    mock-enabled: true
+    resend-cooldown: 1s
+    max-challenges-per-phone-per-hour: 100
+    max-challenges-per-ip-per-hour: 10000
+  media:
+    url-signing-secret: test-photo-url-signing-secret-0123456789
+  cors:
+    allowed-origins: http://localhost:3000

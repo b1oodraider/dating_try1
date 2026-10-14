@@ -2,6 +2,7 @@ package com.dating.auth.api;
 
 import com.dating.auth.application.AuthService;
 import com.dating.common.security.AuthenticatedUser;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -18,23 +19,23 @@ public class OtpController {
     }
 
     @PostMapping("/otp/request")
-    public ResponseEntity<AuthChallengeResponseDto> requestOtp(@Valid @RequestBody OtpRequestDto request) {
-        AuthChallengeResponseDto response = authService.requestOtp(request.phone());
-        return ResponseEntity.ok(response);
+    public ResponseEntity<AuthChallengeResponseDto> requestOtp(@Valid @RequestBody OtpRequestDto request,
+                                                               HttpServletRequest httpRequest) {
+        return ResponseEntity.ok(authService.requestOtp(request.phone(), httpRequest.getRemoteAddr()));
     }
 
+    /**
+     * The phone is taken from the challenge itself. Accepting it from the client would let anyone
+     * verify their own code and log into somebody else's account.
+     */
     @PostMapping("/otp/verify")
-    public ResponseEntity<AuthSessionResponseDto> verifyOtp(@Valid @RequestBody OtpVerifyDto request,
-                                                           @RequestParam(name = "phone") String phone) {
-        AuthSessionResponseDto response = authService.verifyOtp(request.challengeId(), request.code(), phone);
-        return ResponseEntity.ok(response);
+    public ResponseEntity<AuthSessionResponseDto> verifyOtp(@Valid @RequestBody OtpVerifyDto request) {
+        return ResponseEntity.ok(authService.verifyOtp(request.challengeId(), request.code()));
     }
 
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(@AuthenticationPrincipal AuthenticatedUser user) {
-        if (user != null) {
-            authService.logout(user.sessionId());
-        }
+        authService.logout(user.sessionId());
         return ResponseEntity.noContent().build();
     }
 }

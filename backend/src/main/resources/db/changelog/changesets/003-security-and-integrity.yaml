@@ -1,0 +1,96 @@
+databaseChangeLog:
+  # OTP verification no longer accepts a phone from the client: the masked phone travels with the challenge.
+  - changeSet:
+      id: 003-auth-challenge-phone-masked
+      author: dating-team
+      changes:
+        - addColumn:
+            tableName: auth_challenges
+            columns:
+              - column:
+                  name: phone_masked
+                  type: VARCHAR(30)
+
+  # A new profile is created empty instead of with fake defaults (age 18, Moscow).
+  - changeSet:
+      id: 003-profiles-nullable-until-filled
+      author: dating-team
+      changes:
+        - dropNotNullConstraint:
+            tableName: profiles
+            columnName: display_name
+            columnDataType: VARCHAR(50)
+        - dropNotNullConstraint:
+            tableName: profiles
+            columnName: age
+            columnDataType: INT
+        - dropNotNullConstraint:
+            tableName: profiles
+            columnName: city
+            columnDataType: VARCHAR(60)
+
+  - changeSet:
+      id: 003-indexes
+      author: dating-team
+      changes:
+        - createIndex:
+            indexName: idx_sessions_account_id
+            tableName: sessions
+            columns:
+              - column:
+                  name: account_id
+        - createIndex:
+            indexName: idx_auth_challenges_phone_created
+            tableName: auth_challenges
+            columns:
+              - column:
+                  name: phone_hash
+              - column:
+                  name: created_at
+        - createIndex:
+            indexName: idx_auth_challenges_expires_at
+            tableName: auth_challenges
+            columns:
+              - column:
+                  name: expires_at
+        - createIndex:
+            indexName: idx_profile_tags_tag_id
+            tableName: profile_communication_tags
+            columns:
+              - column:
+                  name: tag_id
+        # Discovery filters by lower(city): the old plain index on city could not be used.
+        - dropIndex:
+            indexName: idx_profiles_discovery
+            tableName: profiles
+        - sql:
+            sql: CREATE INDEX idx_profiles_discovery ON profiles (publication_status, visibility_status, lower(city))
+        - sql:
+            sql: CREATE INDEX idx_profile_photos_active ON profile_photos (profile_id, sort_order) WHERE deleted_at IS NULL
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_profile_photos_active
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_profiles_discovery
+        - createIndex:
+            indexName: idx_profiles_discovery
+            tableName: profiles
+            columns:
+              - column:
+                  name: publication_status
+              - column:
+                  name: visibility_status
+              - column:
+                  name: city
+        - dropIndex:
+            indexName: idx_profile_tags_tag_id
+            tableName: profile_communication_tags
+        - dropIndex:
+            indexName: idx_auth_challenges_expires_at
+            tableName: auth_challenges
+        - dropIndex:
+            indexName: idx_auth_challenges_phone_created
+            tableName: auth_challenges
+        - dropIndex:
+            indexName: idx_sessions_account_id
+            tableName: sessions

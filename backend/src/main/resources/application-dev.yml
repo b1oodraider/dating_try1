@@ -6,10 +6,13 @@ spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/dating}
     username: ${SPRING_DATASOURCE_USERNAME:dating_user}
-    password: ${SPRING_DATASOURCE_PASSWORD:dating_secret_password}
+    password: ${SPRING_DATASOURCE_PASSWORD:dating_dev_password}
     hikari:
       maximum-pool-size: 5
 
 app:
   auth:
-    mock-enabled: true # Mock OTP is only permitted in dev/test profile
+    # Local development only: fixed code 123456, returned as devMockCode. Refused together with 'prod'.
+    mock-enabled: true
+  media:
+    url-signing-secret: ${APP_MEDIA_URL_SIGNING_SECRET:dev-only-photo-url-signing-secret-change-me}

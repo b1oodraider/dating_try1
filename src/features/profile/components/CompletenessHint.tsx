@@ -1,30 +1,25 @@
 import React from 'react';
-import { Profile } from '../../../core/types';
+import type { MyProfile, PublishRequirement } from '../../../core/types';
 import { CheckCircle2, CircleDashed } from 'lucide-react';
 
+export const PUBLISH_REQUIREMENT_LABELS: Record<PublishRequirement, string> = {
+  displayName: 'имя или псевдоним',
+  age: 'возраст',
+  city: 'город',
+  photos: 'хотя бы одна фотография',
+};
+
+export function describePublishRequirement(field: string): string {
+  return PUBLISH_REQUIREMENT_LABELS[field as PublishRequirement] ?? field;
+}
+
 interface CompletenessHintProps {
-  profile: Profile;
+  profile: MyProfile;
 }
 
 export const CompletenessHint: React.FC<CompletenessHintProps> = ({ profile }) => {
-  const percent = profile.completenessPercent;
-
-  const tips: string[] = [];
-  if (!profile.displayName || profile.displayName.trim().length <= 1) {
-    tips.push('Укажите имя или псевдоним');
-  }
-  if (!profile.city || profile.city.trim().length === 0) {
-    tips.push('Укажите ваш город');
-  }
-  if (!profile.aboutText || profile.aboutText.trim().length < 10) {
-    tips.push('Напишите пару предложений в «О себе»');
-  }
-  if (!profile.tags || profile.tags.length < 3) {
-    tips.push('Выберите хотя бы 3 карточки комфортного общения');
-  }
-  if (!profile.photos || profile.photos.length === 0) {
-    tips.push('Загрузите хотя бы одну фотографию');
-  }
+  const percent = Math.max(0, Math.min(100, Math.round(profile.completenessPercent ?? 0)));
+  const missing = profile.missingForPublish ?? [];
 
   return (
     <div className="p-4 bg-stone-50 border border-stone-200/80 rounded-2xl space-y-2.5">
@@ -54,14 +49,19 @@ export const CompletenessHint: React.FC<CompletenessHintProps> = ({ profile }) =
         />
       </div>
 
-      {tips.length > 0 ? (
+      {missing.length > 0 ? (
+        <div className="text-[11px] text-stone-500 leading-relaxed pt-1">
+          <span className="text-stone-700 font-medium">Для публикации осталось указать:</span>{' '}
+          {missing.map(describePublishRequirement).join(', ')}.
+          <span className="block text-[10px] text-stone-400 mt-0.5">
+            * Для публикации достаточно имени, возраста, города и одной фотографии.
+          </span>
+        </div>
+      ) : percent < 100 ? (
         <div className="text-[11px] text-stone-500 leading-relaxed pt-1">
           <span className="text-stone-700 font-medium">Подсказка для знакомств:</span>{' '}
-          {tips[0]}
-          {tips.length > 1 ? ` (ещё советов: ${tips.length - 1})` : ''}.
-          <span className="block text-[10px] text-stone-400 mt-0.5">
-            * Анкета может быть опубликована в любой момент без обязательного 100% заполнения.
-          </span>
+          анкету уже можно опубликовать. Расскажите о себе и выберите карточки общения — так
+          собеседникам будет проще понять ваш стиль.
         </div>
       ) : (
         <p className="text-[11px] text-emerald-700">

@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
-import { Profile } from '../../../core/types';
+import React, { useEffect, useState } from 'react';
+import type { PublicProfile } from '../../../core/types';
 import { Modal } from '../../../shared/components/Modal';
 import { TagChip } from '../../tags/components/TagChip';
-import { MapPin, Sparkles, Clock, MessageSquare, ShieldCheck, Heart } from 'lucide-react';
+import { MapPin, Sparkles, ShieldCheck } from 'lucide-react';
 import { Button } from '../../../shared/components/Button';
 
 interface ProfileDetailModalProps {
-  profile: Profile | null;
+  profile: PublicProfile | null;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -18,14 +18,17 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
 }) => {
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
 
+  // Start from the first photo whenever another profile is opened.
+  useEffect(() => {
+    setActivePhotoIdx(0);
+  }, [profile?.id]);
+
   if (!profile) return null;
 
-  const photos = profile.photos.length > 0 ? profile.photos : [];
-  const currentPhoto = photos[activePhotoIdx] || photos[0];
-
-  const hasActiveDailyStatus =
-    profile.dailyStatus &&
-    new Date(profile.dailyStatus.expiresAt).getTime() > Date.now();
+  const photos = profile.photos ?? [];
+  const tags = profile.tags ?? [];
+  const currentPhoto = photos[activePhotoIdx] ?? photos[0];
+  const dailyStatusText = profile.dailyStatusText?.trim() || null;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} maxWidth="xl">
@@ -92,7 +95,7 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
           </div>
 
           {/* 24-hour Daily Status if active */}
-          {hasActiveDailyStatus && (
+          {dailyStatusText && (
             <div className="p-3.5 bg-amber-50/80 border border-amber-200/80 rounded-2xl flex items-start gap-2.5">
               <Sparkles className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
               <div>
@@ -100,7 +103,7 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
                   Статус на сегодня
                 </span>
                 <p className="text-xs text-amber-950 font-medium mt-0.5">
-                  «{profile.dailyStatus?.text}»
+                  «{dailyStatusText}»
                 </p>
               </div>
             </div>
@@ -121,10 +124,10 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
           {/* Communication Tags with explicit descriptions */}
           <div className="space-y-2.5">
             <h3 className="text-xs font-semibold text-zinc-900 uppercase tracking-wider">
-              Предпочтения в общении ({profile.tags.length})
+              Предпочтения в общении ({tags.length})
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {profile.tags.map((tag) => (
+              {tags.map((tag) => (
                 <div
                   key={tag.code}
                   className="p-3 bg-white border border-zinc-200/80 rounded-xl space-y-1 shadow-2xs"

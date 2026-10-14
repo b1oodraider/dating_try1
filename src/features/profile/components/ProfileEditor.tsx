@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../../core/context/AuthContext';
+import { ApiError, getErrorMessage } from '../../../core/api/client';
 import { TagChip } from '../../tags/components/TagChip';
-import { TagPicker } from '../../tags/components/TagPicker';
+import { TagPicker, MAX_PROFILE_TAGS } from '../../tags/components/TagPicker';
 import { PhotoManager } from '../../photos/components/PhotoManager';
-import { CompletenessHint } from './CompletenessHint';
+import { CompletenessHint, describePublishRequirement } from './CompletenessHint';
 import { DailyStatusEditor } from './DailyStatusEditor';
 import { Button } from '../../../shared/components/Button';
 import { Modal } from '../../../shared/components/Modal';
@@ -16,64 +17,209 @@ import {
   AlertCircle,
   FileText,
 } from 'lucide-react';
-import { DailyStatus } from '../../../core/types';
+import type { ProfileUpdate, Tag } from '../../../core/types';
+
+// Limits from the API contract (PUT /me/profile).
+const NAME_MIN = 2;
+const NAME_MAX = 50;
+const CITY_MAX = 60;
+const ABOUT_MAX = 1000;
+const AGE_MIN = 18;
+const AGE_MAX = 100;
+
+type FieldErrors = Record<string, string>;
+
+const FieldError: React.FC<{ message?: string }> = ({ message }) =>
+  message ? <p className="text-[11px] text-rose-600 mt-1">{message}</p> : null;
 
 export const ProfileEditor: React.FC = () => {
   const { profile, updateProfile, publishProfile, hideProfile, refreshProfile } = useAuth();
 
-  if (!profile) return null;
-
-  const [displayName, setDisplayName] = useState(profile.displayName || '');
-  const [age, setAge] = useState(profile.age || 20);
-  const [city, setCity] = useState(profile.city || '');
-  const [aboutText, setAboutText] = useState(profile.aboutText || '');
+  // All hooks must run before any early return (Rules of Hooks).
+  const [displayName, setDisplayName] = useState(profile?.displayName ?? '');
+  const [age, setAge] = useState(profile?.age != null ? String(profile.age) : '');
+  const [city, setCity] = useState(profile?.city ?? '');
+  const [aboutText, setAboutText] = useState(profile?.aboutText ?? '');
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [isTogglingPublication, setIsTogglingPublication] = useState(false);
+  const [isSavingTags, setIsSavingTags] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [publishMissing, setPublishMissing] = useState<string[]>([]);
+
+  // Re-sync the form whenever the server copy of these fields changes (other account, reload, save).
+  const serverDisplayName = profile?.displayName ?? '';
+  const serverAge = profile?.age != null ? String(profile.age) : '';
+  const serverCity = profile?.city ?? '';
+  const serverAbout = profile?.aboutText ?? '';
+  const profileId = profile?.id;
+  useEffect(() => {
+    setDisplayName(serverDisplayName);
+    setAge(serverAge);
+    setCity(serverCity);
+    setAboutText(serverAbout);
+    setFieldErrors({});
+    setFormError(null);
+  }, [profileId, serverDisplayName, serverAge, serverCity, serverAbout]);
+
+  // Once the server says nothing is missing, drop the stale "cannot publish" hint.
+  const missingCount = profile?.missingForPublish?.length ?? 0;
+  useEffect(() => {
+    if (missingCount === 0) setPublishMissing([]);
+  }, [missingCount]);
+
+  useEffect(() => {
+    if (!saveSuccess) return;
+    const timer = window.setTimeout(() => setSaveSuccess(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [saveSuccess]);
+
+  if (!profile) {
+    return (
+      <div className="max-w-2xl mx-auto py-16 text-center text-xs text-zinc-500">
+        Анкета не загружена.
+      </div>
+    );
+  }
+
+  const tags = profile.tags ?? [];
+  const photos = profile.photos ?? [];
+
+  const validateForm = (): { update: ProfileUpdate; errors: FieldErrors } => {
+    const errors: FieldErrors = {};
+    const update: ProfileUpdate = {};
+
+    const name = displayName.trim();
+    if (name) {
+      if (name.length < NAME_MIN || name.length > NAME_MAX) {
+        errors.displayName = `Имя должно содержать от ${NAME_MIN} до ${NAME_MAX} символов`;
+      } else {
+        update.displayName = name;
+      }
+    } else if (profile.displayName) {
+      errors.displayName = 'Имя нельзя оставить пустым';
+    }
+
+    const ageText = age.trim();
+    if (ageText) {
+      const parsed = Number(ageText);
+      if (!Number.isInteger(parsed) || parsed < AGE_MIN || parsed > AGE_MAX) {
+        errors.age = `Возраст — целое число от ${AGE_MIN} до ${AGE_MAX}`;
+      } else {
+        update.age = parsed;
+      }
+    } else if (profile.age != null) {
+      errors.age = 'Возраст нельзя оставить пустым';
+    }
+
+    const cityValue = city.trim();
+    if (cityValue) {
+      if (cityValue.length > CITY_MAX) {
+        errors.city = `Название города — не длиннее ${CITY_MAX} символов`;
+      } else {
+        update.city = cityValue;
+      }
+    } else if (profile.city) {
+      errors.city = 'Город нельзя оставить пустым';
+    }
+
+    const about = aboutText.trim();
+    if (about.length > ABOUT_MAX) {
+      errors.aboutText = `Текст «О себе» — не длиннее ${ABOUT_MAX} символов`;
+    } else {
+      update.aboutText = about; // "" clears
+    }
+
+    return { update, errors };
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setIsSaving(true);
+    setFormError(null);
+    setFieldErrors({});
     setSaveSuccess(false);
 
+    const { update, errors } = validateForm();
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setFormError('Проверьте выделенные поля');
+      return;
+    }
+
+    setIsSaving(true);
     try {
-      if (age < 18) {
-        throw new Error('Возраст должен быть не менее 18 лет');
-      }
-      await updateProfile({
-        displayName: displayName.trim(),
-        age: Number(age),
-        city: city.trim(),
-        aboutText: aboutText.trim(),
-      });
+      await updateProfile(update);
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Ошибка сохранения профиля');
+      setFormError(getErrorMessage(err, 'Ошибка сохранения профиля'));
+      if (err instanceof ApiError && err.fieldErrors) {
+        setFieldErrors(err.fieldErrors);
+      }
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleTagsChange = async (newTags: typeof profile.tags) => {
-    await updateProfile({ tags: newTags });
+  const handleTagsChange = async (newTags: Tag[]) => {
+    setActionError(null);
+    setIsSavingTags(true);
+    try {
+      await updateProfile({ tagCodes: newTags.map((t) => t.code) });
+    } catch (err: unknown) {
+      setActionError(getErrorMessage(err, 'Не удалось сохранить карточки общения'));
+    } finally {
+      setIsSavingTags(false);
+    }
   };
 
-  const handleDailyStatusSave = async (dailyStatus: DailyStatus | null) => {
-    await updateProfile({ dailyStatus });
-  };
+  const handleDailyStatusSave = (text: string) => updateProfile({ dailyStatusText: text });
 
   const handleTogglePublication = async () => {
-    if (profile.publicationStatus === 'PUBLISHED') {
-      await hideProfile();
-    } else {
-      await publishProfile();
+    setActionError(null);
+    setPublishMissing([]);
+    setIsTogglingPublication(true);
+    try {
+      if (profile.publicationStatus === 'PUBLISHED') {
+        await hideProfile();
+      } else {
+        await publishProfile();
+      }
+    } catch (err: unknown) {
+      if (err instanceof ApiError && err.code === 'PROFILE_INCOMPLETE') {
+        const missing = err.fieldErrors ? Object.keys(err.fieldErrors) : profile.missingForPublish;
+        setPublishMissing(missing.length > 0 ? missing : profile.missingForPublish);
+        setActionError(err.message || 'Анкета заполнена не полностью');
+      } else {
+        setActionError(getErrorMessage(err, 'Не удалось изменить статус публикации'));
+      }
+    } finally {
+      setIsTogglingPublication(false);
     }
   };
 
   const isPublished = profile.publicationStatus === 'PUBLISHED';
+
+  const inputClass = (field: string) =>
+    `w-full px-3.5 py-2 text-sm bg-zinc-50 border rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all ${
+      fieldErrors[field] ? 'border-rose-300' : 'border-zinc-200'
+    }`;
+
+  const actionErrorBlock = actionError && (
+    <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-start gap-2">
+      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+      <div>
+        <span>{actionError}</span>
+        {publishMissing.length > 0 && (
+          <span className="block mt-0.5">
+            Заполните: {publishMissing.map(describePublishRequirement).join(', ')}.
+          </span>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-12">
@@ -92,6 +238,7 @@ export const ProfileEditor: React.FC = () => {
             variant={isPublished ? 'outline' : 'primary'}
             size="sm"
             onClick={handleTogglePublication}
+            isLoading={isTogglingPublication}
           >
             {isPublished ? (
               <>
@@ -116,15 +263,17 @@ export const ProfileEditor: React.FC = () => {
         </div>
       </div>
 
+      {!isTagModalOpen && actionErrorBlock}
+
       {/* Completeness Hint */}
       <CompletenessHint profile={profile} />
 
       {/* Main Edit Form */}
-      <form onSubmit={handleSave} className="bg-white p-6 rounded-2xl border border-zinc-200/80 shadow-xs space-y-5">
-        {error && (
+      <form onSubmit={handleSave} noValidate className="bg-white p-6 rounded-2xl border border-zinc-200/80 shadow-xs space-y-5">
+        {formError && (
           <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
+            <span>{formError}</span>
           </div>
         )}
 
@@ -143,13 +292,14 @@ export const ProfileEditor: React.FC = () => {
             </label>
             <input
               type="text"
-              required
-              maxLength={40}
+              maxLength={NAME_MAX}
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="Как к вам обращаться"
-              className="w-full px-3.5 py-2 text-sm bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all"
+              aria-invalid={!!fieldErrors.displayName}
+              className={inputClass('displayName')}
             />
+            <FieldError message={fieldErrors.displayName} />
           </div>
 
           <div>
@@ -158,13 +308,17 @@ export const ProfileEditor: React.FC = () => {
             </label>
             <input
               type="number"
-              min={18}
-              max={100}
-              required
+              inputMode="numeric"
+              min={AGE_MIN}
+              max={AGE_MAX}
+              step={1}
               value={age}
-              onChange={(e) => setAge(Number(e.target.value))}
-              className="w-full px-3.5 py-2 text-sm bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all font-mono"
+              onChange={(e) => setAge(e.target.value)}
+              placeholder="—"
+              aria-invalid={!!fieldErrors.age}
+              className={`${inputClass('age')} font-mono`}
             />
+            <FieldError message={fieldErrors.age} />
           </div>
         </div>
 
@@ -174,13 +328,14 @@ export const ProfileEditor: React.FC = () => {
           </label>
           <input
             type="text"
-            required
-            maxLength={60}
+            maxLength={CITY_MAX}
             value={city}
             onChange={(e) => setCity(e.target.value)}
             placeholder="Москва, Санкт-Петербург, Казань..."
-            className="w-full px-3.5 py-2 text-sm bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all"
+            aria-invalid={!!fieldErrors.city}
+            className={inputClass('city')}
           />
+          <FieldError message={fieldErrors.city} />
         </div>
 
         {/* About Text */}
@@ -189,16 +344,20 @@ export const ProfileEditor: React.FC = () => {
             <label className="text-xs font-semibold text-zinc-700">
               О себе (свободный текст)
             </label>
-            <span className="text-[11px] text-zinc-400">{aboutText.length}/500</span>
+            <span className="text-[11px] text-zinc-400">{aboutText.length}/{ABOUT_MAX}</span>
           </div>
           <textarea
             rows={4}
-            maxLength={500}
+            maxLength={ABOUT_MAX}
             value={aboutText}
             onChange={(e) => setAboutText(e.target.value)}
             placeholder="Расскажите о ваших интересах, ценностях или том, что приносит радость в обычный день..."
-            className="w-full p-3.5 text-sm bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all resize-none leading-relaxed"
+            aria-invalid={!!fieldErrors.aboutText}
+            className={`w-full p-3.5 text-sm bg-zinc-50 border rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all resize-none leading-relaxed ${
+              fieldErrors.aboutText ? 'border-rose-300' : 'border-zinc-200'
+            }`}
           />
+          <FieldError message={fieldErrors.aboutText} />
           <p className="text-[11px] text-zinc-400 mt-1 flex items-center gap-1">
             <FileText className="w-3.5 h-3.5 shrink-0" />
             Текст анкеты защищён: он не участвует в машинном обучении и не индексируется поисковыми системами.
@@ -207,7 +366,9 @@ export const ProfileEditor: React.FC = () => {
 
         {/* 24-hour Daily Status */}
         <DailyStatusEditor
-          currentStatus={profile.dailyStatus}
+          key={`${profile.id}:${profile.dailyStatusText ?? ''}`}
+          statusText={profile.dailyStatusText}
+          expiresAt={profile.dailyStatusExpiresAt}
           onSave={handleDailyStatusSave}
         />
 
@@ -216,7 +377,7 @@ export const ProfileEditor: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-xs font-semibold text-zinc-900">
-                Карточки комфортного общения ({profile.tags.length}/8)
+                Карточки комфортного общения ({tags.length}/{MAX_PROFILE_TAGS})
               </h3>
               <p className="text-[11px] text-zinc-500">
                 Помогают быстро сойтись людям с похожим темпом и стилем диалога
@@ -233,17 +394,17 @@ export const ProfileEditor: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap gap-1.5 min-h-10 p-3 bg-zinc-50/70 border border-zinc-200/80 rounded-xl">
-            {profile.tags.length === 0 ? (
+            {tags.length === 0 ? (
               <span className="text-xs text-zinc-400 self-center">
                 Карточки пока не выбраны. Нажмите «Выбрать карточки», чтобы настроить свои предпочтения.
               </span>
             ) : (
-              profile.tags.map((tag) => (
+              tags.map((tag) => (
                 <TagChip
                   key={tag.code}
                   tag={tag}
                   onRemove={(t) =>
-                    handleTagsChange(profile.tags.filter((item) => item.code !== t.code))
+                    void handleTagsChange(tags.filter((item) => item.code !== t.code))
                   }
                 />
               ))
@@ -253,11 +414,7 @@ export const ProfileEditor: React.FC = () => {
 
         {/* Photos section */}
         <div className="pt-2 border-t border-zinc-100">
-          <PhotoManager
-            accountId={profile.accountId}
-            photos={profile.photos}
-            onPhotosChange={refreshProfile}
-          />
+          <PhotoManager photos={photos} onPhotosChange={refreshProfile} />
         </div>
 
         {/* Submit */}
@@ -273,13 +430,15 @@ export const ProfileEditor: React.FC = () => {
         isOpen={isTagModalOpen}
         onClose={() => setIsTagModalOpen(false)}
         title="Функциональные карточки общения"
-        description="Выберите до 8 карточек, описывающих ваш комфортный ритм и формат диалога"
+        description={`Выберите до ${MAX_PROFILE_TAGS} карточек, описывающих ваш комфортный ритм и формат диалога`}
         maxWidth="lg"
       >
+        {actionErrorBlock && <div className="mb-4">{actionErrorBlock}</div>}
         <TagPicker
-          selectedTags={profile.tags}
-          onChange={handleTagsChange}
-          maxTags={8}
+          selectedTags={tags}
+          onChange={(next) => void handleTagsChange(next)}
+          maxTags={MAX_PROFILE_TAGS}
+          disabled={isSavingTags}
         />
         <div className="mt-5 flex justify-end">
           <Button

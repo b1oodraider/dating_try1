@@ -20,12 +20,12 @@ public class ProfileController {
     }
 
     @GetMapping("/me/profile")
-    public ResponseEntity<ProfileResponseDto> getMyProfile(@AuthenticationPrincipal AuthenticatedUser user) {
-        return ResponseEntity.ok(profileService.getMyProfileDto(user.accountId()));
+    public ResponseEntity<MyProfileDto> getMyProfile(@AuthenticationPrincipal AuthenticatedUser user) {
+        return ResponseEntity.ok(profileService.getMyProfile(user.accountId()));
     }
 
     @PutMapping("/me/profile")
-    public ResponseEntity<ProfileResponseDto> updateMyProfile(
+    public ResponseEntity<MyProfileDto> updateMyProfile(
             @AuthenticationPrincipal AuthenticatedUser user,
             @Valid @RequestBody ProfileUpdateDto dto
     ) {
@@ -33,12 +33,12 @@ public class ProfileController {
     }
 
     @PostMapping("/me/profile/publish")
-    public ResponseEntity<ProfileResponseDto> publishProfile(@AuthenticationPrincipal AuthenticatedUser user) {
+    public ResponseEntity<MyProfileDto> publishProfile(@AuthenticationPrincipal AuthenticatedUser user) {
         return ResponseEntity.ok(profileService.publishProfile(user.accountId()));
     }
 
     @PostMapping("/me/profile/hide")
-    public ResponseEntity<ProfileResponseDto> hideProfile(@AuthenticationPrincipal AuthenticatedUser user) {
+    public ResponseEntity<MyProfileDto> hideProfile(@AuthenticationPrincipal AuthenticatedUser user) {
         return ResponseEntity.ok(profileService.hideProfile(user.accountId()));
     }
 

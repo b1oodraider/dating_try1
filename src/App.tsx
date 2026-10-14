@@ -6,9 +6,11 @@ import { ProfileEditor } from './features/profile/components/ProfileEditor';
 import { AboutView } from './features/about/AboutView';
 import { AuthModal } from './features/auth/components/AuthModal';
 import { AccountSettingsModal } from './features/account/components/AccountSettingsModal';
+import { Button } from './shared/components/Button';
+import { WifiOff } from 'lucide-react';
 
 const AppContent: React.FC = () => {
-  const { account, isLoading } = useAuth();
+  const { account, isLoading, loadError, reloadSession, forgetSession } = useAuth();
   const [currentTab, setCurrentTab] = useState<'discovery' | 'profile' | 'about'>('discovery');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -19,6 +21,30 @@ const AppContent: React.FC = () => {
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-zinc-900 border-t-transparent rounded-full animate-spin" />
           <p className="text-xs text-zinc-500 font-medium">Загрузка сервиса Dating...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center px-4">
+        <div className="max-w-sm w-full bg-white border border-zinc-200/80 rounded-2xl p-6 text-center space-y-4 shadow-xs">
+          <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto text-rose-600">
+            <WifiOff className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-zinc-900">Не удалось загрузить сессию</h2>
+            <p className="text-xs text-zinc-500">{loadError.message}</p>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Button type="button" variant="primary" onClick={() => void reloadSession()}>
+              Повторить
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={forgetSession}>
+              Выйти из аккаунта на этом устройстве
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -36,7 +62,9 @@ const AppContent: React.FC = () => {
 
       {/* Main Content View */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-6">
-        {currentTab === 'discovery' && <DiscoveryFeed />}
+        {currentTab === 'discovery' && (
+          <DiscoveryFeed onRequestAuth={() => setIsAuthModalOpen(true)} />
+        )}
 
         {currentTab === 'profile' && (
           account ? (

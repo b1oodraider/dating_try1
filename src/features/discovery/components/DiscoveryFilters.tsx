@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
-import { COMMUNICATION_TAGS, TAG_CATEGORIES } from '../../tags/constants/communicationTags';
+import { useTags } from '../../tags/hooks/useTags';
 import { TagChip } from '../../tags/components/TagChip';
+import type { TagLogic } from '../../../core/types';
 import { Button } from '../../../shared/components/Button';
-import { Filter, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { RotateCcw, SlidersHorizontal, AlertCircle } from 'lucide-react';
 
 interface DiscoveryFiltersProps {
   selectedTagCodes: string[];
-  tagFilterLogic: 'AND' | 'OR';
+  tagFilterLogic: TagLogic;
   selectedCity: string;
   onFilterChange: (filters: {
     selectedTagCodes: string[];
-    tagFilterLogic: 'AND' | 'OR';
+    tagFilterLogic: TagLogic;
     selectedCity: string;
   }) => void;
   onReset: () => void;
@@ -24,6 +25,7 @@ export const DiscoveryFilters: React.FC<DiscoveryFiltersProps> = ({
   onReset,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const { categories, isLoading: isTagsLoading, error: tagsError, reload: reloadTags } = useTags();
 
   const cities = ['Все города', 'Москва', 'Санкт-Петербург', 'Екатеринбург', 'Казань'];
 
@@ -41,7 +43,7 @@ export const DiscoveryFilters: React.FC<DiscoveryFiltersProps> = ({
     });
   };
 
-  const handleLogicChange = (logic: 'AND' | 'OR') => {
+  const handleLogicChange = (logic: TagLogic) => {
     onFilterChange({
       selectedTagCodes,
       tagFilterLogic: logic,
@@ -57,8 +59,6 @@ export const DiscoveryFilters: React.FC<DiscoveryFiltersProps> = ({
     });
   };
 
-  const activeFiltersCount =
-    (selectedTagCodes.length > 0 ? 1 : 0) + (selectedCity !== 'ALL' && selectedCity !== 'Все города' ? 1 : 0);
 
   return (
     <div className="bg-white rounded-2xl border border-zinc-200/80 p-4 shadow-xs space-y-3">
@@ -73,7 +73,7 @@ export const DiscoveryFilters: React.FC<DiscoveryFiltersProps> = ({
           >
             <SlidersHorizontal className="w-3.5 h-3.5 mr-1" />
             Фильтры
-            {activeFiltersCount > 0 && (
+            {selectedTagCodes.length > 0 && (
               <span className="ml-1 px-1.5 py-0.2 bg-amber-500 text-white rounded-full text-[10px] font-bold">
                 {selectedTagCodes.length}
               </span>
@@ -147,8 +147,24 @@ export const DiscoveryFilters: React.FC<DiscoveryFiltersProps> = ({
               </span>
             </div>
 
-            {TAG_CATEGORIES.map((cat) => {
-              const categoryTags = COMMUNICATION_TAGS.filter((t) => t.category === cat.id);
+            {isTagsLoading && (
+              <p className="text-xs text-zinc-400">Загрузка карточек...</p>
+            )}
+
+            {tagsError && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  {tagsError}
+                </span>
+                <Button type="button" variant="outline" size="sm" onClick={reloadTags}>
+                  Повторить
+                </Button>
+              </div>
+            )}
+
+            {categories.map((cat) => {
+              const categoryTags = cat.tags;
               return (
                 <div key={cat.id} className="mb-2.5">
                   <div className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider mb-1">

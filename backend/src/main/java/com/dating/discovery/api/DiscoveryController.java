@@ -4,11 +4,16 @@ import com.dating.common.security.AuthenticatedUser;
 import com.dating.discovery.application.DiscoveryService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Set;
-import java.util.UUID;
 
+/**
+ * Requires authentication (see SecurityConfig): profiles of a dating service must not be scraped anonymously.
+ */
 @RestController
 @RequestMapping("/api/v1/discovery")
 public class DiscoveryController {
@@ -26,13 +31,11 @@ public class DiscoveryController {
             @RequestParam(required = false) Integer minAge,
             @RequestParam(required = false) Integer maxAge,
             @RequestParam(required = false) Set<String> tagCodes,
-            @RequestParam(required = false, defaultValue = "OR") String tagLogic,
+            @RequestParam(required = false) String tagLogic,
             @RequestParam(required = false, defaultValue = "0") int page,
             @RequestParam(required = false, defaultValue = "20") int limit
     ) {
-        UUID callerAccountId = user != null ? user.accountId() : null;
-        DiscoveryQueryDto query = new DiscoveryQueryDto(city, minAge, maxAge, tagCodes, tagLogic, page, limit);
-        DiscoveryPageResponseDto result = discoveryService.searchProfiles(callerAccountId, query);
-        return ResponseEntity.ok(result);
+        DiscoveryQueryDto query = new DiscoveryQueryDto(city, minAge, maxAge, tagCodes, TagLogic.parse(tagLogic), page, limit);
+        return ResponseEntity.ok(discoveryService.searchProfiles(user.accountId(), query));
     }
 }

@@ -1,0 +1,13 @@
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+app:
+  auth:
+    mock-enabled: false
+
+logging:
+  level:
+    root: INFO
+    org.hibernate.SQL: WARN

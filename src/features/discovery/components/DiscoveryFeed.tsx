@@ -1,48 +1,135 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Profile } from '../../../core/types';
-import { api } from '../../../core/api/client';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import type { PublicProfile, TagLogic } from '../../../core/types';
+import { api, getErrorMessage, isAbortError } from '../../../core/api/client';
 import { useAuth } from '../../../core/context/AuthContext';
 import { DiscoveryFilters } from './DiscoveryFilters';
 import { ProfileFeedCard } from './ProfileFeedCard';
 import { ProfileDetailModal } from './ProfileDetailModal';
-import { Users, Frown } from 'lucide-react';
+import { Frown, LogIn, AlertCircle, Compass } from 'lucide-react';
 import { Button } from '../../../shared/components/Button';
 
-export const DiscoveryFeed: React.FC = () => {
+const PAGE_SIZE = 12;
+
+interface DiscoveryFeedProps {
+  onRequestAuth: () => void;
+}
+
+export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({ onRequestAuth }) => {
   const { account } = useAuth();
+  const accountId = account?.id ?? null;
 
-  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [profiles, setProfiles] = useState<PublicProfile[]>([]);
+  const [page, setPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalElements, setTotalElements] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedTagCodes, setSelectedTagCodes] = useState<string[]>([]);
-  const [tagFilterLogic, setTagFilterLogic] = useState<'AND' | 'OR'>('OR');
-  const [selectedCity, setSelectedCity] = useState<string>('ALL');
-  const [activeProfileModal, setActiveProfileModal] = useState<Profile | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
 
-  const loadFeed = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const result = await api.getDiscoveryProfiles(account?.id || null, {
-        selectedTagCodes,
-        tagFilterLogic,
-        city: selectedCity,
-      });
-      setProfiles(result.profiles);
-    } catch (e) {
-      console.error('Failed to load profiles', e);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [account?.id, selectedTagCodes, tagFilterLogic, selectedCity]);
+  const [selectedTagCodes, setSelectedTagCodes] = useState<string[]>([]);
+  const [tagFilterLogic, setTagFilterLogic] = useState<TagLogic>('OR');
+  const [selectedCity, setSelectedCity] = useState<string>('ALL');
+  const [activeProfileModal, setActiveProfileModal] = useState<PublicProfile | null>(null);
+
+  // Only the latest request may write to state: older ones are aborted.
+  const controllerRef = useRef<AbortController | null>(null);
+
+  const fetchPage = useCallback(
+    async (pageToLoad: number, append: boolean) => {
+      controllerRef.current?.abort();
+      const controller = new AbortController();
+      controllerRef.current = controller;
+
+      if (append) {
+        setIsLoadingMore(true);
+        setLoadMoreError(null);
+      } else {
+        setIsLoading(true);
+        setError(null);
+        setLoadMoreError(null);
+      }
+
+      try {
+        const result = await api.getDiscoveryProfiles(
+          {
+            city: selectedCity === 'ALL' ? undefined : selectedCity,
+            tagCodes: selectedTagCodes,
+            tagLogic: tagFilterLogic,
+            page: pageToLoad,
+            limit: PAGE_SIZE,
+          },
+          controller.signal
+        );
+        if (controller.signal.aborted) return;
+
+        setProfiles((prev) => {
+          if (!append) return result.items;
+          const seen = new Set(prev.map((p) => p.id));
+          return [...prev, ...result.items.filter((p) => !seen.has(p.id))];
+        });
+        setPage(result.page);
+        setTotalPages(result.totalPages);
+        setTotalElements(result.totalElements);
+      } catch (e: unknown) {
+        if (controller.signal.aborted || isAbortError(e)) return;
+        const message = getErrorMessage(e, 'Не удалось загрузить анкеты.');
+        if (append) {
+          setLoadMoreError(message);
+        } else {
+          setProfiles([]);
+          setError(message);
+        }
+      } finally {
+        if (controllerRef.current === controller) {
+          setIsLoading(false);
+          setIsLoadingMore(false);
+        }
+      }
+    },
+    [selectedCity, selectedTagCodes, tagFilterLogic]
+  );
 
   useEffect(() => {
-    loadFeed();
-  }, [loadFeed]);
+    if (!accountId) {
+      controllerRef.current?.abort();
+      setProfiles([]);
+      setTotalElements(0);
+      setTotalPages(0);
+      setIsLoading(false);
+      return;
+    }
+    void fetchPage(0, false);
+    return () => {
+      controllerRef.current?.abort();
+    };
+  }, [accountId, fetchPage]);
 
   const handleResetFilters = () => {
     setSelectedTagCodes([]);
     setSelectedCity('ALL');
     setTagFilterLogic('OR');
   };
+
+  const hasMore = page + 1 < totalPages;
+
+  if (!accountId) {
+    return (
+      <div className="max-w-md mx-auto text-center py-16 space-y-4">
+        <div className="w-12 h-12 bg-zinc-200/80 rounded-2xl flex items-center justify-center mx-auto text-zinc-600">
+          <Compass className="w-6 h-6" />
+        </div>
+        <h2 className="text-lg font-bold text-zinc-900">Поиск анкет доступен после входа</h2>
+        <p className="text-xs text-zinc-500">
+          Анкеты видят только участники закрытого тестирования. Войдите по номеру телефона, чтобы
+          смотреть профили и фильтровать их по карточкам общения.
+        </p>
+        <Button type="button" variant="primary" onClick={onRequestAuth}>
+          <LogIn className="w-4 h-4 mr-1" /> Войти по номеру телефона
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5 max-w-5xl mx-auto pb-12">
@@ -56,7 +143,7 @@ export const DiscoveryFeed: React.FC = () => {
             </p>
           </div>
           <div className="text-xs text-zinc-400 self-start sm:self-auto font-mono">
-            Найдено: <strong className="text-zinc-800">{profiles.length}</strong> анкет
+            Найдено: <strong className="text-zinc-800">{totalElements}</strong> анкет
           </div>
         </div>
 
@@ -73,7 +160,7 @@ export const DiscoveryFeed: React.FC = () => {
         />
       </div>
 
-      {/* Grid or Empty/Loading State */}
+      {/* Grid or Empty/Loading/Error State */}
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {[1, 2, 3, 4, 5, 6].map((idx) => (
@@ -90,6 +177,19 @@ export const DiscoveryFeed: React.FC = () => {
               </div>
             </div>
           ))}
+        </div>
+      ) : error ? (
+        <div className="p-12 bg-white rounded-2xl border border-zinc-200/80 text-center space-y-3">
+          <div className="w-12 h-12 bg-rose-50 rounded-full flex items-center justify-center mx-auto text-rose-500">
+            <AlertCircle className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-semibold text-zinc-900">Не удалось загрузить анкеты</h3>
+          <p className="text-xs text-zinc-500 max-w-sm mx-auto">{error}</p>
+          <div className="pt-2">
+            <Button variant="outline" size="sm" onClick={() => void fetchPage(0, false)}>
+              Повторить
+            </Button>
+          </div>
         </div>
       ) : profiles.length === 0 ? (
         <div className="p-12 bg-white rounded-2xl border border-zinc-200/80 text-center space-y-3">
@@ -109,15 +209,36 @@ export const DiscoveryFeed: React.FC = () => {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {profiles.map((profile) => (
-            <ProfileFeedCard
-              key={profile.id}
-              profile={profile}
-              onOpenDetails={(p) => setActiveProfileModal(p)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {profiles.map((profile) => (
+              <ProfileFeedCard
+                key={profile.id}
+                profile={profile}
+                onOpenDetails={(p) => setActiveProfileModal(p)}
+              />
+            ))}
+          </div>
+
+          {(hasMore || loadMoreError) && (
+            <div className="flex flex-col items-center gap-2 pt-2">
+              {loadMoreError && (
+                <p className="text-xs text-rose-600 flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  {loadMoreError}
+                </p>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void fetchPage(page + 1, true)}
+                isLoading={isLoadingMore}
+              >
+                {loadMoreError ? 'Повторить' : 'Показать ещё'}
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
       {/* Profile Detail Modal */}
