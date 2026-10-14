@@ -28,6 +28,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -327,7 +329,94 @@ class ApiIntegrationTest {
                 .andExpect(jsonPath("$.displayName").value(nullValue()));
     }
 
+    // ------------------------------------------------------------------ exclusion words
+
+    @Test
+    void exclusionWordsAreNormalizedAndValidated() throws Exception {
+        String token = login(newPhone());
+
+        putWords(token, "[\"Курю\", \"курю\", \" Кальян \"]")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.words", contains("курю", "кальян")))
+                .andExpect(jsonPath("$.maxWords").value(20));
+
+        putWords(token, "[\"a\"]").andExpect(status().isBadRequest()).andExpect(jsonPath("$.fieldErrors.words").exists());
+        putWords(token, "[\"два слова\"]").andExpect(status().isBadRequest());
+        putWords(token, "[\"кальян|курю\"]").andExpect(status().isBadRequest());
+        String tooMany = IntStream.rangeClosed(0, 20).mapToObj(i -> "\"w" + i + "\"").collect(Collectors.joining(","));
+        putWords(token, "[" + tooMany + "]").andExpect(status().isBadRequest());
+
+        // Failed updates do not touch the stored list.
+        mvc.perform(get("/api/v1/me/exclusion-words").header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.words", contains("курю", "кальян")));
+    }
+
+    @Test
+    void exclusionWordsHideProfilesInAnyWordFormBeforePagination() throws Exception {
+        String city = uniqueCity();
+        String smoker = login(newPhone());
+        publishWith(smoker, "Курильщик", city, List.of());
+        putProfile(smoker, "{\"aboutText\":\"Иногда курю кальян по выходным\"}").andExpect(status().isOk());
+
+        String hiker = login(newPhone());
+        publishWith(hiker, "Турист", city, List.of());
+        putProfile(hiker, "{\"aboutText\":\"Люблю горы и долгие прогулки\"}").andExpect(status().isOk());
+
+        String withStatus = login(newPhone());
+        publishWith(withStatus, "Статус", city, List.of());
+        putProfile(withStatus, "{\"dailyStatusText\":\"Сегодня курит весь офис\"}").andExpect(status().isOk());
+
+        String withExpiredStatus = login(newPhone());
+        publishWith(withExpiredStatus, "Прошлое", city, List.of());
+        putProfile(withExpiredStatus, "{\"dailyStatusText\":\"Курю на балконе\"}").andExpect(status().isOk());
+        String expiredProfileId = json(get("/api/v1/me/profile"), withExpiredStatus, "$.id");
+        jdbc.update("update profiles set daily_status_expires_at = now() - interval '1 hour' where id = ?",
+                UUID.fromString(expiredProfileId));
+
+        String viewer = login(newPhone());
+        discovery(viewer, city, null, null, 20).andExpect(jsonPath("$.totalElements").value(4));
+
+        putWords(viewer, "[\"курить\"]").andExpect(status().isOk());
+
+        // "курить" hides "курю" (about) and "курит" (active status); an expired status no longer counts.
+        discovery(viewer, city, null, null, 20)
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.items[*].displayName", containsInAnyOrder("Турист", "Прошлое")));
+        discovery(viewer, city, null, null, 1)
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.totalPages").value(2));
+
+        // The filter is private to the viewer: others still see everyone.
+        discovery(login(newPhone()), city, null, null, 20).andExpect(jsonPath("$.totalElements").value(4));
+
+        putWords(viewer, "[]").andExpect(status().isOk());
+        discovery(viewer, city, null, null, 20).andExpect(jsonPath("$.totalElements").value(4));
+    }
+
+    @Test
+    void deletingAccountRemovesExclusionWords() throws Exception {
+        String token = login(newPhone());
+        String accountId = json(get("/api/v1/me"), token, "$.id");
+        putWords(token, "[\"курю\"]").andExpect(status().isOk());
+
+        mvc.perform(delete("/api/v1/me").header("Authorization", bearer(token))).andExpect(status().isNoContent());
+
+        Integer left = jdbc.queryForObject("select count(*) from discovery_exclusion_words where account_id = ?",
+                Integer.class, UUID.fromString(accountId));
+        assertEquals(0, left);
+    }
+
     // ------------------------------------------------------------------ helpers
+
+    private ResultActions putWords(String token, String wordsJson) throws Exception {
+        return mvc.perform(put("/api/v1/me/exclusion-words")
+                .header("Authorization", bearer(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .characterEncoding(StandardCharsets.UTF_8)
+                .content("{\"words\":" + wordsJson + "}"));
+    }
 
     private String publishWith(String token, String name, String city, List<String> tags) throws Exception {
         String tagJson = tags.stream().map(t -> "\"" + t + "\"").reduce((a, b) -> a + "," + b).orElse("");

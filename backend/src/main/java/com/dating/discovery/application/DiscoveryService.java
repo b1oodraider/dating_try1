@@ -34,10 +34,13 @@ public class DiscoveryService {
 
     private final ProfileRepository profileRepository;
     private final ProfilePhotoQuery photoQuery;
+    private final ExclusionWordsService exclusionWords;
 
-    public DiscoveryService(ProfileRepository profileRepository, ProfilePhotoQuery photoQuery) {
+    public DiscoveryService(ProfileRepository profileRepository, ProfilePhotoQuery photoQuery,
+                            ExclusionWordsService exclusionWords) {
         this.profileRepository = profileRepository;
         this.photoQuery = photoQuery;
+        this.exclusionWords = exclusionWords;
     }
 
     /**
@@ -63,6 +66,10 @@ public class DiscoveryService {
         }
         if (!query.tagCodes().isEmpty()) {
             spec = spec.and(hasTags(query.tagCodes(), query.tagLogic()));
+        }
+        List<String> excluded = exclusionWords.wordsOf(callerAccountId);
+        if (!excluded.isEmpty()) {
+            spec = spec.and(mentionsNone(ExclusionWordsService.toTsQuery(excluded)));
         }
 
         Page<Profile> page = profileRepository.findAll(spec, pageRequest);
@@ -104,6 +111,15 @@ public class DiscoveryService {
     private static Specification<Profile> cityEquals(String city) {
         String normalized = city.toLowerCase(Locale.ROOT);
         return (root, q, cb) -> cb.equal(cb.lower(root.get("city")), normalized);
+    }
+
+    /**
+     * Hard filter by the caller's exclusion words: PostgreSQL full-text search with Russian stemming
+     * over "about" (precomputed column) and the active daily status. See migration 004.
+     */
+    private static Specification<Profile> mentionsNone(String tsQuery) {
+        return (root, q, cb) -> cb.isFalse(cb.function("profile_has_excluded_words", Boolean.class,
+                root.get("id"), cb.literal(tsQuery)));
     }
 
     private static Specification<Profile> hasTags(Set<String> codes, TagLogic logic) {

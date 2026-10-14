@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/auth.dart';
 import '../models/discovery_page.dart';
+import '../models/exclusion_words.dart';
 import '../models/tag.dart';
 import 'api_config.dart';
 import 'api_exception.dart';
@@ -125,6 +126,26 @@ class DatingApiClient {
       },
     );
     return DiscoveryPage.fromJson(_expectMap(json));
+  }
+
+  // ----------------------------------------------------- Exclusion words
+
+  /// Requires auth. The caller's private list of feed exclusion words.
+  Future<ExclusionWords> getExclusionWords() async {
+    final json = await _send('GET', '/me/exclusion-words');
+    return ExclusionWords.fromJson(_expectMap(json));
+  }
+
+  /// Requires auth. Replaces the whole list (an empty list disables the
+  /// filter). Returns the list as normalized by the server; on validation
+  /// failure throws [ApiException] with `fieldErrors['words']`.
+  Future<ExclusionWords> updateExclusionWords(List<String> words) async {
+    final json = await _send(
+      'PUT',
+      '/me/exclusion-words',
+      body: {'words': List<String>.of(words)},
+    );
+    return ExclusionWords.fromJson(_expectMap(json));
   }
 
   // ------------------------------------------------------------ Internals

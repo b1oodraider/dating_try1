@@ -34,6 +34,9 @@ const PHOTO_URL_TTL_S = 60 * 60;
 const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 const PHOTO_MAX_COUNT = 6;
 const MAX_TAGS = 10;
+const MAX_EXCLUSION_WORDS = 20;
+const EXCLUSION_WORD_MIN_LENGTH = 2;
+const EXCLUSION_WORD_MAX_LENGTH = 30;
 const CLEANUP_INTERVAL_MS = 60 * 1000;
 
 /** Per-process secrets: signatures and hashes become invalid after a restart (as does all data). */
@@ -154,6 +157,7 @@ const challenges = new Map<string, ChallengeRecord>(); // challengeId -> challen
 const profiles = new Map<string, ProfileRecord>(); // accountId -> profile
 const photos = new Map<string, PhotoRecord>(); // photoId -> photo
 const otpRequests = new Map<string, number[]>(); // phoneHash -> request timestamps (ms)
+const exclusionWords = new Map<string, string[]>(); // accountId -> normalized words (private)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -722,6 +726,82 @@ function validateProfileUpdate(body: unknown): ProfilePatch {
 }
 
 // ---------------------------------------------------------------------------
+// Exclusion words: validation + crude Russian stemming
+// ---------------------------------------------------------------------------
+
+const EXCLUSION_WORD_RE = /^[\p{L}\p{N}]+$/u;
+
+/** PUT /me/exclusion-words body -> normalized list (trim, lowercase, dedupe keeping order). */
+function validateExclusionWords(body: unknown): string[] {
+  const raw = isPlainObject(body) ? body.words : undefined;
+  if (!Array.isArray(raw) || !raw.every((w): w is string => typeof w === 'string')) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'Проверьте список слов-исключений', {
+      words: 'Передайте список слов (массив строк)',
+    });
+  }
+  const words: string[] = [];
+  for (const item of raw) {
+    const word = item.normalize('NFC').trim().toLowerCase();
+    const lengthError = `«${word}»: от ${EXCLUSION_WORD_MIN_LENGTH} до ${EXCLUSION_WORD_MAX_LENGTH} символов`;
+    let error: string | null = null;
+    if (word === '') {
+      error = lengthError;
+    } else if (/\s/.test(word)) {
+      error = `«${word}»: только одно слово, без пробелов`;
+    } else if (!EXCLUSION_WORD_RE.test(word)) {
+      error = `«${word}»: допустимы только буквы и цифры`;
+    } else if (word.length < EXCLUSION_WORD_MIN_LENGTH || word.length > EXCLUSION_WORD_MAX_LENGTH) {
+      error = lengthError;
+    }
+    if (error) {
+      throw new HttpError(400, 'VALIDATION_ERROR', 'Проверьте список слов-исключений', { words: error });
+    }
+    if (!words.includes(word)) words.push(word);
+  }
+  if (words.length > MAX_EXCLUSION_WORDS) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'Проверьте список слов-исключений', {
+      words: `Можно добавить не больше ${MAX_EXCLUSION_WORDS} слов`,
+    });
+  }
+  return words;
+}
+
+/**
+ * MOCK ONLY. The real backend matches with PostgreSQL full-text search (Russian snowball stemmer).
+ * Here: lowercase, ё -> е, then strip a common ending (longest first) while the stem stays >= 3 chars,
+ * at most two passes ("курить" -> "кури" -> "кур", "курю" -> "кур", "курит" -> "кур").
+ */
+const RU_ENDINGS = [
+  'ешь', 'ете', 'ите',
+  'ая', 'яя', 'ое', 'ее', 'ой', 'ий', 'ый', 'ую', 'юю', 'ть', 'ти', 'ет', 'ем', 'ют', 'ут', 'ит', 'им', 'ят', 'ат',
+  'ю', 'у', 'а', 'я', 'о', 'е', 'ы', 'и', 'ь',
+].sort((a, b) => b.length - a.length);
+
+function crudeStem(word: string): string {
+  let stem = word.toLowerCase().replace(/ё/g, 'е');
+  for (let pass = 0; pass < 2; pass++) {
+    const ending = RU_ENDINGS.find((e) => stem.endsWith(e) && stem.length - e.length >= 3);
+    if (!ending) break;
+    stem = stem.slice(0, -ending.length);
+  }
+  return stem;
+}
+
+function textStems(text: string | null): Set<string> {
+  if (!text) return new Set();
+  return new Set(text.split(/[^\p{L}\p{N}]+/u).filter(Boolean).map(crudeStem));
+}
+
+/** True when aboutText or the active daily status contains any excluded word (stem equality). */
+function matchesExclusion(p: ProfileRecord, wordStems: string[]): boolean {
+  if (wordStems.length === 0) return false;
+  expireDailyStatus(p);
+  const stems = textStems(p.aboutText);
+  for (const s of textStems(p.dailyStatusText)) stems.add(s);
+  return wordStems.some((w) => stems.has(w));
+}
+
+// ---------------------------------------------------------------------------
 // OTP rate limiting
 // ---------------------------------------------------------------------------
 
@@ -894,11 +974,27 @@ api.route('/me')
   .delete(auth, route((_req, res) => {
     const { accountId } = authOf(res);
     profiles.delete(accountId);
+    exclusionWords.delete(accountId);
     for (const [id, photo] of photos) if (photo.accountId === accountId) photos.delete(id);
     for (const [hash, s] of sessions) if (s.accountId === accountId) sessions.delete(hash);
     // Removing the account frees the phone: the next login creates a fresh account.
     accounts.delete(accountId);
     res.status(204).end();
+  }))
+  .all(methodNotAllowed);
+
+// --- EXCLUSION WORDS (private; never exposed in any public DTO) ---
+
+api.route('/me/exclusion-words')
+  .get(auth, route((_req, res) => {
+    res.json({ words: exclusionWords.get(authOf(res).accountId) ?? [], maxWords: MAX_EXCLUSION_WORDS });
+  }))
+  .put(auth, route((req, res) => {
+    const { accountId } = authOf(res);
+    const words = validateExclusionWords(req.body);
+    if (words.length === 0) exclusionWords.delete(accountId);
+    else exclusionWords.set(accountId, words);
+    res.json({ words, maxWords: MAX_EXCLUSION_WORDS });
   }))
   .all(methodNotAllowed);
 
@@ -1090,7 +1186,9 @@ api.route('/discovery/profiles').get(auth, route((req, res) => {
       ? [...new Set(q.tagCodes.split(',').map((c) => c.trim()).filter(Boolean))]
       : [];
 
-  // All filters are applied BEFORE pagination, so totals are exact.
+  const excludedStems = (exclusionWords.get(accountId) ?? []).map(crudeStem);
+
+  // All filters (including the caller's exclusion words) are applied BEFORE pagination, so totals are exact.
   const matched = [...profiles.values()]
     .filter((p) => {
       if (p.accountId === accountId || p.publicationStatus !== 'PUBLISHED') return false;
@@ -1102,6 +1200,7 @@ api.route('/discovery/profiles').get(auth, route((req, res) => {
         const has = (c: string) => p.tagCodes.includes(c);
         if (tagLogic === 'AND' ? !tagCodes.every(has) : !tagCodes.some(has)) return false;
       }
+      if (matchesExclusion(p, excludedStems)) return false;
       return true;
     })
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));

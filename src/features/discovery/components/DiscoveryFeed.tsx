@@ -3,6 +3,7 @@ import type { PublicProfile, TagLogic } from '../../../core/types';
 import { api, getErrorMessage, isAbortError } from '../../../core/api/client';
 import { useAuth } from '../../../core/context/AuthContext';
 import { DiscoveryFilters } from './DiscoveryFilters';
+import { ExclusionWordsEditor } from './ExclusionWordsEditor';
 import { ProfileFeedCard } from './ProfileFeedCard';
 import { ProfileDetailModal } from './ProfileDetailModal';
 import { Frown, LogIn, AlertCircle, Compass } from 'lucide-react';
@@ -31,6 +32,8 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({ onRequestAuth }) =
   const [tagFilterLogic, setTagFilterLogic] = useState<TagLogic>('OR');
   const [selectedCity, setSelectedCity] = useState<string>('ALL');
   const [activeProfileModal, setActiveProfileModal] = useState<PublicProfile | null>(null);
+  /** Saved exclusion words count: only used to explain an empty feed. */
+  const [exclusionWordCount, setExclusionWordCount] = useState(0);
 
   // Only the latest request may write to state: older ones are aborted.
   const controllerRef = useRef<AbortController | null>(null);
@@ -158,6 +161,16 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({ onRequestAuth }) =
           }}
           onReset={handleResetFilters}
         />
+
+        <ExclusionWordsEditor
+          key={accountId}
+          onLoaded={(words) => setExclusionWordCount(words.length)}
+          onSaved={(words) => {
+            setExclusionWordCount(words.length);
+            // The server applies the words before pagination: start the feed over from page 0.
+            void fetchPage(0, false);
+          }}
+        />
       </div>
 
       {/* Grid or Empty/Loading/Error State */}
@@ -201,6 +214,7 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({ onRequestAuth }) =
           </h3>
           <p className="text-xs text-zinc-500 max-w-sm mx-auto">
             Попробуйте переключить логику фильтра на «Любая (ИЛИ)» или сбросить фильтры по карточкам и городу.
+            {exclusionWordCount > 0 && ' Часть анкет также скрыта вашими словами-исключениями.'}
           </p>
           <div className="pt-2">
             <Button variant="outline" size="sm" onClick={handleResetFilters}>

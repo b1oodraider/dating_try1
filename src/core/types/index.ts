@@ -111,6 +111,16 @@ export interface ProfileUpdate {
   dailyStatusText?: string;
 }
 
+/**
+ * GET/PUT /me/exclusion-words. Private to the caller: discovery hides every profile whose aboutText or
+ * active dailyStatusText contains any of the words in any grammatical form (server-side).
+ */
+export interface ExclusionWords {
+  /** Normalized by the server: trimmed, lowercase, deduplicated, original order kept. */
+  words: string[];
+  maxWords: number;
+}
+
 /** Error body returned by every failing API call. */
 export interface ApiErrorBody {
   code: string;

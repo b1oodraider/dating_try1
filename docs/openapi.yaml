@@ -244,6 +244,45 @@ paths:
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /me/exclusion-words:
+    get:
+      summary: Мои слова-исключения
+      description: Приватный список; анкеты, где в «о себе» или активном статусе дня встречается любое из слов (в любой словоформе), скрываются из моей ленты.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExclusionWords' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      summary: Заменить список слов-исключений
+      description: Сервер обрезает пробелы, приводит к нижнему регистру и убирает дубликаты. Пустой список отключает фильтр.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [words]
+              properties:
+                words:
+                  type: array
+                  maxItems: 20
+                  items: { type: string, minLength: 2, maxLength: 30, pattern: '^[\p{L}\p{N}]+$' }
+      responses:
+        '200':
+          description: Сохранено
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExclusionWords' }
+        '400':
+          description: VALIDATION_ERROR (fieldErrors.words)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /tags:
     get:
       summary: Справочник карточек общения
@@ -381,6 +420,12 @@ components:
         aboutText: { type: string, maxLength: 1000, description: Пустая строка очищает }
         tagCodes: { type: array, maxItems: 10, items: { type: string } }
         dailyStatusText: { type: string, maxLength: 200, description: Пустая строка очищает; иначе действует 24 часа }
+
+    ExclusionWords:
+      type: object
+      properties:
+        words: { type: array, items: { type: string } }
+        maxWords: { type: integer, example: 20 }
 
     DiscoveryPage:
       type: object

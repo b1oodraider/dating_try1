@@ -64,4 +64,16 @@ GET    /media/photos/{photoId}?exp&sig  (public, signature-checked) binary image
 GET /discovery/profiles?city=&minAge=&maxAge=&tagCodes=A,B&tagLogic=AND|OR&page=0&limit=20
   limit 1..50 (default 20), page >=0. Excludes caller's own profile. Only PUBLISHED profiles of ACTIVE accounts.
   Tag filter applied in DB before pagination (totals are exact).
+  Caller's exclusion words (below) are applied automatically, also before pagination.
   200 { items: PublicProfile[], page, limit, totalElements, totalPages }
+
+## Exclusion words (auth) — private hard filter for the caller's feed, never shown to anyone else
+GET /me/exclusion-words      200 { words: string[], maxWords: 20 }
+PUT /me/exclusion-words      body { words: string[] }  → 200 { words: string[], maxWords: 20 }
+  Replaces the whole list. Server normalizes: trim, lowercase, drop duplicates, keep order.
+  Each word: 2..30 chars, letters and digits only (one word, no spaces/punctuation). At most 20 words.
+  Errors: 400 VALIDATION_ERROR with fieldErrors.words.
+  Effect: discovery hides every profile whose aboutText or active (non-expired) dailyStatusText
+  contains any of the words in any grammatical form (PostgreSQL full-text search, Russian stemming:
+  "курю" also hides "курить", "курит"). displayName, city and tags are NOT matched.
+  An empty list disables the filter.

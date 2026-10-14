@@ -5,6 +5,7 @@ import type {
   AuthToken,
   DiscoveryPage,
   DiscoveryQuery,
+  ExclusionWords,
   MyProfile,
   Photo,
   ProfileUpdate,
@@ -361,5 +362,15 @@ export const api = {
     params.set('page', String(query.page ?? 0));
     params.set('limit', String(query.limit ?? 20));
     return request<DiscoveryPage>(`/discovery/profiles?${params.toString()}`, { signal });
+  },
+
+  // --- EXCLUSION WORDS (private discovery filter) ---
+  getExclusionWords(signal?: AbortSignal): Promise<ExclusionWords> {
+    return request<ExclusionWords>('/me/exclusion-words', { signal });
+  },
+
+  /** Replaces the whole list. 400 VALIDATION_ERROR → ApiError.fieldErrors.words. */
+  updateExclusionWords(words: string[]): Promise<ExclusionWords> {
+    return request<ExclusionWords>('/me/exclusion-words', { method: 'PUT', body: { words } });
   },
 };

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/models/public_profile.dart';
 import '../auth/session_controller.dart';
+import '../exclusion_words/exclusion_words_screen.dart';
 import 'profile_card.dart';
 
 /// Feed of published profiles with pull-to-refresh and load-more paging.
@@ -127,6 +128,30 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     if (_scrollController.position.extentAfter < 600) _loadMore();
   }
 
+  Future<void> _openExclusionWords() async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => ExclusionWordsScreen(session: widget.session),
+      ),
+    );
+    if (!mounted) return;
+    if (saved != true) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Слова-исключения сохранены')),
+    );
+    // The filter changed: start the feed over from the first page.
+    setState(() {
+      _items.clear();
+      _page = 0;
+      _hasMore = false;
+      _loading = true;
+      _error = null;
+      _loadingMore = false;
+      _loadMoreError = null;
+    });
+    await _loadFirstPage();
+  }
+
   Future<void> _confirmLogout() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -154,6 +179,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       appBar: AppBar(
         title: const Text('Анкеты'),
         actions: [
+          IconButton(
+            tooltip: 'Слова-исключения',
+            icon: const Icon(Icons.block),
+            onPressed: _openExclusionWords,
+          ),
           IconButton(
             tooltip: 'Выйти',
             icon: const Icon(Icons.logout),
