@@ -18,8 +18,8 @@ class SessionController extends ChangeNotifier {
   final DatingApiClient api;
   final TokenStorage _storage;
 
-  /// Saved discovery filters (per account); wiped on logout and account
-  /// deletion.
+  /// Saved discovery filters (per account); kept on logout so signing in
+  /// again restores them, wiped on account deletion.
   final DiscoveryFiltersStore filtersStore;
 
   bool _isAuthenticated = false;
@@ -57,7 +57,6 @@ class SessionController extends ChangeNotifier {
   /// server on a best-effort basis.
   Future<void> signOut() async {
     final token = api.token;
-    await filtersStore.clearAll();
     await _clearLocal();
     if (token == null) return;
     try {

@@ -138,14 +138,14 @@ void main() {
   });
 
   group('session', () {
-    test('signOut clears the saved filters', () async {
+    test('signOut keeps the saved filters for the next sign-in', () async {
       final requests = <http.Request>[];
       final session = _session(requests, (_) => _noContent());
       await session.filtersStore.save('acc-1', _full);
 
       await session.signOut();
 
-      expect((await session.filtersStore.load('acc-1')).isEmpty, isTrue);
+      expect((await session.filtersStore.load('acc-1')).isEmpty, isFalse);
       expect(requests.single.url.path, '/api/v1/auth/logout');
       expect(session.api.token, isNull);
     });
