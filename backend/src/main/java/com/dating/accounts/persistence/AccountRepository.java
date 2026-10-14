@@ -1,12 +1,14 @@
 package com.dating.accounts.persistence;
 
 import com.dating.accounts.domain.Account;
+import com.dating.accounts.domain.AccountStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -14,6 +16,8 @@ import java.util.UUID;
 public interface AccountRepository extends JpaRepository<Account, UUID> {
 
     Optional<Account> findByPhoneHash(String phoneHash);
+
+    List<Account> findAllByPhoneHashStartingWithAndStatusOrderByCreatedAtAsc(String prefix, AccountStatus status);
 
     /**
      * Race-safe "create if absent": two concurrent first logins with the same phone

@@ -1,8 +1,10 @@
 package com.dating;
 
+import com.dating.support.TestImages;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -128,6 +130,63 @@ class TestingApiIntegrationTest extends IntegrationTestBase {
 
         mvc.perform(delete("/api/v1/me/cosmetics/equipped/PHOTO_FRAME").header("Authorization", bearer(owner)))
                 .andExpect(jsonPath("$.equipped.PHOTO_FRAME").doesNotExist());
+    }
+
+    @Test
+    void seedProfilesAreCreatedWithPhotosPremiumAndCosmeticsAndCanBeDeleted() throws Exception {
+        String city = uniqueCity();
+        String tester = testLogin("+78000000006");
+        testing(login(newPhone()), get("/api/v1/testing/profiles"), null, 403)
+                .andExpect(jsonPath("$.code").value("TEST_ACCOUNT_REQUIRED"));
+
+        String seedJson = "{\"profile\": {\"displayName\": \"Сид\", \"age\": 25, \"city\": \"" + city + "\","
+                + " \"aboutText\": \"Люблю горы\", \"heightCm\": 170, \"goalCodes\": [\"DATING\"]},"
+                + " \"premiumDays\": 30, \"cosmetics\": [\"FRAME_STUB_GOLD\", \"STATUS_STUB_BOOKWORM\", \"STICKERS_STUB_CATS\"]}";
+        MvcResult created = testing(tester, post("/api/v1/testing/profiles"), seedJson, 201)
+                .andExpect(jsonPath("$.profile.publicationStatus").value("DRAFT"))
+                .andExpect(jsonPath("$.profile.heightCm").value(170))
+                .andExpect(jsonPath("$.profile.premium").value(true))
+                .andExpect(jsonPath("$.profile.decorations.PHOTO_FRAME.code").value("FRAME_STUB_GOLD"))
+                .andExpect(jsonPath("$.profile.decorations.PROFILE_STATUS.code").value("STATUS_STUB_BOOKWORM"))
+                .andReturn();
+        String seedId = JsonPath.read(body(created), "$.accountId");
+        String seedPath = "/api/v1/testing/profiles/" + seedId;
+
+        testing(tester, post(seedPath + "/publish"), null, 400)
+                .andExpect(jsonPath("$.code").value("PROFILE_INCOMPLETE"));
+        mvc.perform(multipart(seedPath + "/photos")
+                        .file(new MockMultipartFile("file", "p.png", "image/png", TestImages.png(3, 3)))
+                        .header("Authorization", bearer(tester)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isPrimary").value(true));
+        testing(tester, post(seedPath + "/publish"), null)
+                .andExpect(jsonPath("$.profile.publicationStatus").value("PUBLISHED"));
+        testing(tester, put(seedPath), "{\"aboutText\": \"Люблю море\"}")
+                .andExpect(jsonPath("$.profile.aboutText").value("Люблю море"));
+
+        discovery(tester, city, null, null, 20)
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.items[0].displayName").value("Сид"))
+                .andExpect(jsonPath("$.items[0].premium").value(true));
+        discovery(login(newPhone()), city, null, null, 20).andExpect(jsonPath("$.totalElements").value(0));
+        testing(tester, get("/api/v1/testing/profiles"), null)
+                .andExpect(jsonPath("$[*].accountId", hasItem(seedId)));
+
+        testing(tester, post("/api/v1/testing/profiles"), "{\"profile\": {\"age\": 10}}", 400);
+        testing(tester, post("/api/v1/testing/profiles"), "{\"profile\": {}, \"cosmetics\": [\"NOPE\"]}", 404);
+        // Only seed accounts can be managed here, not the tester's own (or any real) account.
+        String testerId = json(get("/api/v1/me"), tester, "$.id");
+        testing(tester, delete("/api/v1/testing/profiles/" + testerId), null, 404)
+                .andExpect(jsonPath("$.code").value("SEED_PROFILE_NOT_FOUND"));
+
+        testing(tester, delete(seedPath), null, 204);
+        testing(tester, delete(seedPath), null, 404);
+        discovery(tester, city, null, null, 20).andExpect(jsonPath("$.totalElements").value(0));
+
+        testing(tester, post("/api/v1/testing/profiles"), "{\"profile\": {\"displayName\": \"Ещё\"}}", 201);
+        testing(tester, delete("/api/v1/testing/profiles"), null)
+                .andExpect(jsonPath("$.deleted", greaterThanOrEqualTo(1)));
+        testing(tester, get("/api/v1/testing/profiles"), null).andExpect(jsonPath("$", hasSize(0)));
     }
 
     // ------------------------------------------------------------------ helpers

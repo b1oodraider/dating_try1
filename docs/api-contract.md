@@ -157,3 +157,19 @@ Saved excluded goals (hard filter: profiles having any of these goals are hidden
 GET /me/excluded-goals  200 { goalCodes: string[], active: boolean }
 PUT /me/excluded-goals  body { goalCodes: string[] }  200 same ; 403 PREMIUM_REQUIRED ; 400 UNKNOWN_GOAL
 GET /me/exclusion-words now returns { words, maxWords, active }.
+
+## Testing: seed profiles (part of the Testing API: test accounts only, app.testing.enabled=true)
+Ready-made profiles for QA. Each one is a phone-less TEST account (cannot log in), so it is visible only to test
+accounts in discovery. Flow: create (DRAFT) → upload photos one per request → publish.
+SeedProfile = { accountId, profile: MyProfile }
+GET    /testing/profiles                          200 SeedProfile[] (oldest first)
+POST   /testing/profiles                          body { profile: <PUT /me/profile body>, premiumDays?: 0..3650,
+                                                         cosmetics?: itemCode[] (<= 10; equippable ones are equipped) }
+                                                  201 SeedProfile ; 400 VALIDATION_ERROR|UNKNOWN_TAG|UNKNOWN_GOAL ; 404 ITEM_NOT_FOUND
+PUT    /testing/profiles/{accountId}              body <PUT /me/profile body>      200 SeedProfile
+POST   /testing/profiles/{accountId}/photos       multipart `file` (same rules as /me/profile/photos) 200 Photo
+POST   /testing/profiles/{accountId}/publish      200 SeedProfile ; 400 PROFILE_INCOMPLETE
+DELETE /testing/profiles/{accountId}              204
+DELETE /testing/profiles                          200 { deleted: number }   — all seed profiles
+  Unknown/deleted ids and non-seed accounts: 404 SEED_PROFILE_NOT_FOUND.
+  Bulk loading from a folder: scripts/seed-profiles.mjs (see seed/README.md).

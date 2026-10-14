@@ -1,6 +1,7 @@
 package com.dating.accounts.application;
 
 import com.dating.accounts.domain.Account;
+import com.dating.accounts.domain.AccountStatus;
 import com.dating.accounts.persistence.AccountRepository;
 import com.dating.common.errors.ApiException;
 import com.dating.productevents.application.ProductEventPublisher;
@@ -8,11 +9,15 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 @Service
 public class AccountService {
+
+    /** phone_hash prefix of phone-less QA seed accounts (real hashes are hex, so they never collide). */
+    public static final String SEED_PHONE_HASH_PREFIX = "seed:";
 
     private final AccountRepository accountRepository;
     private final ApplicationEventPublisher eventPublisher;
@@ -53,6 +58,32 @@ public class AccountService {
             account.setTestAccount(testAccount);
             accountRepository.save(account);
         }
+    }
+
+    /**
+     * Creates a test account without a phone (QA seed profile). It cannot log in; it only exists so that
+     * test accounts have ready-made profiles in discovery. Marked by the {@link #SEED_PHONE_HASH_PREFIX}.
+     */
+    @Transactional
+    public UUID createSeedAccount() {
+        Account account = findOrCreateAccount(SEED_PHONE_HASH_PREFIX + UUID.randomUUID(), "тестовый профиль");
+        account.setTestAccount(true);
+        accountRepository.save(account);
+        return account.getId();
+    }
+
+    @Transactional(readOnly = true)
+    public List<UUID> activeSeedAccountIds() {
+        return accountRepository.findAllByPhoneHashStartingWithAndStatusOrderByCreatedAtAsc(
+                SEED_PHONE_HASH_PREFIX, AccountStatus.ACTIVE).stream().map(Account::getId).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isActiveSeedAccount(UUID accountId) {
+        return accountRepository.findById(accountId)
+                .filter(Account::isActive)
+                .filter(a -> a.getPhoneHash().startsWith(SEED_PHONE_HASH_PREFIX))
+                .isPresent();
     }
 
     @Transactional(readOnly = true)
