@@ -40,6 +40,7 @@ public class AuthService implements SessionValidator {
     private final AccountService accountService;
     private final OtpSender otpSender;
     private final AuthProperties properties;
+    private final TestAccountPolicy testAccountPolicy;
     private final FixedWindowRateLimiter ipLimiter;
     private final FixedWindowRateLimiter phoneCooldownLimiter;
 
@@ -47,12 +48,14 @@ public class AuthService implements SessionValidator {
                        SessionRepository sessionRepository,
                        AccountService accountService,
                        OtpSender otpSender,
-                       AuthProperties properties) {
+                       AuthProperties properties,
+                       TestAccountPolicy testAccountPolicy) {
         this.challengeRepository = challengeRepository;
         this.sessionRepository = sessionRepository;
         this.accountService = accountService;
         this.otpSender = otpSender;
         this.properties = properties;
+        this.testAccountPolicy = testAccountPolicy;
         this.ipLimiter = new FixedWindowRateLimiter(properties.maxChallengesPerIpPerHour(), HOUR);
         this.phoneCooldownLimiter = new FixedWindowRateLimiter(1, properties.resendCooldown());
     }
@@ -72,14 +75,18 @@ public class AuthService implements SessionValidator {
         Instant now = Instant.now();
         enforcePhoneLimits(phoneHash, now);
 
-        String code = properties.mockEnabled() ? MOCK_CODE : Hashing.randomDigits(CODE_LENGTH);
+        boolean fixedTestCode = testAccountPolicy.usesFixedOtp(phoneHash);
+        String code = fixedTestCode ? testAccountPolicy.fixedOtpCode()
+                : properties.mockEnabled() ? MOCK_CODE : Hashing.randomDigits(CODE_LENGTH);
         Instant expiresAt = now.plus(properties.otpTtl());
         AuthChallenge challenge = new AuthChallenge(UUID.randomUUID(), phoneHash, PhoneNumbers.mask(phone),
                 Hashing.sha256Hex(code), now, expiresAt);
         challengeRepository.save(challenge);
 
-        // Throws (and rolls the challenge back) if delivery is impossible.
-        otpSender.send(phone, code);
+        if (!fixedTestCode) {
+            // Throws (and rolls the challenge back) if delivery is impossible.
+            otpSender.send(phone, code);
+        }
 
         String devMockCode = properties.mockEnabled() ? code : null;
         return new AuthChallengeResponseDto(challenge.getId(), expiresAt, challenge.getPhoneMasked(), devMockCode);
@@ -137,6 +144,7 @@ public class AuthService implements SessionValidator {
 
         String phoneMasked = challenge.getPhoneMasked() != null ? challenge.getPhoneMasked() : "+*** ***-**-**";
         Account account = accountService.findOrCreateAccount(challenge.getPhoneHash(), phoneMasked);
+        accountService.updateTestAccountFlag(account, testAccountPolicy.isTestPhoneHash(challenge.getPhoneHash()));
         if (!account.isActive()) {
             throw ApiException.forbidden("ACCOUNT_SUSPENDED", "Аккаунт заблокирован");
         }

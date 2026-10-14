@@ -24,10 +24,17 @@ MyProfile  = { id, displayName: string|null, age: number|null, city: string|null
                tags: Tag[], photos: Photo[] (sorted by sortOrder),
                completenessPercent: number (0..100),
                missingForPublish: string[]   // subset of 'displayName','age','city','photos'; empty => can publish
+               decorations: Decorations,     // how others see my profile
                createdAt, updatedAt }
-PublicProfile = { id, displayName, age, city, aboutText: string|null, dailyStatusText: string|null, tags: Tag[], photos: Photo[] }
+PublicProfile = { id, displayName, age, city, aboutText: string|null, dailyStatusText: string|null, tags: Tag[], photos: Photo[],
+                  decorations: Decorations }
              (no accountId, no statuses)
-Account    = { id, phoneMasked, status: 'ACTIVE'|'SUSPENDED'|'DELETED', createdAt }
+Decorations = { [slot: 'PHOTO_FRAME'|'PROFILE_STATUS'|...]: Decoration }   // only public slots; may be {}
+Decoration  = { code, title, rarity: 'COMMON'|'RARE'|'EPIC'|'LEGENDARY'|null, attributes: object }
+             Render generically from attributes, unknown keys/slots must be ignored:
+               PHOTO_FRAME:    { borderColor: '#RRGGBB', borderWidth: number, glow?: boolean }
+               PROFILE_STATUS: { emoji: string, label: string, color: '#RRGGBB' }
+Account    = { id, phoneMasked, status: 'ACTIVE'|'SUSPENDED'|'DELETED', createdAt, testAccount: boolean }
 
 ## Auth
 POST /auth/otp/request   body { phone: string }   (any human format: "+7 (999) 123-45-67", "89991234567" … server normalizes)
@@ -81,11 +88,49 @@ PUT /me/exclusion-words      body { words: string[] }  → 200 { words: string[]
   "курю" also hides "курить", "курит"). displayName, city and tags are NOT matched.
   An empty list disables the filter.
 
-## Wallet (auth) — premium status and owned items
-GET /me/wallet  200 {
+## Wallet (auth) — premium status, consumables, cosmetics
+GET /me/wallet  200 Wallet
+Wallet = {
   premium: { active: boolean, until: string|null },
   premiumFeatures: string[],          // feature codes that require premium (from server config)
-  items: [ { code, kind: 'CONSUMABLE'|'COSMETIC'|'STICKER_PACK', quantity } ]   // only quantity > 0
+  items: WalletItem[],                // only quantity > 0; consumables first
+  equipped: { [slot]: itemCode }      // equipped cosmetics, incl. private slots (CHAT_WALLPAPER)
 }
+WalletItem = { code, kind: 'CONSUMABLE'|'COSMETIC',
+               category: 'SUPERLIKE'|'GACHA_TICKET'|'BOOST'|'STICKER_PACK'|'CHAT_WALLPAPER'|'PROFILE_STATUS'|'PHOTO_FRAME'|...,
+               title, rarity: string|null, equipSlot: string|null, attributes: object,
+               quantity: number,          // total (cosmetics: 1)
+               periodicQuantity: number } // part of quantity from the premium allowance, spent first
   Opening the wallet also grants due premium allowances (e.g. weekly super likes), idempotently per period.
-  Item display names/icons are a client concern keyed by `code` for now.
+  Attributes by category (stubs today, attributes.stub = true):
+    STICKER_PACK:   { emoji, stickers: string[] }
+    CHAT_WALLPAPER: { background: '#RRGGBB', accent: '#RRGGBB', pattern: 'stars'|'waves'|... }
+    PROFILE_STATUS / PHOTO_FRAME: see Decoration above
+    consumables:    { icon: 'star'|'ticket'|'rocket'|... }
+
+## Cosmetics (auth)
+PUT    /me/cosmetics/equipped/{slot}   body { itemCode }   200 Wallet
+       400 UNKNOWN_SLOT | WRONG_SLOT ; 403 ITEM_NOT_OWNED ; 404 ITEM_NOT_FOUND
+DELETE /me/cosmetics/equipped/{slot}                        200 Wallet
+  Slots: PHOTO_FRAME (public), PROFILE_STATUS (public), CHAT_WALLPAPER (private). Sticker packs are owned, not equipped.
+
+## Achievements (auth)
+GET /me/achievements  200 Achievement[]
+Achievement = { code, title, description, completed: boolean, completedAt: string|null,
+                rewards: [ { type: 'ITEM'|'PREMIUM_DAYS', itemCode?, quantity?, days? } ] }
+  No automatic triggers yet; completions come from the testing API.
+
+## Testing API (auth, test accounts only; exists only when the server runs with app.testing.enabled=true)
+Test accounts = phones listed in server config; they log in with a fixed OTP code (no SMS), have Account.testAccount = true
+and are isolated from real users in discovery (each side sees only its own kind). Non-test accounts get 403 TEST_ACCOUNT_REQUIRED.
+Every endpoint returns TestingState = { accountId, clockOffsetDays: number, economyNow: string, wallet: Wallet, achievements: Achievement[] }
+GET    /testing/state
+POST   /testing/achievements/{code}/complete     mark completed + grant rewards (once)
+DELETE /testing/achievements/{code}              reset completion (rewards already granted are kept); can complete again
+POST   /testing/wallet/items/{itemCode}          body { quantity >= 1 }  add consumables / grant cosmetic
+PUT    /testing/wallet/items/{itemCode}          body { quantity >= 0 }  set the bought (PERMANENT) balance exactly
+POST   /testing/premium                          body { days 1..3650 }   add premium days
+DELETE /testing/premium                          end premium now
+POST   /testing/clock/advance                    body { days 1..3650 }   move this account's economy time forward
+                                                 (7 = "next premium week": allowances refill, premium may expire)
+DELETE /testing/clock                            back to real time

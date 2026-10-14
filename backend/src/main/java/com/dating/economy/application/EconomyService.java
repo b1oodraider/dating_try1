@@ -2,7 +2,8 @@ package com.dating.economy.application;
 
 import com.dating.accounts.application.AccountDeletedEvent;
 import com.dating.common.errors.ApiException;
-import com.dating.economy.domain.ItemKind;
+import com.dating.economy.domain.Bucket;
+import com.dating.economy.domain.CatalogItem;
 import com.dating.economy.domain.Reward;
 import com.dating.economy.domain.RewardSource;
 import com.dating.economy.persistence.EconomyRepository;
@@ -16,8 +17,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * The single entry point for changing a user's wallet: consumables, cosmetics, sticker packs
- * and premium days. Subscriptions, achievements, gacha, promos and support all call {@link #grant}.
+ * The single entry point for changing a user's wallet: consumables, cosmetics and premium days.
+ * Subscriptions, achievements, gacha, promos, support and the testing API all call {@link #grant}.
  * <p>
  * Every operation is a transaction with an idempotency key unique per account, so retries
  * (webhook redelivery, double clicks, job restarts) never grant or spend twice.
@@ -28,14 +29,19 @@ public class EconomyService {
     private static final int MAX_KEY_LENGTH = 150;
 
     private final EconomyRepository repository;
+    private final EconomyClock clock;
     private final ProductEventPublisher productEvents;
 
-    public EconomyService(EconomyRepository repository, ProductEventPublisher productEvents) {
+    public EconomyService(EconomyRepository repository, EconomyClock clock, ProductEventPublisher productEvents) {
         this.repository = repository;
+        this.clock = clock;
         this.productEvents = productEvents;
     }
 
     /**
+     * Grants rewards. Consumables go to the PERMANENT bucket; cosmetics become owned
+     * (an already-owned cosmetic is recorded as a 0-delta duplicate that gacha can convert later).
+     *
      * @return true if applied now, false if this idempotency key was already applied
      */
     @Transactional
@@ -53,21 +59,19 @@ public class EconomyService {
         for (Reward reward : rewards) {
             switch (reward) {
                 case Reward.Item item -> {
-                    ItemKind kind = requireItem(item.itemCode());
+                    CatalogItem catalogItem = requireItem(item.itemCode());
                     long applied;
-                    if (kind.stackable()) {
-                        repository.credit(accountId, item.itemCode(), item.quantity());
+                    if (catalogItem.kind().stackable()) {
+                        repository.credit(accountId, item.itemCode(), Bucket.PERMANENT, item.quantity());
                         applied = item.quantity();
                     } else {
-                        // Already-owned cosmetics are recorded as a 0-delta duplicate; a gacha module can
-                        // later convert duplicates (e.g. into currency) using these ledger lines.
                         applied = repository.grantOwned(accountId, item.itemCode()) ? 1 : 0;
                     }
-                    repository.insertLine(transactionId, lineNo++, item.itemCode(), applied, null);
+                    repository.insertLine(transactionId, lineNo++, item.itemCode(), applied, null, Bucket.PERMANENT);
                 }
                 case Reward.PremiumDays premium -> {
-                    repository.extendPremium(accountId, premium.days());
-                    repository.insertLine(transactionId, lineNo++, null, null, premium.days());
+                    repository.extendPremium(accountId, premium.days(), clock.now(accountId));
+                    repository.insertLine(transactionId, lineNo++, null, null, premium.days(), null);
                 }
             }
         }
@@ -76,9 +80,10 @@ public class EconomyService {
     }
 
     /**
-     * Spends a consumable. Retrying with the same key does not spend again.
+     * Spends a consumable: PERIODIC units first (they would be refilled anyway), then PERMANENT.
+     * Retrying with the same key does not spend again.
      *
-     * @return remaining balance
+     * @return remaining total balance
      * @throws ApiException 409 INSUFFICIENT_BALANCE
      */
     @Transactional
@@ -87,28 +92,42 @@ public class EconomyService {
         if (quantity <= 0) {
             throw new IllegalArgumentException("quantity must be positive");
         }
-        if (!requireItem(itemCode).stackable()) {
+        if (!requireItem(itemCode).kind().stackable()) {
             throw new IllegalArgumentException("Only consumables can be spent: " + itemCode);
         }
         UUID transactionId = UUID.randomUUID();
         if (!repository.insertTransaction(transactionId, accountId, "SPEND", RewardSource.SPEND, sourceRef, idempotencyKey)) {
             return repository.balance(accountId, itemCode);
         }
-        if (!repository.debit(accountId, itemCode, quantity)) {
+        Map<Bucket, Long> balances = repository.lockBalances(accountId, itemCode);
+        long periodic = balances.getOrDefault(Bucket.PERIODIC, 0L);
+        long permanent = balances.getOrDefault(Bucket.PERMANENT, 0L);
+        if (periodic + permanent < quantity) {
             // Rolls back the transaction row too, so the same key can be retried after a top-up.
-            throw ApiException.insufficientBalance(itemCode, repository.balance(accountId, itemCode));
+            throw ApiException.insufficientBalance(itemCode, periodic + permanent);
         }
-        repository.insertLine(transactionId, 0, itemCode, -quantity, null);
+        long fromPeriodic = Math.min(quantity, periodic);
+        long fromPermanent = quantity - fromPeriodic;
+        int lineNo = 0;
+        if (fromPeriodic > 0) {
+            repository.debit(accountId, itemCode, Bucket.PERIODIC, fromPeriodic);
+            repository.insertLine(transactionId, lineNo++, itemCode, -fromPeriodic, null, Bucket.PERIODIC);
+        }
+        if (fromPermanent > 0) {
+            repository.debit(accountId, itemCode, Bucket.PERMANENT, fromPermanent);
+            repository.insertLine(transactionId, lineNo, itemCode, -fromPermanent, null, Bucket.PERMANENT);
+        }
         productEvents.publish("economy_spent", Map.of("itemCode", itemCode, "quantity", quantity));
-        return repository.balance(accountId, itemCode);
+        return periodic + permanent - quantity;
     }
 
     /**
-     * Grants one premium allowance for a period; a no-op if already granted for that period.
+     * Grants one premium allowance for a period into the PERIODIC bucket; a no-op if already granted.
+     * TOP_UP refills the periodic units up to the quantity (bought units are not counted), ADD adds.
      */
     @Transactional
     public void grantAllowance(UUID accountId, EconomyProperties.Allowance allowance, String periodKey) {
-        if (!requireItem(allowance.itemCode()).stackable()) {
+        if (!requireItem(allowance.itemCode()).kind().stackable()) {
             throw new IllegalStateException("Premium allowance must be a consumable: " + allowance.itemCode());
         }
         String key = "allowance:" + allowance.itemCode() + ":" + allowance.period() + ":" + periodKey;
@@ -118,11 +137,40 @@ public class EconomyService {
         }
         long quantity = allowance.mode() == EconomyProperties.Mode.ADD
                 ? allowance.quantity()
-                : Math.max(0, allowance.quantity() - repository.balance(accountId, allowance.itemCode()));
+                : Math.max(0, allowance.quantity() - repository.balance(accountId, allowance.itemCode(), Bucket.PERIODIC));
         if (quantity > 0) {
-            repository.credit(accountId, allowance.itemCode(), quantity);
-            repository.insertLine(transactionId, 0, allowance.itemCode(), quantity, null);
+            repository.credit(accountId, allowance.itemCode(), Bucket.PERIODIC, quantity);
+            repository.insertLine(transactionId, 0, allowance.itemCode(), quantity, null, Bucket.PERIODIC);
         }
+    }
+
+    /**
+     * Testing support: sets the PERMANENT balance of a consumable (or ownership of a cosmetic) exactly.
+     */
+    @Transactional
+    public void setPermanentBalance(UUID accountId, String itemCode, long quantity) {
+        CatalogItem item = requireItem(itemCode);
+        if (quantity < 0 || (!item.kind().stackable() && quantity > 1)) {
+            throw ApiException.badRequest("VALIDATION_ERROR", "Некорректное количество для " + itemCode);
+        }
+        repository.setBalance(accountId, itemCode, Bucket.PERMANENT, quantity);
+    }
+
+    /**
+     * Testing support: forgets a transaction (and its ledger lines) so the same idempotency key can be
+     * applied again. Balances are not changed.
+     */
+    @Transactional
+    public void forgetTransaction(UUID accountId, String idempotencyKey) {
+        repository.deleteTransactionByKey(accountId, idempotencyKey);
+    }
+
+    /**
+     * Testing support: ends premium "now" (in the account's economy time).
+     */
+    @Transactional
+    public void expirePremium(UUID accountId) {
+        repository.expirePremium(accountId, clock.now(accountId));
     }
 
     @Transactional(readOnly = true)
@@ -135,9 +183,9 @@ public class EconomyService {
         return repository.balance(accountId, itemCode);
     }
 
-    private ItemKind requireItem(String itemCode) {
-        return repository.findActiveItemKind(itemCode)
-                .orElseThrow(() -> new IllegalArgumentException("Unknown or inactive catalog item: " + itemCode));
+    public CatalogItem requireItem(String itemCode) {
+        return repository.findActiveItem(itemCode)
+                .orElseThrow(() -> ApiException.notFound("ITEM_NOT_FOUND", "Предмет не найден: " + itemCode));
     }
 
     private static void validateKey(String idempotencyKey) {

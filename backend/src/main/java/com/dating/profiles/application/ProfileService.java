@@ -36,17 +36,20 @@ public class ProfileService {
     private final ProfilePhotoQuery photoQuery;
     private final ProductEventPublisher productEvents;
     private final ApplicationEventPublisher eventPublisher;
+    private final ProfileDecorationQuery decorationQuery;
 
     public ProfileService(ProfileRepository profileRepository,
                           CommunicationTagRepository tagRepository,
                           ProfilePhotoQuery photoQuery,
                           ProductEventPublisher productEvents,
-                          ApplicationEventPublisher eventPublisher) {
+                          ApplicationEventPublisher eventPublisher,
+                          ProfileDecorationQuery decorationQuery) {
         this.profileRepository = profileRepository;
         this.tagRepository = tagRepository;
         this.photoQuery = photoQuery;
         this.productEvents = productEvents;
         this.eventPublisher = eventPublisher;
+        this.decorationQuery = decorationQuery;
     }
 
     @Transactional
@@ -207,6 +210,7 @@ public class ProfileService {
                 photos,
                 calculateCompleteness(profile, photos.size()),
                 List.copyOf(missingForPublish(profile, photos.size()).keySet()),
+                decorationQuery.publicDecorations(profile.getAccountId()),
                 profile.getCreatedAt(),
                 profile.getUpdatedAt()
         );

@@ -2,7 +2,10 @@
 #   docker compose -f infra/compose.yaml --env-file infra/.env up -d --build
 services:
   postgres:
-    image: postgres:16-alpine
+    # postgres:16-alpine + Russian Hunspell dictionary for full-text search (see infra/postgres/Dockerfile)
+    build:
+      context: ./postgres
+    image: dating-postgres:16
     container_name: dating-postgres
     restart: unless-stopped
     environment:
@@ -42,6 +45,10 @@ services:
       APP_MEDIA_URL_SIGNING_SECRET: ${APP_MEDIA_URL_SIGNING_SECRET:?APP_MEDIA_URL_SIGNING_SECRET must be set (>= 32 chars)}
       APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:?APP_CORS_ALLOWED_ORIGINS must list the web client origin(s)}
       APP_AUTH_MOCK_ENABLED: "false" # mock OTP is refused by the app together with the prod profile
+      # Test accounts (QA on this environment): comma-separated phones and their fixed OTP code.
+      APP_TESTING_ENABLED: ${APP_TESTING_ENABLED:-false}
+      APP_TESTING_TEST_PHONES: ${APP_TESTING_TEST_PHONES:-}
+      APP_TESTING_OTP_CODE: ${APP_TESTING_OTP_CODE:-}
     volumes:
       - media_data:/app/data/media
     networks:

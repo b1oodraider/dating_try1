@@ -16,6 +16,11 @@ spring:
       max-file-size: 5MB
       max-request-size: 6MB
 
+  datasource:
+    hikari:
+      # Each PostgreSQL connection loads the Hunspell dictionary once (~26 MB), keep the pool small.
+      maximum-pool-size: ${DB_POOL_SIZE:5}
+
   jpa:
     hibernate:
       ddl-auto: validate # schema is owned by Liquibase
@@ -51,12 +56,25 @@ app:
   economy:
     # Feature codes reserved for premium (checked via FeatureAccess.require). Empty until decided.
     premium-features: []
-    # Consumables granted to premium users every period, e.g.:
-    #   - item-code: SUPERLIKE   # must exist in catalog_items as CONSUMABLE
-    #     quantity: 5
-    #     period: WEEKLY         # DAILY | WEEKLY | MONTHLY (UTC calendar)
-    #     mode: TOP_UP           # TOP_UP: refill up to quantity; ADD: add quantity every period
-    premium-allowances: []
+    # Consumables granted to premium users every period (into the PERIODIC bucket, spent first).
+    #   period: DAILY | WEEKLY | MONTHLY (UTC calendar)
+    #   mode:   TOP_UP refills up to quantity (unused units do not pile up); ADD adds quantity every period
+    # STUB values for testing until the premium content is decided (premium cannot be bought yet).
+    premium-allowances:
+      - item-code: SUPERLIKE
+        quantity: 5
+        period: WEEKLY
+        mode: TOP_UP
+      - item-code: GACHA_TICKET
+        quantity: 1
+        period: WEEKLY
+        mode: ADD
+  testing:
+    # Test accounts: phones below become test accounts (isolated from real users in discovery).
+    # enabled=true additionally exposes /api/v1/testing and a fixed OTP code (no SMS) for these phones.
+    enabled: ${APP_TESTING_ENABLED:false}
+    test-phones: ${APP_TESTING_TEST_PHONES:}
+    otp-code: ${APP_TESTING_OTP_CODE:}
 
 management:
   endpoints:

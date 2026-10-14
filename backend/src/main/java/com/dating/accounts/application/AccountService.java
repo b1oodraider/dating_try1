@@ -45,6 +45,22 @@ public class AccountService {
     }
 
     /**
+     * Test accounts are defined by configuration (app.testing.test-phones) and re-evaluated on every login.
+     */
+    @Transactional
+    public void updateTestAccountFlag(Account account, boolean testAccount) {
+        if (account.isTestAccount() != testAccount) {
+            account.setTestAccount(testAccount);
+            accountRepository.save(account);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isTestAccount(UUID accountId) {
+        return accountRepository.findById(accountId).map(Account::isTestAccount).orElse(false);
+    }
+
+    /**
      * Deletes all personal data of the account in one transaction: photos (files after commit),
      * profile, sessions; the account row is anonymized so the phone can be registered again.
      */

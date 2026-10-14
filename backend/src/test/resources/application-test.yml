@@ -15,3 +15,13 @@ app:
         quantity: 5
         period: WEEKLY
         mode: TOP_UP
+      - item-code: TEST_TICKET
+        quantity: 1
+        period: WEEKLY
+        mode: ADD
+  testing:
+    enabled: true
+    test-phones: >-
+      +78000000001, +78000000002, +78000000003, +78000000004, +78000000005,
+      +78000000006, +78000000007, +78000000008, +78000000009
+    otp-code: "654321"

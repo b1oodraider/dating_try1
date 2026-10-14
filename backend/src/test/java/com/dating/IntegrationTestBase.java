@@ -16,7 +16,10 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
+import org.junit.jupiter.api.BeforeEach;
 import org.testcontainers.DockerClientFactory;
+import org.testcontainers.images.builder.ImageFromDockerfile;
+import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
@@ -47,13 +50,38 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Testcontainers(disabledWithoutDocker = true)
 public abstract class IntegrationTestBase {
 
+    private static final boolean DOCKER = DockerClientFactory.instance().isDockerAvailable();
+
+    /**
+     * Same image as production: postgres:16-alpine + Russian Hunspell dictionary (infra/postgres/Dockerfile).
+     */
     @ServiceConnection
-    protected static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
+    protected static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer(
+            DockerImageName.parse(DOCKER ? buildPostgresImage() : "postgres:16-alpine").asCompatibleSubstituteFor("postgres"));
 
     static {
-        if (DockerClientFactory.instance().isDockerAvailable()) {
+        if (DOCKER) {
             POSTGRES.start(); // stopped by Testcontainers (Ryuk) when the JVM exits
         }
+    }
+
+    private static String buildPostgresImage() {
+        Path dockerfile = Path.of("..", "infra", "postgres", "Dockerfile").toAbsolutePath().normalize();
+        return new ImageFromDockerfile("dating-postgres-test", false).withDockerfile(dockerfile).get();
+    }
+
+    /**
+     * Catalog rows used by the economy tests (in addition to the stub catalog seeded by migration 007).
+     */
+    @BeforeEach
+    void testCatalog() {
+        jdbc.update("""
+                INSERT INTO catalog_items (code, kind, category, equip_slot, title, rarity) VALUES
+                  ('TEST_SUPERLIKE', 'CONSUMABLE', 'SUPERLIKE', NULL, 'Test super like', NULL),
+                  ('TEST_TICKET', 'CONSUMABLE', 'GACHA_TICKET', NULL, 'Test ticket', NULL),
+                  ('TEST_FRAME', 'COSMETIC', 'PHOTO_FRAME', 'PHOTO_FRAME', 'Test frame', 'RARE')
+                ON CONFLICT (code) DO NOTHING
+                """);
     }
 
     protected static final Path MEDIA_DIR = createTempDir();

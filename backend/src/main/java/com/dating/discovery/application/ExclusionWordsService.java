@@ -68,7 +68,8 @@ public class ExclusionWordsService {
     static List<String> normalize(List<String> rawWords) {
         Set<String> words = new LinkedHashSet<>();
         for (String raw : rawWords) {
-            String word = Objects.requireNonNullElse(raw, "").trim().toLowerCase(Locale.ROOT);
+            // "ё" is folded to "е": documents are folded the same way in the database (migration 006).
+            String word = Objects.requireNonNullElse(raw, "").trim().toLowerCase(Locale.ROOT).replace('ё', 'е');
             if (word.length() < MIN_LENGTH || word.length() > MAX_LENGTH || !WORD.matcher(word).matches()) {
                 throw invalid("Каждое слово — от 2 до 30 букв или цифр, без пробелов и знаков: «" + abbreviate(raw) + "»");
             }

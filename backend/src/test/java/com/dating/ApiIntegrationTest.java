@@ -371,6 +371,37 @@ class ApiIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void hunspellMatchesIrregularFormsAndYoWithoutStemCollisions() throws Exception {
+        String city = uniqueCity();
+        String wine = login(newPhone());
+        publishWith(wine, "Вино", city, List.of());
+        putProfile(wine, "{\"aboutText\":\"По пятницам пью вино с друзьями\"}").andExpect(status().isOk());
+
+        String hookah = login(newPhone());
+        publishWith(hookah, "Кальян", city, List.of());
+        putProfile(hookah, "{\"aboutText\":\"Не люблю запах кальяна\"}").andExpect(status().isOk());
+
+        String chicken = login(newPhone());
+        publishWith(chicken, "Ферма", city, List.of());
+        putProfile(chicken, "{\"aboutText\":\"Держу куры на даче\"}").andExpect(status().isOk());
+
+        String child = login(newPhone());
+        publishWith(child, "Родитель", city, List.of());
+        putProfile(child, "{\"aboutText\":\"У меня есть ребёнок\"}").andExpect(status().isOk());
+
+        String viewer = login(newPhone());
+        // Stemmer could not link "пью" to "пить"; Hunspell does. "ребенок" written with "е" matches "ребёнок".
+        putWords(viewer, "[\"пить\", \"кальян\", \"ребенок\"]").andExpect(status().isOk());
+        discovery(viewer, city, null, null, 20)
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.items[0].displayName").value("Ферма"));
+
+        // "курить" no longer hides "куры" (the stemmer reduced both to "кур").
+        putWords(viewer, "[\"курить\"]").andExpect(status().isOk());
+        discovery(viewer, city, null, null, 20).andExpect(jsonPath("$.totalElements").value(4));
+    }
+
+    @Test
     void deletingAccountRemovesExclusionWords() throws Exception {
         String token = login(newPhone());
         String accountId = json(get("/api/v1/me"), token, "$.id");

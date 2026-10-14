@@ -7,6 +7,9 @@ import com.dating.discovery.api.DiscoveryQueryDto;
 import com.dating.discovery.api.TagLogic;
 import com.dating.profiles.api.PhotoDto;
 import com.dating.profiles.api.PublicProfileDto;
+import com.dating.accounts.application.AccountService;
+import com.dating.profiles.api.DecorationDto;
+import com.dating.profiles.application.ProfileDecorationQuery;
 import com.dating.profiles.application.ProfilePhotoQuery;
 import com.dating.profiles.domain.CommunicationTag;
 import com.dating.profiles.domain.Profile;
@@ -35,12 +38,17 @@ public class DiscoveryService {
     private final ProfileRepository profileRepository;
     private final ProfilePhotoQuery photoQuery;
     private final ExclusionWordsService exclusionWords;
+    private final ProfileDecorationQuery decorationQuery;
+    private final AccountService accountService;
 
     public DiscoveryService(ProfileRepository profileRepository, ProfilePhotoQuery photoQuery,
-                            ExclusionWordsService exclusionWords) {
+                            ExclusionWordsService exclusionWords, ProfileDecorationQuery decorationQuery,
+                            AccountService accountService) {
         this.profileRepository = profileRepository;
         this.photoQuery = photoQuery;
         this.exclusionWords = exclusionWords;
+        this.decorationQuery = decorationQuery;
+        this.accountService = accountService;
     }
 
     /**
@@ -52,8 +60,10 @@ public class DiscoveryService {
         PageRequest pageRequest = PageRequest.of(query.page(), query.limit(),
                 Sort.by(Sort.Order.desc("updatedAt"), Sort.Order.desc("id")));
 
+        // Test accounts and real users never see each other.
+        boolean viewerIsTestAccount = accountService.isTestAccount(callerAccountId);
         Specification<Profile> spec = Specification.where(isVisible())
-                .and(ownerIsActive())
+                .and(ownerIsActive(viewerIsTestAccount))
                 .and(notOwnedBy(callerAccountId));
         if (query.city() != null) {
             spec = spec.and(cityEquals(query.city()));
@@ -74,9 +84,12 @@ public class DiscoveryService {
 
         Page<Profile> page = profileRepository.findAll(spec, pageRequest);
         Map<UUID, List<PhotoDto>> photos = photoQuery.photosOf(page.getContent().stream().map(Profile::getId).toList());
+        Map<UUID, Map<String, DecorationDto>> decorations =
+                decorationQuery.publicDecorations(page.getContent().stream().map(Profile::getAccountId).toList());
 
         List<PublicProfileDto> items = page.getContent().stream()
-                .map(p -> PublicProfileDto.from(p, photos.getOrDefault(p.getId(), List.of())))
+                .map(p -> PublicProfileDto.from(p, photos.getOrDefault(p.getId(), List.of()),
+                        decorations.getOrDefault(p.getAccountId(), Map.of())))
                 .toList();
 
         return new DiscoveryPageResponseDto(items, query.page(), query.limit(),
@@ -93,13 +106,14 @@ public class DiscoveryService {
         );
     }
 
-    private static Specification<Profile> ownerIsActive() {
+    private static Specification<Profile> ownerIsActive(boolean testAccounts) {
         return (root, q, cb) -> {
             Subquery<UUID> account = q.subquery(UUID.class);
             Root<Account> a = account.from(Account.class);
             account.select(a.get("id")).where(
                     cb.equal(a.get("id"), root.get("accountId")),
-                    cb.equal(a.get("status"), AccountStatus.ACTIVE));
+                    cb.equal(a.get("status"), AccountStatus.ACTIVE),
+                    cb.equal(a.get("testAccount"), testAccounts));
             return cb.exists(account);
         };
     }

@@ -8,7 +8,7 @@ public enum RewardSource {
     SUBSCRIPTION,
     /** Periodic consumables included in premium (e.g. 5 super likes a week). */
     PREMIUM_ALLOWANCE,
-    /** Achievement rewards (future achievements module). */
+    /** Achievement rewards. */
     ACHIEVEMENT,
     /** Gacha pulls (future gacha module). */
     GACHA,
@@ -18,6 +18,8 @@ public enum RewardSource {
     PROMO,
     /** Manual grant by support. */
     ADMIN,
+    /** Testing API for test accounts. */
+    TESTING,
     /** Consumption by the user. */
     SPEND,
     /** Reversal after a refund. */

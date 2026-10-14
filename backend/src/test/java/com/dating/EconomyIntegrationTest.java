@@ -2,6 +2,7 @@ package com.dating;
 
 import com.dating.common.entitlements.FeatureAccess;
 import com.dating.common.errors.ApiException;
+import com.dating.economy.application.EconomyClock;
 import com.dating.economy.application.EconomyService;
 import com.dating.economy.application.PremiumService;
 import com.dating.economy.domain.Reward;
@@ -45,11 +46,8 @@ class EconomyIntegrationTest extends IntegrationTestBase {
     @Autowired
     FeatureAccess featureAccess;
 
-    @BeforeEach
-    void catalog() {
-        jdbc.update("INSERT INTO catalog_items (code, kind) VALUES (?, 'CONSUMABLE') ON CONFLICT DO NOTHING", SUPERLIKE);
-        jdbc.update("INSERT INTO catalog_items (code, kind) VALUES (?, 'COSMETIC') ON CONFLICT DO NOTHING", FRAME);
-    }
+    @Autowired
+    EconomyClock clock;
 
     @Test
     void grantIsIdempotentAndHandlesConsumablesCosmeticsAndPremiumDays() throws Exception {
@@ -137,14 +135,40 @@ class EconomyIntegrationTest extends IntegrationTestBase {
         mvc.perform(get("/api/v1/me/wallet").header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.premium.active").value(true))
-                .andExpect(jsonPath("$.items[0].code").value(SUPERLIKE))
-                .andExpect(jsonPath("$.items[0].quantity").value(5));
+                .andExpect(jsonPath(itemField(SUPERLIKE, "quantity"), contains(5)))
+                .andExpect(jsonPath(itemField(SUPERLIKE, "periodicQuantity"), contains(5)));
 
         economy.spend(account, SUPERLIKE, 2, "like", "spend:like");
 
         // Same week: no second top-up.
         mvc.perform(get("/api/v1/me/wallet").header("Authorization", bearer(token)))
-                .andExpect(jsonPath("$.items[0].quantity").value(3));
+                .andExpect(jsonPath(itemField(SUPERLIKE, "quantity"), contains(3)));
+    }
+
+    @Test
+    void periodicUnitsAreSpentFirstAndRefillWithoutEatingPurchases() throws Exception {
+        String token = login(newPhone());
+        UUID account = UUID.fromString(json(get("/api/v1/me"), token, "$.id"));
+        economy.grant(account, RewardSource.SUBSCRIPTION, "sub", "subscription:sub:1", List.of(new Reward.PremiumDays(60)));
+        mvc.perform(get("/api/v1/me/wallet").header("Authorization", bearer(token))); // week 1: +5 periodic, +1 ticket
+
+        economy.grant(account, RewardSource.PURCHASE, "order", "purchase:order", List.of(new Reward.Item(SUPERLIKE, 10)));
+        assertEquals(8, economy.spend(account, SUPERLIKE, 7, "likes", "spend:likes")); // 5 periodic + 2 bought
+
+        clock.advance(account, Duration.ofDays(7)); // next premium week
+        mvc.perform(get("/api/v1/me/wallet").header("Authorization", bearer(token)))
+                .andExpect(jsonPath(itemField(SUPERLIKE, "quantity"), contains(13)))        // 8 bought + 5 refilled
+                .andExpect(jsonPath(itemField(SUPERLIKE, "periodicQuantity"), contains(5)))
+                .andExpect(jsonPath(itemField("TEST_TICKET", "quantity"), contains(2)));    // ADD mode accumulates
+
+        clock.advance(account, Duration.ofDays(7)); // unused periodic units do not pile up with TOP_UP
+        mvc.perform(get("/api/v1/me/wallet").header("Authorization", bearer(token)))
+                .andExpect(jsonPath(itemField(SUPERLIKE, "quantity"), contains(13)))
+                .andExpect(jsonPath(itemField("TEST_TICKET", "quantity"), contains(3)));
+    }
+
+    private static String itemField(String code, String field) {
+        return "$.items[?(@.code == '" + code + "')]." + field;
     }
 
     @Test

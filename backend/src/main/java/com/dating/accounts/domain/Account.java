@@ -26,6 +26,10 @@ public class Account extends AssignedIdEntity {
     @Column(name = "phone_verified_at")
     private Instant phoneVerifiedAt;
 
+    /** QA account: isolated from real users in discovery, may use the testing API. */
+    @Column(name = "test_account", nullable = false)
+    private boolean testAccount;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -55,6 +59,17 @@ public class Account extends AssignedIdEntity {
 
     public boolean isActive() {
         return status == AccountStatus.ACTIVE;
+    }
+
+    public boolean isTestAccount() {
+        return testAccount;
+    }
+
+    public void setTestAccount(boolean testAccount) {
+        if (this.testAccount != testAccount) {
+            this.testAccount = testAccount;
+            this.updatedAt = Instant.now();
+        }
     }
 
     public Instant getPhoneVerifiedAt() {

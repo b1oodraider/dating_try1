@@ -4,12 +4,14 @@ import com.dating.profiles.domain.PublicationStatus;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
  * The owner's view of their profile.
  *
  * @param missingForPublish fields still required before publishing; empty means the profile can be published
+ * @param decorations       equipped public cosmetics, i.e. how others see the profile
  */
 public record MyProfileDto(
         UUID id,
@@ -24,6 +26,7 @@ public record MyProfileDto(
         List<PhotoDto> photos,
         int completenessPercent,
         List<String> missingForPublish,
+        Map<String, DecorationDto> decorations,
         Instant createdAt,
         Instant updatedAt
 ) {}

@@ -9,3 +9,7 @@ databaseChangeLog:
       file: db/changelog/changesets/004-exclusion-words.yaml
   - include:
       file: db/changelog/changesets/005-economy.yaml
+  - include:
+      file: db/changelog/changesets/006-hunspell.yaml
+  - include:
+      file: db/changelog/changesets/007-test-accounts-cosmetics-achievements.yaml

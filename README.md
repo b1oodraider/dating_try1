@@ -58,7 +58,13 @@ docker compose -f infra/compose.yaml --env-file infra/.env up -d --build
 ### 3.2. Backend локально (профиль dev)
 
 Нужна PostgreSQL на `localhost:5432` (база `dating`, пользователь `dating_user`, пароль `dating_dev_password`
-или свои значения в `SPRING_DATASOURCE_*`).
+или свои значения в `SPRING_DATASOURCE_*`). Используйте образ со словарём Hunspell — без него слова-исключения
+работают на более грубом стеммере:
+
+```bash
+docker build -t dating-postgres:16 infra/postgres
+docker run -d --name dating-pg -p 5432:5432 -e POSTGRES_DB=dating -e POSTGRES_USER=dating_user -e POSTGRES_PASSWORD=dating_dev_password dating-postgres:16
+```
 
 ```bash
 cd backend
@@ -105,7 +111,17 @@ npm run build
 | GET | `/media/photos/{id}?exp&sig` | Изображение по подписанной ссылке (без заголовка авторизации) |
 | GET | `/discovery/profiles` | Лента (только для авторизованных) |
 | GET | `/me/wallet` | Премиум, премиум-функции, расходники и косметика; устройство экономики — [docs/economy.md](docs/economy.md) |
-| GET / PUT | `/me/exclusion-words` | Приватные слова-исключения: анкеты с этими словами в «о себе» или статусе дня (в любой словоформе) скрываются из ленты |
+| PUT / DELETE | `/me/cosmetics/equipped/{slot}` | Надеть / снять косметику (рамка фото, статус, обои чата) |
+| GET | `/me/achievements` | Достижения и их награды |
+| GET / PUT | `/me/exclusion-words` | Приватные слова-исключения: анкеты с этими словами в «о себе» или статусе дня (в любой словоформе, словарь Hunspell) скрываются из ленты |
+| … | `/testing/*` | Инструменты QA для тестовых аккаунтов (только при `APP_TESTING_ENABLED=true`) |
+
+### Тестовые аккаунты
+
+Номера из `APP_TESTING_TEST_PHONES` — тестовые: они изолированы от реальных пользователей в ленте и
+(при `APP_TESTING_ENABLED=true`) входят с кодом `APP_TESTING_OTP_CODE` без SMS. Им доступна тест-панель:
+отметить достижение, пополнить расходники, дать/убрать премиум, «перемотать» неделю премиума.
+В dev-профиле: `+7 900 000-00-01..03`, код `123456`. Подробно — [docs/economy.md](docs/economy.md).
 | GET | `/tags` | Справочник карточек общения |
 
 ---

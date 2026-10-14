@@ -23,13 +23,15 @@ public class AllowanceService {
     private final PremiumService premiumService;
     private final EconomyService economyService;
     private final EconomyRepository repository;
+    private final EconomyClock clock;
 
     public AllowanceService(EconomyProperties properties, PremiumService premiumService,
-                            EconomyService economyService, EconomyRepository repository) {
+                            EconomyService economyService, EconomyRepository repository, EconomyClock clock) {
         this.properties = properties;
         this.premiumService = premiumService;
         this.economyService = economyService;
         this.repository = repository;
+        this.clock = clock;
     }
 
     /**
@@ -40,7 +42,7 @@ public class AllowanceService {
         if (properties.premiumAllowances().isEmpty() || !premiumService.isPremium(accountId)) {
             return;
         }
-        Instant now = Instant.now();
+        Instant now = clock.now(accountId);
         for (EconomyProperties.Allowance allowance : properties.premiumAllowances()) {
             try {
                 economyService.grantAllowance(accountId, allowance, allowance.period().keyFor(now));

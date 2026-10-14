@@ -13,18 +13,20 @@ import java.util.UUID;
 
 /**
  * Premium is time-based: "premium until". Days come from any source (subscription, achievement,
- * gacha, promo) through EconomyService.grant with Reward.PremiumDays. Expiry is checked on read,
- * so correctness does not depend on a scheduled job.
+ * gacha, promo, testing) through EconomyService.grant with Reward.PremiumDays. Expiry is checked on
+ * read against the account's economy clock, so correctness does not depend on a scheduled job.
  */
 @Service
 public class PremiumService implements FeatureAccess {
 
     private final EconomyRepository repository;
     private final EconomyProperties properties;
+    private final EconomyClock clock;
 
-    public PremiumService(EconomyRepository repository, EconomyProperties properties) {
+    public PremiumService(EconomyRepository repository, EconomyProperties properties, EconomyClock clock) {
         this.repository = repository;
         this.properties = properties;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
@@ -34,7 +36,8 @@ public class PremiumService implements FeatureAccess {
 
     @Transactional(readOnly = true)
     public boolean isPremium(UUID accountId) {
-        return premiumUntil(accountId).map(until -> until.isAfter(Instant.now())).orElse(false);
+        Instant now = clock.now(accountId);
+        return premiumUntil(accountId).map(until -> until.isAfter(now)).orElse(false);
     }
 
     public List<String> premiumFeatures() {
