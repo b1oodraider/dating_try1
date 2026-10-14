@@ -175,7 +175,7 @@ void main() {
 
   testWidgets(
       'filters without premium: advanced section disabled, '
-      'saved goals marked as not applied, apply returns free filters only',
+      'saved goals marked as not applied, locked values are kept as is',
       (tester) async {
     final requests = <http.Request>[];
     final session = _session(
@@ -209,7 +209,9 @@ void main() {
     expect(requests.where((r) => r.method == 'PUT'), isEmpty);
     expect(result, isNotNull);
     expect(result!.city, 'Казань');
-    expect(result!.hasAdvanced, isFalse);
+    // Kept (not sent by the feed while premium is locked).
+    expect(result!.minHeight, 170);
+    expect(result!.goalCodes, ['FAMILY']);
   });
 
   testWidgets('filters with premium: saves excluded goals and applies goals',

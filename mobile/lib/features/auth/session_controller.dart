@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/storage/discovery_filters_store.dart';
 import '../../core/storage/token_storage.dart';
 
 /// Owns the auth state: token in memory (on the API client) + secure storage.
@@ -8,12 +9,18 @@ class SessionController extends ChangeNotifier {
   SessionController({
     required this.api,
     required TokenStorage storage,
-  }) : _storage = storage {
+    DiscoveryFiltersStore? filtersStore,
+  })  : _storage = storage,
+        filtersStore = filtersStore ?? DiscoveryFiltersStore() {
     api.onUnauthorized = _onUnauthorized;
   }
 
   final DatingApiClient api;
   final TokenStorage _storage;
+
+  /// Saved discovery filters (per account); wiped on logout and account
+  /// deletion.
+  final DiscoveryFiltersStore filtersStore;
 
   bool _isAuthenticated = false;
   String? _pendingNotice;
@@ -50,6 +57,7 @@ class SessionController extends ChangeNotifier {
   /// server on a best-effort basis.
   Future<void> signOut() async {
     final token = api.token;
+    await filtersStore.clearAll();
     await _clearLocal();
     if (token == null) return;
     try {
@@ -60,6 +68,18 @@ class SessionController extends ChangeNotifier {
     }
   }
 
+  /// Deletes the account on the server (`DELETE /me`), then wipes the local
+  /// session and saved filters. Throws [ApiException] if the server refuses;
+  /// the session is kept in that case.
+  Future<void> deleteAccount() async {
+    await api.deleteAccount();
+    await filtersStore.clearAll();
+    await _clearLocal();
+  }
+
+  // A 401 (expired token, or the account was deleted elsewhere) keeps the
+  // saved filters: they are keyed by accountId, so another account never
+  // sees them, and the same account gets them back after signing in again.
   Future<void> _onUnauthorized() async {
     _pendingNotice = 'Сессия истекла. Войдите снова';
     await _clearLocal();

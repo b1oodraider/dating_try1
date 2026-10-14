@@ -12,8 +12,11 @@ import '../premium/premium_badge.dart';
 /// Discovery filters: city and age are free; height, "looking for" goals,
 /// saved excluded goals and exclusion words are premium.
 ///
+/// The single entry point for everything filter-related in discovery.
+///
 /// Pops with the new [DiscoveryFilters] when the user taps "Применить", with
-/// `null` on back. Saved server-side filters (excluded goals, exclusion
+/// `null` on back. While premium is locked the height / goal controls are
+/// disabled and their saved values are returned unchanged (kept, not sent). Saved server-side filters (excluded goals, exclusion
 /// words) change the feed even without "Применить", so every successful save
 /// is reported through [onSavedFiltersChanged].
 class DiscoveryFiltersScreen extends StatefulWidget {
@@ -151,11 +154,14 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
         DiscoveryFilters.ageMin * 1.0,
         DiscoveryFilters.ageMax * 1.0,
       );
-      _height = const RangeValues(
-        DiscoveryFilters.heightMin * 1.0,
-        DiscoveryFilters.heightMax * 1.0,
-      );
-      _goalCodes = <String>{};
+      // Locked premium values cannot be edited here, so they are kept.
+      if (!_advancedLocked) {
+        _height = const RangeValues(
+          DiscoveryFilters.heightMin * 1.0,
+          DiscoveryFilters.heightMax * 1.0,
+        );
+        _goalCodes = <String>{};
+      }
       _applyError = null;
     });
   }
@@ -169,7 +175,18 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
       minAge: minAge > DiscoveryFilters.ageMin ? minAge : null,
       maxAge: maxAge < DiscoveryFilters.ageMax ? maxAge : null,
     );
-    if (_advancedLocked) return basic;
+    // Locked: the controls are disabled, keep the saved values as they are;
+    // the feed does not send them until premium is back.
+    if (_advancedLocked) {
+      return DiscoveryFilters(
+        city: basic.city,
+        minAge: basic.minAge,
+        maxAge: basic.maxAge,
+        minHeight: widget.initial.minHeight,
+        maxHeight: widget.initial.maxHeight,
+        goalCodes: widget.initial.goalCodes,
+      );
+    }
 
     final minHeight = _height.start.round();
     final maxHeight = _height.end.round();
@@ -273,6 +290,8 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           children: [
             ..._buildBasicSection(context),
+            // TODO(ux): a future "Доп. фильтры" section goes here; its UX is
+            // not decided yet, so nothing is implemented for it.
             const SizedBox(height: 24),
             const Divider(height: 1),
             const SizedBox(height: 16),

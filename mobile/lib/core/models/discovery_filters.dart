@@ -42,6 +42,13 @@ class DiscoveryFilters {
   /// Same filters with height and goals dropped (for non-premium users).
   DiscoveryFilters withoutAdvanced() =>
       DiscoveryFilters(city: city, minAge: minAge, maxAge: maxAge);
+
+  /// Same filters with city and age dropped (height and goals kept).
+  DiscoveryFilters onlyAdvanced() => DiscoveryFilters(
+        minHeight: minHeight,
+        maxHeight: maxHeight,
+        goalCodes: goalCodes,
+      );
 }
 
 /// Feature codes of `Wallet.premiumFeatures` used by the client.

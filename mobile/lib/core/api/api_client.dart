@@ -11,6 +11,7 @@ import '../models/discovery_page.dart';
 import '../models/excluded_goals.dart';
 import '../models/exclusion_words.dart';
 import '../models/goal.dart';
+import '../models/my_profile.dart';
 import '../models/tag.dart';
 import '../models/testing_state.dart';
 import '../models/wallet.dart';
@@ -102,6 +103,46 @@ class DatingApiClient {
   Future<Account> getMe() async {
     final json = await _send('GET', '/me');
     return Account.fromJson(_expectMap(json));
+  }
+
+  /// Requires auth. Deletes the account (profile, photos, sessions); the
+  /// token becomes invalid immediately.
+  Future<void> deleteAccount() async {
+    await _send('DELETE', '/me');
+  }
+
+  // ---------------------------------------------------------- My profile
+
+  /// Requires auth. The caller's own profile.
+  Future<MyProfile> getMyProfile() async {
+    final json = await _send('GET', '/me/profile');
+    return MyProfile.fromJson(_expectMap(json));
+  }
+
+  /// Requires auth. Partial update: only the given fields are sent.
+  ///
+  /// [clearHeight] removes the height and cannot be combined with
+  /// [heightCm] (the server answers 400 `fieldErrors.heightCm`).
+  /// `goalCodes: []` clears the goals (at most 3, 400 UNKNOWN_GOAL for
+  /// unknown codes).
+  Future<MyProfile> updateMyProfile({
+    int? heightCm,
+    bool clearHeight = false,
+    List<String>? goalCodes,
+  }) async {
+    if (clearHeight && heightCm != null) {
+      throw ArgumentError('clearHeight cannot be combined with heightCm');
+    }
+    final json = await _send(
+      'PUT',
+      '/me/profile',
+      body: {
+        if (heightCm != null) 'heightCm': heightCm,
+        if (clearHeight) 'clearHeight': true,
+        if (goalCodes != null) 'goalCodes': List<String>.of(goalCodes),
+      },
+    );
+    return MyProfile.fromJson(_expectMap(json));
   }
 
   // ---------------------------------------------------------------- Tags

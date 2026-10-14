@@ -4,14 +4,19 @@ import '../../core/api/api_exception.dart';
 import '../../core/models/account.dart';
 import '../../core/models/discovery_filters.dart';
 import '../../core/models/public_profile.dart';
+import '../../core/models/wallet.dart';
 import '../auth/session_controller.dart';
 import '../collection/collection_screen.dart';
-import '../exclusion_words/exclusion_words_screen.dart';
+import '../profile/height_goals_screen.dart';
 import '../testing/test_panel_screen.dart';
 import 'discovery_filters_screen.dart';
 import 'profile_card.dart';
 
 /// Feed of published profiles with pull-to-refresh and load-more paging.
+///
+/// The query filters are saved per account and restored before the first
+/// feed request. Height and goals (premium) stay saved while premium is
+/// off but are not sent until it is back.
 class DiscoveryScreen extends StatefulWidget {
   const DiscoveryScreen({super.key, required this.session});
 
@@ -41,15 +46,32 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   /// The caller's account; decides whether the test panel is offered.
   Account? _account;
 
-  /// Query filters of the feed (set on the filters screen).
+  /// Query filters as chosen and saved, including premium-only values.
   DiscoveryFilters _filters = DiscoveryFilters.none;
+
+  /// True once [_filters] came from storage or from the user; storage is
+  /// not read again after that.
+  bool _filtersReady = false;
+
+  /// Height and goals are not available now (wallet says so, or the
+  /// server answered 403 PREMIUM_REQUIRED).
+  bool _advancedLocked = false;
+
+  /// What is actually sent: premium-only values are held back while locked.
+  DiscoveryFilters get _effectiveFilters =>
+      _advancedLocked ? _filters.withoutAdvanced() : _filters;
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    _loadFirstPage();
-    _loadAccount();
+    _start();
+  }
+
+  Future<void> _start() async {
+    await _prepare();
+    if (!mounted) return;
+    await _loadFirstPage();
   }
 
   @override
@@ -62,7 +84,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     final generation = ++_generation;
     try {
       final page = await widget.session.api
-          .getDiscoveryPage(_filters, page: 0, limit: _pageSize);
+          .getDiscoveryPage(_effectiveFilters, page: 0, limit: _pageSize);
       if (!mounted) return;
       if (generation != _generation) return;
       setState(() {
@@ -81,7 +103,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (generation != _generation) return;
       // On 401 the SessionController already switches to the login screen.
       if (e is ApiException && e.isUnauthorized) return;
-      if (_dropAdvancedFiltersOn(e)) {
+      if (_lockAdvancedFiltersOn(e)) {
         await _loadFirstPage();
         return;
       }
@@ -101,20 +123,56 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
   }
 
-  /// Best effort: without the account the test panel button stays hidden.
-  Future<void> _loadAccount() async {
-    try {
-      final account = await widget.session.api.getMe();
+  /// Loads the account (test panel, key of the saved filters), the saved
+  /// filters and the premium state. Best effort: on failure the feed is
+  /// loaded with what is known (the server enforces premium anyway).
+  Future<void> _prepare() async {
+    final api = widget.session.api;
+    final walletFuture = api.getWallet().then<Wallet?>(
+      (wallet) => wallet,
+      onError: (Object e) {
+        debugPrint('Failed to load wallet: $e');
+        return null;
+      },
+    );
+
+    if (_account == null) {
+      try {
+        final account = await api.getMe();
+        if (!mounted) return;
+        setState(() => _account = account);
+      } catch (e) {
+        if (!mounted) return;
+        debugPrint('Failed to load account: $e');
+      }
+    }
+
+    final account = _account;
+    if (account != null && !_filtersReady) {
+      final saved = await widget.session.filtersStore.load(account.id);
       if (!mounted) return;
-      setState(() => _account = account);
-    } catch (e) {
-      if (!mounted) return;
-      debugPrint('Failed to load account: $e');
+      if (!_filtersReady) {
+        setState(() {
+          _filters = saved;
+          _filtersReady = true;
+        });
+      }
+    }
+
+    final wallet = await walletFuture;
+    if (!mounted) return;
+    if (wallet != null) {
+      // Premium may have come back: saved height / goals apply again.
+      setState(() {
+        _advancedLocked =
+            wallet.isFeatureLocked(PremiumFeatureCodes.advancedFilters);
+      });
     }
   }
 
   Future<void> _refresh() async {
-    if (_account == null) _loadAccount();
+    await _prepare();
+    if (!mounted) return;
     await _loadFirstPage();
   }
 
@@ -123,7 +181,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       _loading = true;
       _error = null;
     });
-    _loadFirstPage();
+    _refresh();
   }
 
   Future<void> _loadMore() async {
@@ -135,7 +193,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     });
     try {
       final page = await widget.session.api
-          .getDiscoveryPage(_filters, page: _page + 1, limit: _pageSize);
+          .getDiscoveryPage(
+            _effectiveFilters,
+            page: _page + 1,
+            limit: _pageSize,
+          );
       if (!mounted) return;
       if (generation != _generation) return;
       setState(() {
@@ -148,8 +210,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (!mounted) return;
       if (generation != _generation) return;
       if (e is ApiException && e.isUnauthorized) return;
-      if (_dropAdvancedFiltersOn(e)) {
-        await _restartFeed();
+      if (_lockAdvancedFiltersOn(e)) {
+        await _restartFeed(refreshState: false);
         return;
       }
       setState(() {
@@ -159,25 +221,27 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
   }
 
-  /// Premium ended while height / goal filters were set (403
-  /// PREMIUM_REQUIRED): drop them, tell the user and return true so the
-  /// caller reloads the feed with the free filters only.
-  bool _dropAdvancedFiltersOn(Object error) {
+  /// Premium ended while height / goal filters were sent (403
+  /// PREMIUM_REQUIRED): keep them saved but stop sending them, tell the
+  /// user and return true so the caller reloads the feed.
+  bool _lockAdvancedFiltersOn(Object error) {
     if (error is! ApiException || !error.isPremiumRequired) return false;
-    if (!_filters.hasAdvanced) return false;
-    setState(() => _filters = _filters.withoutAdvanced());
+    if (!_effectiveFilters.hasAdvanced) return false;
+    setState(() => _advancedLocked = true);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
-          'Фильтры по росту и целям доступны с премиумом — они сброшены',
+          'Фильтры по росту и целям сохранены, '
+          'но не применяются без премиума',
         ),
       ),
     );
     return true;
   }
 
-  /// Starts the feed over from the first page (filters changed).
-  Future<void> _restartFeed() async {
+  /// Starts the feed over from the first page (filters changed). With
+  /// [refreshState] the premium state is re-read first.
+  Future<void> _restartFeed({bool refreshState = true}) async {
     setState(() {
       _items.clear();
       _page = 0;
@@ -187,7 +251,23 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       _loadingMore = false;
       _loadMoreError = null;
     });
+    if (refreshState) {
+      await _prepare();
+      if (!mounted) return;
+    }
     await _loadFirstPage();
+  }
+
+  /// Remembers [filters] (also on disk for the current account).
+  void _setFilters(DiscoveryFilters filters) {
+    setState(() {
+      _filters = filters;
+      _filtersReady = true;
+    });
+    final account = _account;
+    if (account != null) {
+      widget.session.filtersStore.save(account.id, filters);
+    }
   }
 
   Future<void> _openFilters() async {
@@ -203,12 +283,16 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     );
     if (!mounted) return;
     if (result == null && !savedFiltersChanged) return;
-    if (result != null) _filters = result;
+    if (result != null) _setFilters(result);
     await _restartFeed();
   }
 
+  /// Resets what is applied now; saved premium values that are held back
+  /// while premium is locked are kept.
   void _resetFilters() {
-    _filters = DiscoveryFilters.none;
+    _setFilters(
+      _advancedLocked ? _filters.onlyAdvanced() : DiscoveryFilters.none,
+    );
     _restartFeed();
   }
 
@@ -218,19 +302,17 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     if (_scrollController.position.extentAfter < 600) _loadMore();
   }
 
-  Future<void> _openExclusionWords() async {
+  Future<void> _openHeightGoals() async {
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) => ExclusionWordsScreen(session: widget.session),
+        builder: (_) => HeightGoalsScreen(session: widget.session),
       ),
     );
     if (!mounted) return;
     if (saved != true) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Слова-исключения сохранены')),
+      const SnackBar(content: Text('Рост и цели сохранены')),
     );
-    // The filter changed: start the feed over from the first page.
-    await _restartFeed();
   }
 
   void _openCollection() {
@@ -279,16 +361,16 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           IconButton(
             tooltip: 'Фильтры',
             icon: Badge(
-              isLabelVisible: !_filters.isEmpty,
+              isLabelVisible: !_effectiveFilters.isEmpty,
               smallSize: 8,
               child: const Icon(Icons.tune),
             ),
             onPressed: _openFilters,
           ),
           IconButton(
-            tooltip: 'Слова-исключения',
-            icon: const Icon(Icons.block),
-            onPressed: _openExclusionWords,
+            tooltip: 'Рост и цели',
+            icon: const Icon(Icons.person_outline),
+            onPressed: _openHeightGoals,
           ),
           IconButton(
             tooltip: 'Коллекция',
@@ -330,7 +412,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           children: [
             const SizedBox(height: 160),
             const Center(child: Text('Пока нет подходящих анкет')),
-            if (!_filters.isEmpty) ...[
+            if (!_effectiveFilters.isEmpty) ...[
               const SizedBox(height: 12),
               Center(
                 child: TextButton(
