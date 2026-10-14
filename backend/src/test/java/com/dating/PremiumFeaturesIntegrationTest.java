@@ -35,6 +35,13 @@ class PremiumFeaturesIntegrationTest extends IntegrationTestBase {
         putProfile(token, "{\"goalCodes\": [\"DATING\", \"CHAT\", \"FAMILY\", \"FRIENDSHIP\"]}").andExpect(status().isBadRequest());
         putProfile(token, "{\"heightCm\": 300}").andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.heightCm").exists());
+
+        putProfile(token, "{\"heightCm\": 170, \"clearHeight\": true}").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.heightCm").exists());
+        putProfile(token, "{\"clearHeight\": true, \"goalCodes\": []}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.heightCm").value(nullValue()))
+                .andExpect(jsonPath("$.goals", hasSize(0)));
     }
 
     @Test

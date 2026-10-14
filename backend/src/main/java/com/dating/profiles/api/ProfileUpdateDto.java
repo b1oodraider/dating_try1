@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 
 /**
- * All fields optional: null means "leave unchanged". Trimmed-length rules (e.g. a name of spaces)
+ * All fields optional: null means "leave unchanged" (height is removed with clearHeight = true). Trimmed-length rules (e.g. a name of spaces)
  * are checked in the service, after trimming.
  */
 public record ProfileUpdateDto(
@@ -35,5 +35,8 @@ public record ProfileUpdateDto(
         Integer heightCm,
 
         @Size(max = 3, message = "Можно выбрать не более 3 целей")
-        List<String> goalCodes
+        List<String> goalCodes,
+
+        /** true removes the height from the profile; cannot be combined with heightCm. */
+        Boolean clearHeight
 ) {}

@@ -147,7 +147,8 @@ When premium ends, saved hard filters are KEPT but NOT applied (responses carry 
 GET /goals (public) 200 Goal[]       Goal = { code, label, sortOrder }
   codes: SERIOUS_RELATIONSHIP, FAMILY, DATING, FRIENDSHIP, CHAT, NOT_SURE
 MyProfile and PublicProfile additionally have: heightCm: number|null, goals: Goal[], premium: boolean
-PUT /me/profile additionally accepts: heightCm (120..230), goalCodes: string[] (<= 3, known codes, else 400 UNKNOWN_GOAL)
+PUT /me/profile additionally accepts: heightCm (120..230), goalCodes: string[] (<= 3, known codes, else 400 UNKNOWN_GOAL; [] clears),
+  clearHeight: true (removes the height; 400 fieldErrors.heightCm if sent together with heightCm)
 
 ## Discovery: advanced filters (premium ADVANCED_FILTERS, else 403 PREMIUM_REQUIRED details.feature)
 GET /discovery/profiles additionally accepts: minHeight, maxHeight (cm; profiles without height do not match),

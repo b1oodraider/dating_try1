@@ -120,12 +120,18 @@ public class ProfileService {
         if (dto.goalCodes() != null) {
             goals = resolveGoals(dto.goalCodes(), errors);
         }
+        boolean clearHeight = Boolean.TRUE.equals(dto.clearHeight());
+        if (clearHeight && dto.heightCm() != null) {
+            errors.put("heightCm", "Нельзя одновременно указать и удалить рост");
+        }
         if (!errors.isEmpty()) {
             String code = errors.containsKey("tagCodes") ? "UNKNOWN_TAG"
                     : errors.containsKey("goalCodes") ? "UNKNOWN_GOAL" : "VALIDATION_ERROR";
             throw ApiException.validation(code, "Ошибка валидации входных данных", errors);
         }
-        if (dto.heightCm() != null) {
+        if (clearHeight) {
+            profile.setHeightCm(null);
+        } else if (dto.heightCm() != null) {
             profile.setHeightCm(dto.heightCm());
         }
         if (goals != null) {
