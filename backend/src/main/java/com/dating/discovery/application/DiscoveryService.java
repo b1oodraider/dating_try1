@@ -8,6 +8,9 @@ import com.dating.discovery.api.TagLogic;
 import com.dating.profiles.api.PhotoDto;
 import com.dating.profiles.api.PublicProfileDto;
 import com.dating.accounts.application.AccountService;
+import com.dating.common.entitlements.FeatureAccess;
+import com.dating.common.entitlements.PremiumFeatures;
+import com.dating.profiles.domain.RelationshipGoal;
 import com.dating.profiles.api.DecorationDto;
 import com.dating.profiles.application.ProfileDecorationQuery;
 import com.dating.profiles.application.ProfilePhotoQuery;
@@ -40,15 +43,20 @@ public class DiscoveryService {
     private final ExclusionWordsService exclusionWords;
     private final ProfileDecorationQuery decorationQuery;
     private final AccountService accountService;
+    private final ExcludedGoalsService excludedGoals;
+    private final FeatureAccess featureAccess;
 
     public DiscoveryService(ProfileRepository profileRepository, ProfilePhotoQuery photoQuery,
                             ExclusionWordsService exclusionWords, ProfileDecorationQuery decorationQuery,
-                            AccountService accountService) {
+                            AccountService accountService, ExcludedGoalsService excludedGoals,
+                            FeatureAccess featureAccess) {
         this.profileRepository = profileRepository;
         this.photoQuery = photoQuery;
         this.exclusionWords = exclusionWords;
         this.decorationQuery = decorationQuery;
         this.accountService = accountService;
+        this.excludedGoals = excludedGoals;
+        this.featureAccess = featureAccess;
     }
 
     /**
@@ -77,23 +85,52 @@ public class DiscoveryService {
         if (!query.tagCodes().isEmpty()) {
             spec = spec.and(hasTags(query.tagCodes(), query.tagLogic()));
         }
-        List<String> excluded = exclusionWords.wordsOf(callerAccountId);
+        if (query.usesAdvancedFilters()) {
+            featureAccess.require(callerAccountId, PremiumFeatures.ADVANCED_FILTERS);
+        }
+        if (query.minHeight() != null) {
+            spec = spec.and((root, q, cb) -> cb.greaterThanOrEqualTo(root.get("heightCm"), query.minHeight()));
+        }
+        if (query.maxHeight() != null) {
+            spec = spec.and((root, q, cb) -> cb.lessThanOrEqualTo(root.get("heightCm"), query.maxHeight()));
+        }
+        if (!query.goalCodes().isEmpty()) {
+            spec = spec.and(hasAnyGoal(query.goalCodes()));
+        }
+        // Saved hard filters: kept when premium ends, applied only while the feature is available.
+        Set<String> goalsToExclude = excludedGoals.activeGoalsOf(callerAccountId);
+        if (!goalsToExclude.isEmpty()) {
+            spec = spec.and(Specification.not(hasAnyGoal(goalsToExclude)));
+        }
+        List<String> excluded = exclusionWords.activeWordsOf(callerAccountId);
         if (!excluded.isEmpty()) {
             spec = spec.and(mentionsNone(ExclusionWordsService.toTsQuery(excluded)));
         }
 
         Page<Profile> page = profileRepository.findAll(spec, pageRequest);
+        Set<UUID> premiumOwners = featureAccess.premiumAmong(page.getContent().stream().map(Profile::getAccountId).toList());
         Map<UUID, List<PhotoDto>> photos = photoQuery.photosOf(page.getContent().stream().map(Profile::getId).toList());
         Map<UUID, Map<String, DecorationDto>> decorations =
                 decorationQuery.publicDecorations(page.getContent().stream().map(Profile::getAccountId).toList());
 
         List<PublicProfileDto> items = page.getContent().stream()
                 .map(p -> PublicProfileDto.from(p, photos.getOrDefault(p.getId(), List.of()),
-                        decorations.getOrDefault(p.getAccountId(), Map.of())))
+                        decorations.getOrDefault(p.getAccountId(), Map.of()), premiumOwners.contains(p.getAccountId())))
                 .toList();
 
         return new DiscoveryPageResponseDto(items, query.page(), query.limit(),
                 page.getTotalElements(), page.getTotalPages());
+    }
+
+    private static Specification<Profile> hasAnyGoal(Set<String> goalCodes) {
+        return (root, q, cb) -> {
+            Subquery<String> matched = q.subquery(String.class);
+            Root<Profile> p2 = matched.from(Profile.class);
+            Join<Profile, RelationshipGoal> goal = p2.join("goals");
+            matched.select(goal.get("code"))
+                    .where(cb.equal(p2.get("id"), root.get("id")), goal.get("code").in(goalCodes));
+            return cb.exists(matched);
+        };
     }
 
     private static Specification<Profile> isVisible() {

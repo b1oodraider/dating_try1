@@ -28,5 +28,12 @@ public record ProfileUpdateDto(
         List<String> tagCodes,
 
         @Size(max = 200, message = "Статус на сегодня не должен превышать 200 символов")
-        String dailyStatusText
+        String dailyStatusText,
+
+        @Min(value = 120, message = "Рост должен быть от 120 до 230 см")
+        @Max(value = 230, message = "Рост должен быть от 120 до 230 см")
+        Integer heightCm,
+
+        @Size(max = 3, message = "Можно выбрать не более 3 целей")
+        List<String> goalCodes
 ) {}

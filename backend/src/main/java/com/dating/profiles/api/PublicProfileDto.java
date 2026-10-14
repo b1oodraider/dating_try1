@@ -1,5 +1,6 @@
 package com.dating.profiles.api;
 
+import com.dating.profiles.application.ProfileService;
 import com.dating.profiles.domain.Profile;
 
 import java.util.Comparator;
@@ -11,6 +12,7 @@ import java.util.UUID;
  * What other users see. Deliberately has no accountId or internal statuses.
  *
  * @param decorations equipped public cosmetics by slot (PHOTO_FRAME, PROFILE_STATUS, …)
+ * @param premium     owner has premium right now (premium badge)
  */
 public record PublicProfileDto(
         UUID id,
@@ -21,9 +23,13 @@ public record PublicProfileDto(
         String dailyStatusText,
         List<TagResponseDto> tags,
         List<PhotoDto> photos,
-        Map<String, DecorationDto> decorations
+        Map<String, DecorationDto> decorations,
+        Integer heightCm,
+        List<GoalDto> goals,
+        boolean premium
 ) {
-    public static PublicProfileDto from(Profile profile, List<PhotoDto> photos, Map<String, DecorationDto> decorations) {
+    public static PublicProfileDto from(Profile profile, List<PhotoDto> photos, Map<String, DecorationDto> decorations,
+                                        boolean premium) {
         List<TagResponseDto> tags = profile.getTags().stream()
                 .map(TagResponseDto::from)
                 .sorted(Comparator.comparingInt(TagResponseDto::sortOrder))
@@ -37,7 +43,10 @@ public record PublicProfileDto(
                 profile.getDailyStatusText(),
                 tags,
                 photos,
-                decorations
+                decorations,
+                profile.getHeightCm(),
+                ProfileService.goalsOf(profile),
+                premium
         );
     }
 }

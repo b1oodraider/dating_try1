@@ -53,6 +53,17 @@ public class Profile extends AssignedIdEntity {
     )
     private Set<CommunicationTag> tags = new HashSet<>();
 
+    @Column(name = "height_cm")
+    private Integer heightCm;
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "profile_goals",
+            joinColumns = @JoinColumn(name = "profile_id"),
+            inverseJoinColumns = @JoinColumn(name = "goal_code")
+    )
+    private Set<RelationshipGoal> goals = new HashSet<>();
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -163,6 +174,25 @@ public class Profile extends AssignedIdEntity {
     public void replaceTags(Set<CommunicationTag> newTags) {
         this.tags.clear();
         this.tags.addAll(newTags);
+        touch();
+    }
+
+    public Integer getHeightCm() {
+        return heightCm;
+    }
+
+    public void setHeightCm(Integer heightCm) {
+        this.heightCm = heightCm;
+        touch();
+    }
+
+    public Set<RelationshipGoal> getGoals() {
+        return goals;
+    }
+
+    public void replaceGoals(Set<RelationshipGoal> newGoals) {
+        this.goals.clear();
+        this.goals.addAll(newGoals);
         touch();
     }
 

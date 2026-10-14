@@ -42,6 +42,11 @@ public class ProfileController {
         return ResponseEntity.ok(profileService.hideProfile(user.accountId()));
     }
 
+    @GetMapping("/goals")
+    public ResponseEntity<List<GoalDto>> listGoals() {
+        return ResponseEntity.ok(profileService.listGoals());
+    }
+
     @GetMapping("/tags")
     public ResponseEntity<List<TagResponseDto>> listTags() {
         return ResponseEntity.ok(profileService.listActiveTags());

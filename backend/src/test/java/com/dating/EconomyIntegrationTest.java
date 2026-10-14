@@ -125,7 +125,7 @@ class EconomyIntegrationTest extends IntegrationTestBase {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.premium.active").value(false))
                 .andExpect(jsonPath("$.items", hasSize(0)))
-                .andExpect(jsonPath("$.premiumFeatures", contains("TEST_PREMIUM_FEATURE")));
+                .andExpect(jsonPath("$.premiumFeatures", hasItem("TEST_PREMIUM_FEATURE")));
 
         String token = login(newPhone());
         UUID account = UUID.fromString(json(get("/api/v1/me"), token, "$.id"));

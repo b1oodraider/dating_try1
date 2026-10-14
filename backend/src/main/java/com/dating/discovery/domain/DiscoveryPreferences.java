@@ -26,6 +26,11 @@ public class DiscoveryPreferences extends AssignedIdEntity {
     @Column(name = "word", nullable = false, length = 30)
     private List<String> exclusionWords = new ArrayList<>();
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "discovery_excluded_goals", joinColumns = @JoinColumn(name = "account_id"))
+    @Column(name = "goal_code", nullable = false, length = 40)
+    private java.util.Set<String> excludedGoals = new java.util.LinkedHashSet<>();
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -49,6 +54,16 @@ public class DiscoveryPreferences extends AssignedIdEntity {
     public void replaceExclusionWords(List<String> words) {
         exclusionWords.clear();
         exclusionWords.addAll(words);
+        updatedAt = Instant.now();
+    }
+
+    public java.util.Set<String> getExcludedGoals() {
+        return java.util.Set.copyOf(excludedGoals);
+    }
+
+    public void replaceExcludedGoals(java.util.Collection<String> goalCodes) {
+        excludedGoals.clear();
+        excludedGoals.addAll(goalCodes);
         updatedAt = Instant.now();
     }
 

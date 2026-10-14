@@ -55,7 +55,9 @@ app:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
   economy:
     # Feature codes reserved for premium (checked via FeatureAccess.require). Empty until decided.
-    premium-features: []
+    # ADVANCED_FILTERS: search by height/goals + excluded goals; EXCLUSION_WORDS: saved exclusion words.
+    # Remove a code to make the feature free. The premium badge is shown for any active premium.
+    premium-features: [ADVANCED_FILTERS, EXCLUSION_WORDS]
     # Consumables granted to premium users every period (into the PERIODIC bucket, spent first).
     #   period: DAILY | WEEKLY | MONTHLY (UTC calendar)
     #   mode:   TOP_UP refills up to quantity (unused units do not pile up); ADD adds quantity every period

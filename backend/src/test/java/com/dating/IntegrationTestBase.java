@@ -99,6 +99,18 @@ public abstract class IntegrationTestBase {
     @Autowired
     protected JdbcTemplate jdbc;
 
+    @Autowired
+    protected com.dating.economy.application.EconomyService economyService;
+
+    /**
+     * Gives the account behind the token premium (premium-only features like exclusion words need it).
+     */
+    protected void grantPremium(String token, int days) throws Exception {
+        UUID accountId = UUID.fromString(json(get("/api/v1/me"), token, "$.id"));
+        economyService.grant(accountId, com.dating.economy.domain.RewardSource.ADMIN, "test",
+                "test-premium:" + UUID.randomUUID(), List.of(new com.dating.economy.domain.Reward.PremiumDays(days)));
+    }
+
     // ------------------------------------------------------------------ helpers
 
     protected ResultActions putWords(String token, String wordsJson) throws Exception {

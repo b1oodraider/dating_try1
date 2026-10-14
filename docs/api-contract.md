@@ -134,3 +134,25 @@ DELETE /testing/premium                          end premium now
 POST   /testing/clock/advance                    body { days 1..3650 }   move this account's economy time forward
                                                  (7 = "next premium week": allowances refill, premium may expire)
 DELETE /testing/clock                            back to real time
+
+## Premium content (v1)
+Premium-only features are listed in server config `app.economy.premium-features`; codes today:
+  ADVANCED_FILTERS — discovery by height and goals + saved excluded goals
+  EXCLUSION_WORDS  — saved exclusion words (PUT /me/exclusion-words now returns 403 PREMIUM_REQUIRED for free users)
+Clients read the list from Wallet.premiumFeatures; a feature not listed there is free.
+Premium badge: Wallet.premium.active, MyProfile.premium and PublicProfile.premium (shown to others in the feed).
+When premium ends, saved hard filters are KEPT but NOT applied (responses carry `active: false`); editing them returns 403.
+
+## Height and goals (profiles)
+GET /goals (public) 200 Goal[]       Goal = { code, label, sortOrder }
+  codes: SERIOUS_RELATIONSHIP, FAMILY, DATING, FRIENDSHIP, CHAT, NOT_SURE
+MyProfile and PublicProfile additionally have: heightCm: number|null, goals: Goal[], premium: boolean
+PUT /me/profile additionally accepts: heightCm (120..230), goalCodes: string[] (<= 3, known codes, else 400 UNKNOWN_GOAL)
+
+## Discovery: advanced filters (premium ADVANCED_FILTERS, else 403 PREMIUM_REQUIRED details.feature)
+GET /discovery/profiles additionally accepts: minHeight, maxHeight (cm; profiles without height do not match),
+  goalCodes=A,B (profile has at least one of them)
+Saved excluded goals (hard filter: profiles having any of these goals are hidden):
+GET /me/excluded-goals  200 { goalCodes: string[], active: boolean }
+PUT /me/excluded-goals  body { goalCodes: string[] }  200 same ; 403 PREMIUM_REQUIRED ; 400 UNKNOWN_GOAL
+GET /me/exclusion-words now returns { words, maxWords, active }.

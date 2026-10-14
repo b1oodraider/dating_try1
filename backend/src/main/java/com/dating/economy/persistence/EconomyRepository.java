@@ -251,6 +251,21 @@ public class EconomyRepository {
                 .map(OffsetDateTime::toInstant);
     }
 
+    /**
+     * Accounts with premium active right now, in each account's economy time (test accounts may be shifted).
+     */
+    public java.util.Set<UUID> premiumAccounts(Collection<UUID> accountIds) {
+        return new java.util.HashSet<>(jdbc.sql("""
+                        SELECT p.account_id FROM premium_entitlements p
+                        LEFT JOIN account_clock_offsets o ON o.account_id = p.account_id
+                        WHERE p.account_id IN (:ids)
+                          AND p.premium_until > now() + make_interval(secs => COALESCE(o.offset_seconds, 0))
+                        """)
+                .param("ids", accountIds)
+                .query(UUID.class)
+                .list());
+    }
+
     public List<UUID> accountsWithActivePremium() {
         return jdbc.sql("SELECT account_id FROM premium_entitlements WHERE premium_until > now()")
                 .query(UUID.class)

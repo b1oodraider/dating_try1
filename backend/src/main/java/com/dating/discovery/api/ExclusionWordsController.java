@@ -20,13 +20,14 @@ public class ExclusionWordsController {
     @GetMapping
     public ResponseEntity<ExclusionWordsDto> get(@AuthenticationPrincipal AuthenticatedUser user) {
         return ResponseEntity.ok(new ExclusionWordsDto(
-                exclusionWordsService.wordsOf(user.accountId()), ExclusionWordsService.MAX_WORDS));
+                exclusionWordsService.wordsOf(user.accountId()), ExclusionWordsService.MAX_WORDS,
+                exclusionWordsService.isActive(user.accountId())));
     }
 
     @PutMapping
     public ResponseEntity<ExclusionWordsDto> replace(@AuthenticationPrincipal AuthenticatedUser user,
                                                      @Valid @RequestBody ExclusionWordsUpdateDto dto) {
         return ResponseEntity.ok(new ExclusionWordsDto(
-                exclusionWordsService.replaceWords(user.accountId(), dto.words()), ExclusionWordsService.MAX_WORDS));
+                exclusionWordsService.replaceWords(user.accountId(), dto.words()), ExclusionWordsService.MAX_WORDS, true));
     }
 }

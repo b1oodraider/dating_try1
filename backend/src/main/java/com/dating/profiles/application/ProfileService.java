@@ -3,7 +3,11 @@ package com.dating.profiles.application;
 import com.dating.accounts.application.AccountDeletedEvent;
 import com.dating.common.errors.ApiException;
 import com.dating.productevents.application.ProductEventPublisher;
+import com.dating.common.entitlements.FeatureAccess;
+import com.dating.profiles.api.GoalDto;
 import com.dating.profiles.api.MyProfileDto;
+import com.dating.profiles.domain.RelationshipGoal;
+import com.dating.profiles.persistence.RelationshipGoalRepository;
 import com.dating.profiles.api.PhotoDto;
 import com.dating.profiles.api.ProfileUpdateDto;
 import com.dating.profiles.api.TagResponseDto;
@@ -37,19 +41,25 @@ public class ProfileService {
     private final ProductEventPublisher productEvents;
     private final ApplicationEventPublisher eventPublisher;
     private final ProfileDecorationQuery decorationQuery;
+    private final RelationshipGoalRepository goalRepository;
+    private final FeatureAccess featureAccess;
 
     public ProfileService(ProfileRepository profileRepository,
                           CommunicationTagRepository tagRepository,
                           ProfilePhotoQuery photoQuery,
                           ProductEventPublisher productEvents,
                           ApplicationEventPublisher eventPublisher,
-                          ProfileDecorationQuery decorationQuery) {
+                          ProfileDecorationQuery decorationQuery,
+                          RelationshipGoalRepository goalRepository,
+                          FeatureAccess featureAccess) {
         this.profileRepository = profileRepository;
         this.tagRepository = tagRepository;
         this.photoQuery = photoQuery;
         this.productEvents = productEvents;
         this.eventPublisher = eventPublisher;
         this.decorationQuery = decorationQuery;
+        this.goalRepository = goalRepository;
+        this.featureAccess = featureAccess;
     }
 
     @Transactional
@@ -106,9 +116,20 @@ public class ProfileService {
         if (dto.tagCodes() != null) {
             tags = resolveTags(dto.tagCodes(), errors);
         }
+        Set<RelationshipGoal> goals = null;
+        if (dto.goalCodes() != null) {
+            goals = resolveGoals(dto.goalCodes(), errors);
+        }
         if (!errors.isEmpty()) {
-            throw ApiException.validation(errors.containsKey("tagCodes") ? "UNKNOWN_TAG" : "VALIDATION_ERROR",
-                    "Ошибка валидации входных данных", errors);
+            String code = errors.containsKey("tagCodes") ? "UNKNOWN_TAG"
+                    : errors.containsKey("goalCodes") ? "UNKNOWN_GOAL" : "VALIDATION_ERROR";
+            throw ApiException.validation(code, "Ошибка валидации входных данных", errors);
+        }
+        if (dto.heightCm() != null) {
+            profile.setHeightCm(dto.heightCm());
+        }
+        if (goals != null) {
+            profile.replaceGoals(goals);
         }
 
         if (displayName != null) {
@@ -155,6 +176,39 @@ public class ProfileService {
             errors.put("tagCodes", "Неизвестные карточки: " + String.join(", ", unknown));
         }
         return new HashSet<>(found);
+    }
+
+    private Set<RelationshipGoal> resolveGoals(List<String> rawCodes, Map<String, String> errors) {
+        Set<String> codes = rawCodes.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(code -> !code.isEmpty())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (codes.isEmpty()) {
+            return new HashSet<>();
+        }
+        List<RelationshipGoal> found = goalRepository.findAllByCodeInAndActiveTrue(codes);
+        if (found.size() != codes.size()) {
+            Set<String> foundCodes = found.stream().map(RelationshipGoal::getCode).collect(Collectors.toSet());
+            List<String> unknown = codes.stream().filter(code -> !foundCodes.contains(code)).toList();
+            errors.put("goalCodes", "Неизвестные цели: " + String.join(", ", unknown));
+        }
+        return new HashSet<>(found);
+    }
+
+    @Transactional(readOnly = true)
+    public List<GoalDto> listGoals() {
+        return goalRepository.findAllByActiveTrueOrderBySortOrderAsc().stream().map(GoalDto::from).toList();
+    }
+
+    /**
+     * Goals of a profile in display order.
+     */
+    public static List<GoalDto> goalsOf(Profile profile) {
+        return profile.getGoals().stream()
+                .map(GoalDto::from)
+                .sorted(Comparator.comparingInt(GoalDto::sortOrder))
+                .toList();
     }
 
     @Transactional
@@ -211,6 +265,9 @@ public class ProfileService {
                 calculateCompleteness(profile, photos.size()),
                 List.copyOf(missingForPublish(profile, photos.size()).keySet()),
                 decorationQuery.publicDecorations(profile.getAccountId()),
+                profile.getHeightCm(),
+                goalsOf(profile),
+                !featureAccess.premiumAmong(List.of(profile.getAccountId())).isEmpty(),
                 profile.getCreatedAt(),
                 profile.getUpdatedAt()
         );

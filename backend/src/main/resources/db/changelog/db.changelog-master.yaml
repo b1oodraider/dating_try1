@@ -13,3 +13,5 @@ databaseChangeLog:
       file: db/changelog/changesets/006-hunspell.yaml
   - include:
       file: db/changelog/changesets/007-test-accounts-cosmetics-achievements.yaml
+  - include:
+      file: db/changelog/changesets/008-height-goals-premium-filters.yaml

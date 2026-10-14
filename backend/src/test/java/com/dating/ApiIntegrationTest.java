@@ -309,6 +309,7 @@ class ApiIntegrationTest extends IntegrationTestBase {
     @Test
     void exclusionWordsAreNormalizedAndValidated() throws Exception {
         String token = login(newPhone());
+        grantPremium(token, 30);
 
         putWords(token, "[\"Курю\", \"курю\", \" Кальян \"]")
                 .andExpect(status().isOk())
@@ -350,6 +351,7 @@ class ApiIntegrationTest extends IntegrationTestBase {
                 UUID.fromString(expiredProfileId));
 
         String viewer = login(newPhone());
+        grantPremium(viewer, 30);
         discovery(viewer, city, null, null, 20).andExpect(jsonPath("$.totalElements").value(4));
 
         putWords(viewer, "[\"курить\"]").andExpect(status().isOk());
@@ -390,6 +392,7 @@ class ApiIntegrationTest extends IntegrationTestBase {
         putProfile(child, "{\"aboutText\":\"У меня есть ребёнок\"}").andExpect(status().isOk());
 
         String viewer = login(newPhone());
+        grantPremium(viewer, 30);
         // Stemmer could not link "пью" to "пить"; Hunspell does. "ребенок" written with "е" matches "ребёнок".
         putWords(viewer, "[\"пить\", \"кальян\", \"ребенок\"]").andExpect(status().isOk());
         discovery(viewer, city, null, null, 20)
@@ -404,6 +407,7 @@ class ApiIntegrationTest extends IntegrationTestBase {
     @Test
     void deletingAccountRemovesExclusionWords() throws Exception {
         String token = login(newPhone());
+        grantPremium(token, 30);
         String accountId = json(get("/api/v1/me"), token, "$.id");
         putWords(token, "[\"курю\"]").andExpect(status().isOk());
 

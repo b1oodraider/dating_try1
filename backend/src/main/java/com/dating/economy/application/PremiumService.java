@@ -55,4 +55,10 @@ public class PremiumService implements FeatureAccess {
             throw ApiException.premiumRequired(feature);
         }
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Set<UUID> premiumAmong(java.util.Collection<UUID> accountIds) {
+        return accountIds.isEmpty() ? java.util.Set.of() : repository.premiumAccounts(accountIds);
+    }
 }

@@ -45,7 +45,7 @@ public class SecurityConfig {
                         .accessDeniedHandler(securityErrorHandler))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/otp/request", "/api/v1/auth/otp/verify").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/tags").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/tags", "/api/v1/goals").permitAll()
                         // Signed URLs: authorization is the HMAC signature, so <img src> works without a header.
                         .requestMatchers(HttpMethod.GET, "/api/v1/media/photos/*").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()

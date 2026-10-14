@@ -27,6 +27,9 @@ public record MyProfileDto(
         int completenessPercent,
         List<String> missingForPublish,
         Map<String, DecorationDto> decorations,
+        Integer heightCm,
+        List<GoalDto> goals,
+        boolean premium,
         Instant createdAt,
         Instant updatedAt
 ) {}

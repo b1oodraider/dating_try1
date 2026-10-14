@@ -1,6 +1,8 @@
 package com.dating.discovery.application;
 
 import com.dating.accounts.application.AccountDeletedEvent;
+import com.dating.common.entitlements.FeatureAccess;
+import com.dating.common.entitlements.PremiumFeatures;
 import com.dating.common.errors.ApiException;
 import com.dating.discovery.domain.DiscoveryPreferences;
 import com.dating.discovery.persistence.DiscoveryPreferencesRepository;
@@ -37,10 +39,13 @@ public class ExclusionWordsService {
 
     private final DiscoveryPreferencesRepository repository;
     private final ProductEventPublisher productEvents;
+    private final FeatureAccess featureAccess;
 
-    public ExclusionWordsService(DiscoveryPreferencesRepository repository, ProductEventPublisher productEvents) {
+    public ExclusionWordsService(DiscoveryPreferencesRepository repository, ProductEventPublisher productEvents,
+                                 FeatureAccess featureAccess) {
         this.repository = repository;
         this.productEvents = productEvents;
+        this.featureAccess = featureAccess;
     }
 
     @Transactional(readOnly = true)
@@ -50,8 +55,22 @@ public class ExclusionWordsService {
                 .orElse(List.of());
     }
 
+    /**
+     * Words to apply in discovery: empty when the feature is not available (e.g. premium has ended);
+     * the saved list is kept and applies again once premium is back.
+     */
+    @Transactional(readOnly = true)
+    public List<String> activeWordsOf(UUID accountId) {
+        return isActive(accountId) ? wordsOf(accountId) : List.of();
+    }
+
+    public boolean isActive(UUID accountId) {
+        return featureAccess.isAllowed(accountId, PremiumFeatures.EXCLUSION_WORDS);
+    }
+
     @Transactional
     public List<String> replaceWords(UUID accountId, List<String> rawWords) {
+        featureAccess.require(accountId, PremiumFeatures.EXCLUSION_WORDS);
         List<String> words = normalize(rawWords);
         DiscoveryPreferences preferences = repository.findById(accountId)
                 .orElseGet(() -> new DiscoveryPreferences(accountId));
