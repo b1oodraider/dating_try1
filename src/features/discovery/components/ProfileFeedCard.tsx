@@ -1,8 +1,10 @@
 import React from 'react';
 import type { PublicProfile } from '../../../core/types';
 import { TagChip } from '../../tags/components/TagChip';
-import { MapPin, Sparkles, MessageCircleHeart } from 'lucide-react';
+import { MapPin, Sparkles, MessageCircleHeart, Ruler } from 'lucide-react';
 import { getPhotoFrame, PhotoFrameOverlay, ProfileStatusPill } from '../../cosmetics/decorations';
+import { GoalPills } from '../../goals/components/GoalChips';
+import { PremiumBadge } from '../../premium/components/PremiumBadge';
 
 interface ProfileFeedCardProps {
   profile: PublicProfile;
@@ -65,6 +67,7 @@ export const ProfileFeedCard: React.FC<ProfileFeedCardProps> = ({
               <h3 className="text-base font-bold text-zinc-900 truncate max-w-full">
                 {profile.displayName}, <span className="font-normal text-zinc-600">{profile.age}</span>
               </h3>
+              {profile.premium && <PremiumBadge />}
               <ProfileStatusPill decorations={profile.decorations} />
             </div>
             <span className="text-xs text-zinc-400 flex items-center gap-0.5 shrink-0">
@@ -72,6 +75,19 @@ export const ProfileFeedCard: React.FC<ProfileFeedCardProps> = ({
               {profile.city}
             </span>
           </div>
+
+          {/* Height and relationship goals */}
+          {(profile.heightCm != null || (profile.goals ?? []).length > 0) && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {profile.heightCm != null && (
+                <span className="inline-flex items-center gap-0.5 text-[11px] text-zinc-500 font-medium">
+                  <Ruler className="w-3 h-3" aria-hidden="true" />
+                  {profile.heightCm} см
+                </span>
+              )}
+              <GoalPills goals={profile.goals} max={2} />
+            </div>
+          )}
 
           {/* About text preview */}
           {profile.aboutText && (

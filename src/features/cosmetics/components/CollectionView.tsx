@@ -3,6 +3,7 @@ import { api, getErrorMessage, isAbortError } from '../../../core/api/client';
 import { useAuth } from '../../../core/context/AuthContext';
 import type { Achievement, Wallet, WalletItem } from '../../../core/types';
 import { Button } from '../../../shared/components/Button';
+import { PremiumBadge } from '../../premium/components/PremiumBadge';
 import {
   attrColor,
   attrString,
@@ -198,6 +199,7 @@ export const CollectionView: React.FC<CollectionViewProps> = ({ revision }) => {
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-sm font-bold text-zinc-900 truncate">{profile?.displayName ?? 'Без имени'}</span>
+            {(wallet.premium.active || profile?.premium) && <PremiumBadge />}
             <ProfileStatusPill decorations={profile?.decorations} />
           </div>
           <p className="text-[11px] text-zinc-400">Так вашу анкету видят другие</p>

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../core/context/AuthContext';
 import { Button } from './Button';
-import { HeartHandshake, User, Compass, Settings, ShieldCheck, LogIn, Gem, FlaskConical } from 'lucide-react';
+import { HeartHandshake, User, Compass, Settings, ShieldCheck, LogIn, Gem, FlaskConical, Crown } from 'lucide-react';
 
 export type AppTab = 'discovery' | 'profile' | 'collection' | 'about';
 
@@ -116,6 +116,16 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center gap-2">
           {account ? (
             <div className="flex items-center gap-1.5">
+              {/* Premium badge: a pill on wide screens, a crown inside the account button otherwise. */}
+              {profile?.premium && (
+                <span
+                  className="hidden xl:flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 rounded-xl border border-amber-300"
+                  title="Премиум активен"
+                >
+                  <Crown className="w-3.5 h-3.5 text-amber-500" />
+                  Премиум
+                </span>
+              )}
               {account.testAccount && (
                 <button
                   type="button"
@@ -133,7 +143,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium text-zinc-700 bg-zinc-50 hover:bg-zinc-100 rounded-xl border border-zinc-200 transition-colors"
                 title="Настройки аккаунта"
               >
-                <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                {profile?.premium ? (
+                  <Crown className="w-3.5 h-3.5 text-amber-500 xl:hidden" aria-label="Премиум активен" />
+                ) : null}
+                <div className={`w-2 h-2 rounded-full bg-emerald-500 ${profile?.premium ? 'hidden xl:block' : ''}`} />
                 <span className="font-mono text-[11px] hidden md:inline">
                   {account.phoneMasked}
                 </span>

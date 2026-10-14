@@ -76,7 +76,7 @@ const AppContent: React.FC = () => {
       {/* Main Content View */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-6">
         {currentTab === 'discovery' && (
-          <DiscoveryFeed onRequestAuth={() => setIsAuthModalOpen(true)} />
+          <DiscoveryFeed onRequestAuth={() => setIsAuthModalOpen(true)} revision={economyRevision} />
         )}
 
         {(currentTab === 'profile' || currentTab === 'collection') && (

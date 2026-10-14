@@ -22,6 +22,13 @@ export interface Photo {
   createdAt: string;
 }
 
+/** Relationship goal from the reference list (GET /goals). */
+export interface Goal {
+  code: string;
+  label: string;
+  sortOrder: number;
+}
+
 export type PublicationStatus = 'DRAFT' | 'PUBLISHED' | 'HIDDEN';
 
 /** Fields that must be filled before the profile can be published. */
@@ -43,6 +50,11 @@ export interface MyProfile {
   missingForPublish: PublishRequirement[];
   /** How other users see my profile (public cosmetic slots). */
   decorations: Decorations;
+  heightCm: number | null;
+  /** Sorted by sortOrder, at most 3. */
+  goals: Goal[];
+  /** I have premium right now (premium badge). */
+  premium: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -57,6 +69,10 @@ export interface PublicProfile {
   tags: Tag[];
   photos: Photo[];
   decorations: Decorations;
+  heightCm: number | null;
+  goals: Goal[];
+  /** The owner has premium right now (premium badge). */
+  premium: boolean;
 }
 
 export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'DELETED';
@@ -100,6 +116,11 @@ export interface DiscoveryQuery {
   maxAge?: number;
   tagCodes?: string[];
   tagLogic?: TagLogic;
+  /** Premium (ADVANCED_FILTERS): height range in cm; profiles without height do not match. */
+  minHeight?: number;
+  maxHeight?: number;
+  /** Premium (ADVANCED_FILTERS): the profile has at least one of these goals. */
+  goalCodes?: string[];
   page?: number;
   limit?: number;
 }
@@ -114,6 +135,10 @@ export interface ProfileUpdate {
   tagCodes?: string[];
   /** "" clears; any other value sets a 24h expiry. */
   dailyStatusText?: string;
+  /** 120..230 cm. */
+  heightCm?: number;
+  /** <= 3 known goal codes (else 400 UNKNOWN_GOAL); [] clears. */
+  goalCodes?: string[];
 }
 
 /**
@@ -124,7 +149,22 @@ export interface ExclusionWords {
   /** Normalized by the server: trimmed, lowercase, deduplicated, original order kept. */
   words: string[];
   maxWords: number;
+  /** false: the list is kept but not applied (premium EXCLUSION_WORDS is not active). */
+  active: boolean;
 }
+
+/** GET/PUT /me/excluded-goals: profiles having any of these goals are hidden (premium ADVANCED_FILTERS). */
+export interface ExcludedGoals {
+  goalCodes: string[];
+  /** false: the list is kept but not applied (premium is not active). */
+  active: boolean;
+}
+
+/** Feature codes from Wallet.premiumFeatures; a feature not listed there is free. */
+export const PREMIUM_FEATURE = {
+  ADVANCED_FILTERS: 'ADVANCED_FILTERS',
+  EXCLUSION_WORDS: 'EXCLUSION_WORDS',
+} as const;
 
 /** Error body returned by every failing API call. */
 export interface ApiErrorBody {
@@ -132,6 +172,8 @@ export interface ApiErrorBody {
   message: string;
   traceId: string;
   fieldErrors?: Record<string, string>;
+  /** Machine-readable context, e.g. { feature } for PREMIUM_REQUIRED, { itemCode, available } for INSUFFICIENT_BALANCE. */
+  details?: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------

@@ -8,6 +8,9 @@ import { CompletenessHint, describePublishRequirement } from './CompletenessHint
 import { DailyStatusEditor } from './DailyStatusEditor';
 import { Button } from '../../../shared/components/Button';
 import { Modal } from '../../../shared/components/Modal';
+import { useGoals } from '../../goals/hooks/useGoals';
+import { GoalToggleList } from '../../goals/components/GoalChips';
+import { PremiumBadge } from '../../premium/components/PremiumBadge';
 import {
   Eye,
   EyeOff,
@@ -26,6 +29,9 @@ const CITY_MAX = 60;
 const ABOUT_MAX = 1000;
 const AGE_MIN = 18;
 const AGE_MAX = 100;
+const HEIGHT_MIN = 120;
+const HEIGHT_MAX = 230;
+const MAX_GOALS = 3;
 
 type FieldErrors = Record<string, string>;
 
@@ -40,6 +46,9 @@ export const ProfileEditor: React.FC = () => {
   const [age, setAge] = useState(profile?.age != null ? String(profile.age) : '');
   const [city, setCity] = useState(profile?.city ?? '');
   const [aboutText, setAboutText] = useState(profile?.aboutText ?? '');
+  const [height, setHeight] = useState(profile?.heightCm != null ? String(profile.heightCm) : '');
+  const [goalCodes, setGoalCodes] = useState<string[]>(profile?.goals?.map((g) => g.code) ?? []);
+  const { goals: allGoals, isLoading: isGoalsLoading, error: goalsError, reload: reloadGoals } = useGoals();
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -55,15 +64,20 @@ export const ProfileEditor: React.FC = () => {
   const serverAge = profile?.age != null ? String(profile.age) : '';
   const serverCity = profile?.city ?? '';
   const serverAbout = profile?.aboutText ?? '';
+  const serverHeight = profile?.heightCm != null ? String(profile.heightCm) : '';
+  // A string key so the effect re-runs only when the goal set really changed.
+  const serverGoalKey = (profile?.goals ?? []).map((g) => g.code).join(',');
   const profileId = profile?.id;
   useEffect(() => {
     setDisplayName(serverDisplayName);
     setAge(serverAge);
     setCity(serverCity);
     setAboutText(serverAbout);
+    setHeight(serverHeight);
+    setGoalCodes(serverGoalKey ? serverGoalKey.split(',') : []);
     setFieldErrors({});
     setFormError(null);
-  }, [profileId, serverDisplayName, serverAge, serverCity, serverAbout]);
+  }, [profileId, serverDisplayName, serverAge, serverCity, serverAbout, serverHeight, serverGoalKey]);
 
   // Once the server says nothing is missing, drop the stale "cannot publish" hint.
   const missingCount = profile?.missingForPublish?.length ?? 0;
@@ -133,6 +147,25 @@ export const ProfileEditor: React.FC = () => {
       update.aboutText = about; // "" clears
     }
 
+    const heightText = height.trim();
+    if (heightText) {
+      const parsed = Number(heightText);
+      if (!Number.isInteger(parsed) || parsed < HEIGHT_MIN || parsed > HEIGHT_MAX) {
+        errors.heightCm = `Рост — целое число от ${HEIGHT_MIN} до ${HEIGHT_MAX} см`;
+      } else {
+        update.heightCm = parsed;
+      }
+    } else if (profile.heightCm != null) {
+      // The API has no way to clear the height (omitted = unchanged).
+      errors.heightCm = 'Рост нельзя удалить, только изменить';
+    }
+
+    if (goalCodes.length > MAX_GOALS) {
+      errors.goalCodes = `Можно выбрать не больше ${MAX_GOALS} целей`;
+    } else {
+      update.goalCodes = goalCodes; // [] clears
+    }
+
     return { update, errors };
   };
 
@@ -161,6 +194,16 @@ export const ProfileEditor: React.FC = () => {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const toggleGoal = (code: string) => {
+    setFieldErrors((prev) => {
+      if (!prev.goalCodes) return prev;
+      const next = { ...prev };
+      delete next.goalCodes;
+      return next;
+    });
+    setGoalCodes((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
   };
 
   const handleTagsChange = async (newTags: Tag[]) => {
@@ -226,7 +269,10 @@ export const ProfileEditor: React.FC = () => {
       {/* Header & Publication controls */}
       <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-zinc-900">Моя анкета</h2>
+          <h2 className="text-lg font-bold text-zinc-900 flex items-center gap-2">
+            Моя анкета
+            {profile.premium && <PremiumBadge size="md" />}
+          </h2>
           <p className="text-xs text-zinc-500 mt-0.5">
             Управляйте видимостью профиля и предпочтениями общения
           </p>
@@ -322,20 +368,74 @@ export const ProfileEditor: React.FC = () => {
           </div>
         </div>
 
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-semibold text-zinc-700 mb-1">
+              Город
+            </label>
+            <input
+              type="text"
+              maxLength={CITY_MAX}
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              placeholder="Москва, Санкт-Петербург, Казань..."
+              aria-invalid={!!fieldErrors.city}
+              className={inputClass('city')}
+            />
+            <FieldError message={fieldErrors.city} />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-zinc-700 mb-1">
+              Рост, см
+            </label>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={HEIGHT_MIN}
+              max={HEIGHT_MAX}
+              step={1}
+              value={height}
+              onChange={(e) => setHeight(e.target.value)}
+              placeholder={`${HEIGHT_MIN}–${HEIGHT_MAX}`}
+              aria-invalid={!!fieldErrors.heightCm}
+              className={`${inputClass('heightCm')} font-mono`}
+            />
+            <FieldError message={fieldErrors.heightCm} />
+          </div>
+        </div>
+
+        {/* Relationship goals */}
         <div>
-          <label className="block text-xs font-semibold text-zinc-700 mb-1">
-            Город
-          </label>
-          <input
-            type="text"
-            maxLength={CITY_MAX}
-            value={city}
-            onChange={(e) => setCity(e.target.value)}
-            placeholder="Москва, Санкт-Петербург, Казань..."
-            aria-invalid={!!fieldErrors.city}
-            className={inputClass('city')}
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs font-semibold text-zinc-700">Цели знакомства</label>
+            <span className="text-[11px] text-zinc-400">
+              {goalCodes.length}/{MAX_GOALS}
+            </span>
+          </div>
+          {isGoalsLoading && <p className="text-xs text-zinc-400">Загрузка целей...</p>}
+          {goalsError && (
+            <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                {goalsError}
+              </span>
+              <Button type="button" variant="outline" size="sm" onClick={reloadGoals}>
+                Повторить
+              </Button>
+            </div>
+          )}
+          <GoalToggleList
+            goals={allGoals}
+            selectedCodes={goalCodes}
+            onToggle={toggleGoal}
+            maxSelected={MAX_GOALS}
+            disabled={isSaving}
           />
-          <FieldError message={fieldErrors.city} />
+          <FieldError message={fieldErrors.goalCodes} />
+          <p className="text-[11px] text-zinc-400 mt-1">
+            До {MAX_GOALS} целей. Сохраняются вместе с анкетой кнопкой «Сохранить изменения».
+          </p>
         </div>
 
         {/* About Text */}

@@ -6,7 +6,9 @@ import type {
   AuthToken,
   DiscoveryPage,
   DiscoveryQuery,
+  ExcludedGoals,
   ExclusionWords,
+  Goal,
   MyProfile,
   Photo,
   ProfileUpdate,
@@ -33,6 +35,8 @@ export class ApiError extends Error {
   readonly fieldErrors?: Record<string, string>;
   /** Seconds from the Retry-After header (429). */
   readonly retryAfterSeconds?: number;
+  /** Machine-readable context, e.g. { feature } for PREMIUM_REQUIRED. */
+  readonly details?: Record<string, unknown>;
 
   constructor(params: {
     code: string;
@@ -41,6 +45,7 @@ export class ApiError extends Error {
     traceId?: string;
     fieldErrors?: Record<string, string>;
     retryAfterSeconds?: number;
+    details?: Record<string, unknown>;
   }) {
     super(params.message);
     this.name = 'ApiError';
@@ -49,6 +54,7 @@ export class ApiError extends Error {
     this.traceId = params.traceId;
     this.fieldErrors = params.fieldErrors;
     this.retryAfterSeconds = params.retryAfterSeconds;
+    this.details = params.details;
   }
 
   get isNetworkError(): boolean {
@@ -57,6 +63,17 @@ export class ApiError extends Error {
 
   get isUnauthorized(): boolean {
     return this.status === 401;
+  }
+
+  get isPremiumRequired(): boolean {
+    return this.code === 'PREMIUM_REQUIRED';
+  }
+
+  /** details.feature of a PREMIUM_REQUIRED error (null for other errors). */
+  get premiumFeature(): string | null {
+    if (!this.isPremiumRequired) return null;
+    const feature = this.details?.feature;
+    return typeof feature === 'string' ? feature : null;
   }
 }
 
@@ -115,6 +132,10 @@ async function parseError(res: Response): Promise<ApiError> {
       traceId: body.traceId ?? traceId,
       fieldErrors: body.fieldErrors,
       retryAfterSeconds: Number.isFinite(retryAfter) ? retryAfter : undefined,
+      details:
+        typeof body.details === 'object' && body.details !== null && !Array.isArray(body.details)
+          ? body.details
+          : undefined,
     });
   }
   return new ApiError({
@@ -316,6 +337,11 @@ export const api = {
     return request<Tag[]>('/tags', { auth: false, signal });
   },
 
+  // --- GOALS (reference list) ---
+  getGoals(signal?: AbortSignal): Promise<Goal[]> {
+    return request<Goal[]>('/goals', { auth: false, signal });
+  },
+
   // --- MY PROFILE ---
   getMyProfile(): Promise<MyProfile> {
     return request<MyProfile>('/me/profile');
@@ -362,6 +388,10 @@ export const api = {
       params.set('tagCodes', query.tagCodes.join(','));
       params.set('tagLogic', query.tagLogic ?? 'OR');
     }
+    // Premium ADVANCED_FILTERS: any of these → 403 PREMIUM_REQUIRED for free users.
+    if (query.minHeight !== undefined) params.set('minHeight', String(query.minHeight));
+    if (query.maxHeight !== undefined) params.set('maxHeight', String(query.maxHeight));
+    if (query.goalCodes && query.goalCodes.length > 0) params.set('goalCodes', query.goalCodes.join(','));
     params.set('page', String(query.page ?? 0));
     params.set('limit', String(query.limit ?? 20));
     return request<DiscoveryPage>(`/discovery/profiles?${params.toString()}`, { signal });
@@ -372,9 +402,22 @@ export const api = {
     return request<ExclusionWords>('/me/exclusion-words', { signal });
   },
 
-  /** Replaces the whole list. 400 VALIDATION_ERROR → ApiError.fieldErrors.words. */
+  /**
+   * Replaces the whole list. 400 VALIDATION_ERROR → ApiError.fieldErrors.words;
+   * 403 PREMIUM_REQUIRED (EXCLUSION_WORDS) for free users.
+   */
   updateExclusionWords(words: string[]): Promise<ExclusionWords> {
     return request<ExclusionWords>('/me/exclusion-words', { method: 'PUT', body: { words } });
+  },
+
+  // --- EXCLUDED GOALS (private discovery filter, premium ADVANCED_FILTERS) ---
+  getExcludedGoals(signal?: AbortSignal): Promise<ExcludedGoals> {
+    return request<ExcludedGoals>('/me/excluded-goals', { signal });
+  },
+
+  /** Replaces the whole list. 403 PREMIUM_REQUIRED ; 400 UNKNOWN_GOAL → ApiError.fieldErrors.goalCodes. */
+  updateExcludedGoals(goalCodes: string[]): Promise<ExcludedGoals> {
+    return request<ExcludedGoals>('/me/excluded-goals', { method: 'PUT', body: { goalCodes } });
   },
 
   // --- WALLET & COSMETICS ---

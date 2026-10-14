@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, getErrorMessage, isAbortError } from '../../../core/api/client';
 import { Button } from '../../../shared/components/Button';
-import { AlertCircle, Check, ChevronDown, EyeOff, Lock, X } from 'lucide-react';
+import { PremiumLockHint } from '../../premium/components/PremiumBadge';
+import { AlertCircle, Check, EyeOff, Lock, X } from 'lucide-react';
 
 /** Fallback until the server reports its own limit (contract: maxWords = 20). */
 const DEFAULT_MAX_WORDS = 20;
@@ -60,19 +61,32 @@ const sameList = (a: string[], b: string[]) =>
   a.length === b.length && a.every((w, i) => w === b[i]);
 
 interface ExclusionWordsEditorProps {
-  /** Called with the server list after the initial load. */
-  onLoaded?: (words: string[]) => void;
+  /** Called with the server list after the initial load (active = the list is applied to the feed). */
+  onLoaded?: (words: string[], active: boolean) => void;
   /** Called with the server list after a successful save; the feed should reload from page 0. */
-  onSaved: (words: string[]) => void;
+  onSaved: (words: string[], active: boolean) => void;
+  /** Premium EXCLUSION_WORDS is not available: the saved list is shown read-only. */
+  locked?: boolean;
+  /** The server answered 403 PREMIUM_REQUIRED (details.feature). */
+  onPremiumRequired?: (feature: string) => void;
 }
 
 type LoadState = { status: 'loading' } | { status: 'ready' } | { status: 'error'; message: string };
 
-export const ExclusionWordsEditor: React.FC<ExclusionWordsEditorProps> = ({ onLoaded, onSaved }) => {
-  const [isOpen, setIsOpen] = useState(false);
+/**
+ * Saved exclusion words (premium EXCLUSION_WORDS). Rendered as a section of the advanced search panel.
+ */
+export const ExclusionWordsEditor: React.FC<ExclusionWordsEditorProps> = ({
+  onLoaded,
+  onSaved,
+  locked = false,
+  onPremiumRequired,
+}) => {
   const [loadState, setLoadState] = useState<LoadState>({ status: 'loading' });
   const [maxWords, setMaxWords] = useState(DEFAULT_MAX_WORDS);
   const [savedWords, setSavedWords] = useState<string[]>([]);
+  /** Server flag: false = the saved list is kept but not applied (no premium). */
+  const [active, setActive] = useState(true);
   const [draft, setDraft] = useState<string[]>([]);
   const [input, setInput] = useState('');
   const [inputError, setInputError] = useState<string | null>(null);
@@ -98,8 +112,9 @@ export const ExclusionWordsEditor: React.FC<ExclusionWordsEditorProps> = ({ onLo
       setMaxWords(result.maxWords || DEFAULT_MAX_WORDS);
       setSavedWords(result.words);
       setDraft(result.words);
+      setActive(result.active !== false);
       setLoadState({ status: 'ready' });
-      onLoadedRef.current?.(result.words);
+      onLoadedRef.current?.(result.words, result.active !== false);
     } catch (e: unknown) {
       if (controller.signal.aborted || isAbortError(e)) return;
       setLoadState({
@@ -198,9 +213,16 @@ export const ExclusionWordsEditor: React.FC<ExclusionWordsEditorProps> = ({ onLo
       setMaxWords(result.maxWords || DEFAULT_MAX_WORDS);
       setSavedWords(result.words);
       setDraft(result.words);
+      setActive(result.active !== false);
       setJustSaved(true);
-      onSaved(result.words);
+      onSaved(result.words, result.active !== false);
     } catch (e: unknown) {
+      if (e instanceof ApiError && e.isPremiumRequired) {
+        // Keep the draft: it can be saved once premium is active.
+        onPremiumRequired?.(e.premiumFeature ?? 'EXCLUSION_WORDS');
+        setSaveError(null);
+        return;
+      }
       const fieldError = e instanceof ApiError ? e.fieldErrors?.words : undefined;
       setSaveError(fieldError ?? getErrorMessage(e, 'Не удалось сохранить слова-исключения.'));
     } finally {
@@ -208,16 +230,12 @@ export const ExclusionWordsEditor: React.FC<ExclusionWordsEditorProps> = ({ onLo
     }
   };
 
-  const canSave = isReady && !isSaving && (isDirty || input.trim() !== '');
+  const canSave = isReady && !locked && !isSaving && (isDirty || input.trim() !== '');
+  const isEditable = isReady && !locked;
 
   return (
-    <div className="bg-white rounded-2xl border border-zinc-200/80 p-4 shadow-xs space-y-3">
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        aria-expanded={isOpen}
-        className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
-      >
+    <section className="space-y-2.5" aria-label="Слова-исключения">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="flex items-center gap-2 text-xs font-semibold text-zinc-800">
           <EyeOff className="w-3.5 h-3.5 text-zinc-500" />
           Слова-исключения
@@ -230,127 +248,128 @@ export const ExclusionWordsEditor: React.FC<ExclusionWordsEditorProps> = ({ onLo
             <span className="text-[11px] font-normal text-amber-600">не сохранено</span>
           )}
         </span>
-        <span className="flex items-center gap-2 text-[11px] text-zinc-400">
-          <span className="hidden sm:inline">Скрывать анкеты с этими словами</span>
-          <ChevronDown
-            className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-          />
+        {locked && <PremiumLockHint />}
+      </div>
+
+      <p className="text-[11px] text-zinc-500 flex items-start gap-1.5">
+        <Lock className="w-3 h-3 mt-0.5 shrink-0" />
+        <span>
+          Список видите только вы. Скрываем анкеты, где слово встречается в «О себе» или в статусе
+          на сегодня — в любой форме («курю» скроет и «курить», «курит»). Имя, город и карточки не
+          проверяются.
         </span>
-      </button>
+      </p>
 
-      {isOpen && (
-        <div className="pt-3 border-t border-zinc-100 space-y-2.5 animate-in fade-in duration-150">
-          <p className="text-[11px] text-zinc-500 flex items-start gap-1.5">
-            <Lock className="w-3 h-3 mt-0.5 shrink-0" />
-            <span>
-              Список видите только вы. Скрываем анкеты, где слово встречается в «О себе» или в статусе
-              на сегодня — в любой форме («курю» скроет и «курить», «курит»). Имя, город и карточки не
-              проверяются.
-            </span>
-          </p>
+      {loadState.status === 'loading' && (
+        <p className="text-xs text-zinc-400">Загрузка списка...</p>
+      )}
 
-          {loadState.status === 'loading' && (
-            <p className="text-xs text-zinc-400">Загрузка списка...</p>
-          )}
-
-          {loadState.status === 'error' && (
-            <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center justify-between gap-2">
-              <span className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                {loadState.message}
-              </span>
-              <Button type="button" variant="outline" size="sm" onClick={() => void load()}>
-                Повторить
-              </Button>
-            </div>
-          )}
-
-          {isReady && (
-            <>
-              <div className="flex flex-wrap items-center gap-1.5 px-2 py-1.5 bg-zinc-50 border border-zinc-200 rounded-xl focus-within:ring-2 focus-within:ring-zinc-900">
-                {draft.map((word) => (
-                  <span
-                    key={word}
-                    className="inline-flex items-center gap-1 text-xs pl-2.5 pr-1 py-0.5 rounded-full bg-white text-zinc-800 border border-zinc-200"
-                  >
-                    {word}
-                    <button
-                      type="button"
-                      onClick={() => removeWord(word)}
-                      disabled={isSaving}
-                      aria-label={`Удалить слово «${word}»`}
-                      className="p-0.5 rounded-full text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                ))}
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => handleInputChange(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  // Stay editable while it still holds text that didn't fit, so it can be cleared.
-                  disabled={isSaving || (isFull && input === '')}
-                  aria-label="Добавить слово-исключение"
-                  aria-invalid={inputError !== null}
-                  placeholder={
-                    isFull
-                      ? 'Достигнут лимит слов'
-                      : draft.length === 0
-                        ? 'Например: курю — и нажмите Enter'
-                        : 'Ещё слово…'
-                  }
-                  className="flex-1 min-w-32 bg-transparent text-xs px-1 py-0.5 focus:outline-none disabled:cursor-not-allowed"
-                />
-              </div>
-
-              {(inputError || saveError) && (
-                <p role="alert" className="text-[11px] text-rose-600 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3 shrink-0" /> {inputError ?? saveError}
-                </p>
-              )}
-
-              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-400">
-                <span>
-                  Enter или запятая — добавить слово ·{' '}
-                  <span className={isFull ? 'text-amber-600 font-semibold' : ''}>
-                    {draft.length}/{maxWords}
-                  </span>
-                </span>
-                <div className="flex items-center gap-1.5">
-                  {justSaved && !isDirty && (
-                    <span className="flex items-center gap-1 text-emerald-600">
-                      <Check className="w-3 h-3" /> Сохранено
-                    </span>
-                  )}
-                  {isDirty && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleCancel}
-                      disabled={isSaving}
-                    >
-                      Отменить
-                    </Button>
-                  )}
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    onClick={() => void handleSave()}
-                    isLoading={isSaving}
-                    disabled={!canSave}
-                  >
-                    Сохранить
-                  </Button>
-                </div>
-              </div>
-            </>
-          )}
+      {loadState.status === 'error' && (
+        <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            {loadState.message}
+          </span>
+          <Button type="button" variant="outline" size="sm" onClick={() => void load()}>
+            Повторить
+          </Button>
         </div>
       )}
-    </div>
+
+      {isReady && (
+        <>
+          {savedWords.length > 0 && (!active || locked) && (
+            <p className="text-[11px] text-amber-700">Сохранено, но не применяется без премиума.</p>
+          )}
+
+          <div
+            className={`flex flex-wrap items-center gap-1.5 px-2 py-1.5 bg-zinc-50 border border-zinc-200 rounded-xl focus-within:ring-2 focus-within:ring-zinc-900 ${
+              locked ? 'opacity-60' : ''
+            }`}
+          >
+            {draft.map((word) => (
+              <span
+                key={word}
+                className="inline-flex items-center gap-1 text-xs pl-2.5 pr-1 py-0.5 rounded-full bg-white text-zinc-800 border border-zinc-200"
+              >
+                {word}
+                <button
+                  type="button"
+                  onClick={() => removeWord(word)}
+                  disabled={isSaving || !isEditable}
+                  aria-label={`Удалить слово «${word}»`}
+                  className="p-0.5 rounded-full text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:pointer-events-none"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => handleInputChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              // Stay editable while it still holds text that didn't fit, so it can be cleared.
+              disabled={!isEditable || isSaving || (isFull && input === '')}
+              aria-label="Добавить слово-исключение"
+              aria-invalid={inputError !== null}
+              placeholder={
+                locked
+                  ? 'Доступно с премиумом'
+                  : isFull
+                    ? 'Достигнут лимит слов'
+                    : draft.length === 0
+                      ? 'Например: курю — и нажмите Enter'
+                      : 'Ещё слово…'
+              }
+              className="flex-1 min-w-32 bg-transparent text-xs px-1 py-0.5 focus:outline-none disabled:cursor-not-allowed"
+            />
+          </div>
+
+          {(inputError || saveError) && (
+            <p role="alert" className="text-[11px] text-rose-600 flex items-center gap-1">
+              <AlertCircle className="w-3 h-3 shrink-0" /> {inputError ?? saveError}
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-400">
+            <span>
+              Enter или запятая — добавить слово ·{' '}
+              <span className={isFull ? 'text-amber-600 font-semibold' : ''}>
+                {draft.length}/{maxWords}
+              </span>
+            </span>
+            <div className="flex items-center gap-1.5">
+              {justSaved && !isDirty && (
+                <span className="flex items-center gap-1 text-emerald-600">
+                  <Check className="w-3 h-3" /> Сохранено
+                </span>
+              )}
+              {isDirty && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleCancel}
+                  disabled={isSaving}
+                >
+                  Отменить
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => void handleSave()}
+                isLoading={isSaving}
+                disabled={!canSave}
+              >
+                Сохранить
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+    </section>
   );
 };

@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import type { PublicProfile } from '../../../core/types';
 import { Modal } from '../../../shared/components/Modal';
 import { TagChip } from '../../tags/components/TagChip';
-import { MapPin, Sparkles, ShieldCheck } from 'lucide-react';
+import { MapPin, Sparkles, ShieldCheck, Ruler, Target } from 'lucide-react';
+import { GoalPills } from '../../goals/components/GoalChips';
+import { PremiumBadge } from '../../premium/components/PremiumBadge';
 import { Button } from '../../../shared/components/Button';
 import {
   getPhotoFrame,
@@ -100,11 +102,20 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
                 <h2 className="text-2xl font-bold text-zinc-900">
                   {profile.displayName}, <span className="text-zinc-600 font-normal">{profile.age}</span>
                 </h2>
+                {profile.premium && <PremiumBadge size="md" />}
                 <ProfileStatusPill decorations={profile.decorations} size="md" />
               </div>
-              <p className="text-sm text-zinc-500 flex items-center gap-1 mt-0.5">
-                <MapPin className="w-3.5 h-3.5 text-zinc-400" />
-                {profile.city}
+              <p className="text-sm text-zinc-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                <span className="flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-zinc-400" />
+                  {profile.city}
+                </span>
+                {profile.heightCm != null && (
+                  <span className="flex items-center gap-1">
+                    <Ruler className="w-3.5 h-3.5 text-zinc-400" />
+                    {profile.heightCm} см
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -121,6 +132,16 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
                   «{dailyStatusText}»
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* Relationship goals */}
+          {(profile.goals ?? []).length > 0 && (
+            <div className="space-y-1.5">
+              <h3 className="text-xs font-semibold text-zinc-900 uppercase tracking-wider flex items-center gap-1">
+                <Target className="w-3.5 h-3.5 text-zinc-400" /> Цели знакомства
+              </h3>
+              <GoalPills goals={profile.goals} size="md" />
             </div>
           )}
 

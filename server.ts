@@ -38,6 +38,10 @@ const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 const PHOTO_MAX_COUNT = 6;
 const MAX_TAGS = 10;
 const MAX_EXCLUSION_WORDS = 20;
+const MAX_PROFILE_GOALS = 3;
+const MAX_EXCLUDED_GOALS_REQUEST = 20;
+const HEIGHT_MIN_CM = 120;
+const HEIGHT_MAX_CM = 230;
 const EXCLUSION_WORD_MIN_LENGTH = 2;
 const EXCLUSION_WORD_MAX_LENGTH = 30;
 const CLEANUP_INTERVAL_MS = 60 * 1000;
@@ -93,6 +97,8 @@ interface ProfileRecord {
   dailyStatusText: string | null;
   dailyStatusExpiresAt: number | null;
   tagCodes: string[];
+  heightCm: number | null;
+  goalCodes: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -152,6 +158,24 @@ const TAGS: TagDto[] = [
 
 const TAGS_BY_CODE = new Map(TAGS.map((t) => [t.code, t]));
 
+interface GoalDto {
+  code: string;
+  label: string;
+  sortOrder: number;
+}
+
+/** Mirror of relationship_goals (migration 008). */
+const GOALS: GoalDto[] = [
+  { code: 'SERIOUS_RELATIONSHIP', label: 'Серьёзные отношения', sortOrder: 10 },
+  { code: 'FAMILY', label: 'Создание семьи', sortOrder: 20 },
+  { code: 'DATING', label: 'Свидания', sortOrder: 30 },
+  { code: 'FRIENDSHIP', label: 'Дружба', sortOrder: 40 },
+  { code: 'CHAT', label: 'Общение', sortOrder: 50 },
+  { code: 'NOT_SURE', label: 'Пока не знаю', sortOrder: 60 },
+];
+
+const GOALS_BY_CODE = new Map(GOALS.map((g) => [g.code, g]));
+
 // ---------------------------------------------------------------------------
 // In-memory storage
 // ---------------------------------------------------------------------------
@@ -163,6 +187,7 @@ const profiles = new Map<string, ProfileRecord>(); // accountId -> profile
 const photos = new Map<string, PhotoRecord>(); // photoId -> photo
 const otpRequests = new Map<string, number[]>(); // phoneHash -> request timestamps (ms)
 const exclusionWords = new Map<string, string[]>(); // accountId -> normalized words (private)
+const excludedGoals = new Map<string, string[]>(); // accountId -> excluded goal codes (private)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -206,7 +231,8 @@ class HttpError extends Error {
     readonly code: string,
     message: string,
     readonly fieldErrors?: Record<string, string>,
-    readonly retryAfterSeconds?: number
+    readonly retryAfterSeconds?: number,
+    readonly details?: Record<string, unknown>
   ) {
     super(message);
   }
@@ -221,6 +247,7 @@ function sendError(res: Response, err: HttpError): void {
     message: err.message,
     traceId: res.locals.traceId as string,
     ...(err.fieldErrors ? { fieldErrors: err.fieldErrors } : {}),
+    ...(err.details ? { details: err.details } : {}),
   });
 }
 
@@ -471,6 +498,13 @@ function tagsOf(p: ProfileRecord): TagDto[] {
     .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
+function goalsOf(codes: string[]): GoalDto[] {
+  return codes
+    .map((code) => GOALS_BY_CODE.get(code))
+    .filter((g): g is GoalDto => g !== undefined)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
 function toMyProfile(p: ProfileRecord) {
   expireDailyStatus(p);
   return {
@@ -487,6 +521,9 @@ function toMyProfile(p: ProfileRecord) {
     completenessPercent: completenessPercent(p),
     missingForPublish: missingForPublish(p),
     decorations: publicDecorations(p.accountId),
+    heightCm: p.heightCm,
+    goals: goalsOf(p.goalCodes),
+    premium: isPremium(p.accountId),
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };
@@ -504,6 +541,9 @@ function toPublicProfile(p: ProfileRecord) {
     tags: tagsOf(p),
     photos: activePhotosOf(p.accountId).map(toPhotoDto),
     decorations: publicDecorations(p.accountId),
+    heightCm: p.heightCm,
+    goals: goalsOf(p.goalCodes),
+    premium: isPremium(p.accountId),
   };
 }
 
@@ -526,6 +566,8 @@ function getOrCreateProfile(accountId: string): ProfileRecord {
       dailyStatusText: null,
       dailyStatusExpiresAt: null,
       tagCodes: [],
+      heightCm: null,
+      goalCodes: [],
       createdAt: ts,
       updatedAt: ts,
     };
@@ -670,8 +712,8 @@ const ACHIEVEMENTS: AchievementDefinition[] = [
 ACHIEVEMENTS.sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
 const ACHIEVEMENTS_BY_CODE = new Map(ACHIEVEMENTS.map((a) => [a.code, a]));
 
-/** app.economy.premium-features: empty until decided. */
-const PREMIUM_FEATURES: string[] = [];
+/** app.economy.premium-features (a feature not listed here is free). */
+const PREMIUM_FEATURES: string[] = ['ADVANCED_FILTERS', 'EXCLUSION_WORDS'];
 
 /** app.economy.premium-allowances (STUB values). WEEKLY = ISO week of the account's economy time (UTC). */
 const PREMIUM_ALLOWANCES: { itemCode: string; quantity: number; period: 'WEEKLY'; mode: 'TOP_UP' | 'ADD' }[] = [
@@ -749,6 +791,18 @@ function totalBalance(e: EconomyRecord, itemCode: string): number {
 function isPremium(accountId: string): boolean {
   const until = economies.get(accountId)?.premiumUntil ?? null;
   return until !== null && until > economyNow(accountId);
+}
+
+/** FeatureAccess.isAllowed: the feature is free (not in PREMIUM_FEATURES) or the account has premium now. */
+function isFeatureAllowed(accountId: string, feature: string): boolean {
+  return !PREMIUM_FEATURES.includes(feature) || isPremium(accountId);
+}
+
+/** FeatureAccess.require: 403 PREMIUM_REQUIRED with details.feature. */
+function requireFeature(accountId: string, feature: string): void {
+  if (!isFeatureAllowed(accountId, feature)) {
+    throw new HttpError(403, 'PREMIUM_REQUIRED', 'Эта функция доступна с премиумом', undefined, undefined, { feature });
+  }
 }
 
 /**
@@ -884,23 +938,42 @@ const achievementRewardKey = (code: string) => `achievement:${code}`;
 // Seed data: a few PUBLISHED demo profiles with generated placeholder photos
 // ---------------------------------------------------------------------------
 
+interface SeedProfile {
+  name: string;
+  age: number;
+  city: string;
+  colors: number[][];
+  photoCount: number;
+  height: number | null;
+  goals: string[];
+  premium: boolean;
+  about: string;
+  tags: string[];
+  daily: string | null;
+}
+
 function seed(): void {
-  const demo = [
+  const demo: SeedProfile[] = [
     { name: 'Анна', age: 26, city: 'Москва', colors: [[244, 114, 182], [251, 191, 36]], photoCount: 2,
+      height: 168, goals: ['SERIOUS_RELATIONSHIP', 'FAMILY'], premium: true,
       about: 'Архитектор городской среды. Люблю долгие пешие прогулки по переулкам, кофе без сиропа и плёночную фотографию.',
       tags: ['PACE_ASYNCHRONOUS', 'FORMAT_WALK_FIRST', 'CALLS_TEXT_ONLY', 'BOUND_DIRECT_COMMUNICATION', 'SOC_QUIET_SPACES'],
       daily: 'В субботу иду на выставку современной графики' },
     { name: 'Михаил', age: 29, city: 'Санкт-Петербург', colors: [[56, 189, 248], [30, 64, 175]], photoCount: 1,
+      height: 183, goals: ['DATING', 'CHAT'], premium: false,
       about: 'Разрабатываю инди-игры, читаю научпоп и играю на акустической гитаре. Ищу человека, с которым комфортно молчать и обсуждать книги.',
       tags: ['PACE_LOW_BATTERY', 'FORMAT_COFFEE_SHORT', 'CALLS_TEXT_ONLY', 'SOC_DEEP_TALKS'], daily: null },
     { name: 'Елена', age: 24, city: 'Москва', colors: [[167, 243, 208], [5, 150, 105]], photoCount: 1,
+      height: 162, goals: ['FRIENDSHIP', 'CHAT'], premium: false,
       about: 'Книжный редактор и любительница керамики. Рада неспешному знакомству и общению на равных.',
       tags: ['PACE_ASYNCHRONOUS', 'FORMAT_TEXT_BEFORE_MEET', 'BOUND_NO_SMALLTALK', 'SOC_QUIET_SPACES'],
       daily: 'Заварила зелёный чай, читаю новую главу' },
     { name: 'Дмитрий', age: 31, city: 'Екатеринбург', colors: [[196, 181, 253], [91, 33, 182]], photoCount: 1,
+      height: 190, goals: ['SERIOUS_RELATIONSHIP'], premium: true,
       about: 'Биофизик, увлекаюсь треккингом на Урале и астрономией. Предпочитаю сначала содержательно поговорить в чате.',
       tags: ['PACE_FAST_CHAT', 'FORMAT_SHARED_ACTIVITY', 'CALLS_PRE_CALL_CHECK', 'BOUND_DIRECT_COMMUNICATION'], daily: null },
     { name: 'София', age: 27, city: 'Казань', colors: [[253, 186, 116], [194, 65, 12]], photoCount: 1,
+      height: null, goals: ['NOT_SURE'], premium: false,
       about: 'Преподаватель лингвистики, фанат чая и настольных стратегий. Легко общаюсь текстом и голосовыми.',
       tags: ['PACE_FAST_CHAT', 'FORMAT_SHARED_ACTIVITY', 'CALLS_VOICE_WELCOME', 'SOC_DEEP_TALKS'],
       daily: 'Собираю команду на партию в Catan в эти выходные' },
@@ -908,18 +981,32 @@ function seed(): void {
 
   // Test accounts get their own PUBLISHED profiles: they see only each other in discovery
   // (MOCK ONLY convenience; the real backend does not seed them).
-  const testDemo = [
+  const testDemo: SeedProfile[] = [
     { name: 'Тестер Один', age: 30, city: 'Москва', colors: [[148, 163, 184], [51, 65, 85]], photoCount: 1,
+      height: 176, goals: ['SERIOUS_RELATIONSHIP'], premium: false,
       about: 'Тестовый аккаунт №1 для проверки экономики и косметики.', tags: ['PACE_FAST_CHAT', 'FORMAT_WALK_FIRST'],
       daily: null },
     { name: 'Тестер Два', age: 28, city: 'Москва', colors: [[252, 165, 165], [153, 27, 27]], photoCount: 1,
+      height: 165, goals: ['DATING', 'FRIENDSHIP'], premium: false,
       about: 'Тестовый аккаунт №2: смотрю ленту других тестеров.', tags: ['PACE_ASYNCHRONOUS', 'SOC_DEEP_TALKS'],
       daily: null },
     { name: 'Тестер Три', age: 35, city: 'Казань', colors: [[134, 239, 172], [22, 101, 52]], photoCount: 1,
+      height: 182, goals: ['SERIOUS_RELATIONSHIP', 'FAMILY'], premium: true,
       about: 'Тестовый аккаунт №3.', tags: ['CALLS_TEXT_ONLY'], daily: null },
   ];
 
-  const seedAccount = (phone: string, d: (typeof demo)[number], testAccount: boolean) => {
+  // Extra PUBLISHED test-only profiles (fictitious phones, not test phones: logging in with one of them
+  // gives a regular account) so test accounts have a richer feed for advanced filters (MOCK ONLY).
+  const testExtras: SeedProfile[] = [
+    { name: 'Тестер Четыре', age: 26, city: 'Москва', colors: [[147, 197, 253], [30, 58, 138]], photoCount: 1,
+      height: null, goals: ['CHAT'], premium: false,
+      about: 'Тестовая анкета без роста.', tags: ['PACE_LOW_BATTERY'], daily: null },
+    { name: 'Тестер Пять', age: 33, city: 'Санкт-Петербург', colors: [[253, 224, 71], [161, 98, 7]], photoCount: 1,
+      height: 194, goals: ['NOT_SURE', 'DATING'], premium: false,
+      about: 'Тестовая анкета: высокий рост.', tags: ['SOC_QUIET_SPACES'], daily: null },
+  ];
+
+  const seedAccount = (phone: string, d: SeedProfile, testAccount: boolean) => {
     const accountId = crypto.randomUUID();
     const ts = nowIso();
     accounts.set(accountId, {
@@ -941,9 +1028,13 @@ function seed(): void {
       dailyStatusText: d.daily,
       dailyStatusExpiresAt: d.daily ? Date.now() + DAILY_STATUS_TTL_MS : null,
       tagCodes: d.tags,
+      heightCm: d.height,
+      goalCodes: d.goals,
       createdAt: ts,
       updatedAt: ts,
     });
+    // Premium badge in the feed (MOCK ONLY seed: a year of premium).
+    if (d.premium) economyOf(accountId).premiumUntil = Date.now() + 365 * DAY_MS;
     for (let n = 0; n < d.photoCount; n++) {
       const [from, to] = n === 0 ? d.colors : [d.colors[1], d.colors[0]];
       const id = crypto.randomUUID();
@@ -965,6 +1056,7 @@ function seed(): void {
     if ([...accounts.values()].some((a) => a.phoneHash === keyedHash(phone))) return;
     seedAccount(phone, testDemo[i % testDemo.length], true);
   });
+  testExtras.forEach((d, i) => seedAccount(`7900000009${i}`, d, true));
 }
 
 seed();
@@ -1014,6 +1106,8 @@ interface ProfilePatch {
   aboutText?: string | null;
   tagCodes?: string[];
   dailyStatusText?: string | null;
+  heightCm?: number;
+  goalCodes?: string[];
 }
 
 function validateProfileUpdate(body: unknown): ProfilePatch {
@@ -1086,13 +1180,42 @@ function validateProfileUpdate(body: unknown): ProfilePatch {
     }
   }
 
+  // null = unchanged (like the Java DTO): the height cannot be cleared.
+  if (body.heightCm !== undefined && body.heightCm !== null) {
+    if (typeof body.heightCm !== 'number' || !Number.isInteger(body.heightCm)) {
+      errors.heightCm = 'Рост должен быть целым числом';
+    } else if (body.heightCm < HEIGHT_MIN_CM || body.heightCm > HEIGHT_MAX_CM) {
+      errors.heightCm = `Рост должен быть от ${HEIGHT_MIN_CM} до ${HEIGHT_MAX_CM} см`;
+    } else {
+      patch.heightCm = body.heightCm;
+    }
+  }
+
+  let unknownGoals: string[] = [];
+  if (body.goalCodes !== undefined && body.goalCodes !== null) {
+    if (!Array.isArray(body.goalCodes) || !body.goalCodes.every((c): c is string => typeof c === 'string')) {
+      errors.goalCodes = 'goalCodes должен быть массивом строк';
+    } else if (body.goalCodes.length > MAX_PROFILE_GOALS) {
+      errors.goalCodes = `Можно выбрать не более ${MAX_PROFILE_GOALS} целей`;
+    } else {
+      const codes = [...new Set(body.goalCodes.map((c) => c.trim()).filter(Boolean))];
+      unknownGoals = codes.filter((c) => !GOALS_BY_CODE.has(c));
+      patch.goalCodes = codes;
+    }
+  }
+
   if (Object.keys(errors).length > 0) {
     throw new HttpError(400, 'VALIDATION_ERROR', 'Проверьте правильность заполнения полей', errors);
   }
+  // Like ProfileService: unknown tags and goals are reported together; UNKNOWN_TAG wins over UNKNOWN_GOAL.
+  const unknownErrors: Record<string, string> = {};
+  if (unknownTags.length > 0) unknownErrors.tagCodes = `Неизвестные карточки: ${unknownTags.join(', ')}`;
+  if (unknownGoals.length > 0) unknownErrors.goalCodes = `Неизвестные цели: ${unknownGoals.join(', ')}`;
   if (unknownTags.length > 0) {
-    throw new HttpError(400, 'UNKNOWN_TAG', `Неизвестные карточки: ${unknownTags.join(', ')}`, {
-      tagCodes: `Неизвестные карточки: ${unknownTags.join(', ')}`,
-    });
+    throw new HttpError(400, 'UNKNOWN_TAG', `Неизвестные карточки: ${unknownTags.join(', ')}`, unknownErrors);
+  }
+  if (unknownGoals.length > 0) {
+    throw new HttpError(400, 'UNKNOWN_GOAL', 'Ошибка валидации входных данных', unknownErrors);
   }
   return patch;
 }
@@ -1233,6 +1356,10 @@ api.route('/tags').get(route((_req, res) => {
   res.json(TAGS);
 })).all(methodNotAllowed);
 
+api.route('/goals').get(route((_req, res) => {
+  res.json(GOALS);
+})).all(methodNotAllowed);
+
 // --- AUTH ---
 
 api.route('/auth/otp/request').post(route((req, res) => {
@@ -1353,6 +1480,7 @@ api.route('/me')
     const { accountId } = authOf(res);
     profiles.delete(accountId);
     exclusionWords.delete(accountId);
+    excludedGoals.delete(accountId);
     economies.delete(accountId);
     for (const [id, photo] of photos) if (photo.accountId === accountId) photos.delete(id);
     for (const [hash, s] of sessions) if (s.accountId === accountId) sessions.delete(hash);
@@ -1364,16 +1492,61 @@ api.route('/me')
 
 // --- EXCLUSION WORDS (private; never exposed in any public DTO) ---
 
+// Premium EXCLUSION_WORDS: the list is kept when premium ends, but not applied (active: false) and not editable.
 api.route('/me/exclusion-words')
   .get(auth, route((_req, res) => {
-    res.json({ words: exclusionWords.get(authOf(res).accountId) ?? [], maxWords: MAX_EXCLUSION_WORDS });
+    const { accountId } = authOf(res);
+    res.json({
+      words: exclusionWords.get(accountId) ?? [],
+      maxWords: MAX_EXCLUSION_WORDS,
+      active: isFeatureAllowed(accountId, 'EXCLUSION_WORDS'),
+    });
   }))
   .put(auth, route((req, res) => {
     const { accountId } = authOf(res);
+    requireFeature(accountId, 'EXCLUSION_WORDS');
     const words = validateExclusionWords(req.body);
     if (words.length === 0) exclusionWords.delete(accountId);
     else exclusionWords.set(accountId, words);
-    res.json({ words, maxWords: MAX_EXCLUSION_WORDS });
+    res.json({ words, maxWords: MAX_EXCLUSION_WORDS, active: isFeatureAllowed(accountId, 'EXCLUSION_WORDS') });
+  }))
+  .all(methodNotAllowed);
+
+// --- EXCLUDED GOALS (premium ADVANCED_FILTERS; private hard filter, same lifecycle as exclusion words) ---
+
+function excludedGoalsDto(accountId: string) {
+  return {
+    goalCodes: excludedGoals.get(accountId) ?? [],
+    active: isFeatureAllowed(accountId, 'ADVANCED_FILTERS'),
+  };
+}
+
+api.route('/me/excluded-goals')
+  .get(auth, route((_req, res) => {
+    res.json(excludedGoalsDto(authOf(res).accountId));
+  }))
+  .put(auth, route((req, res) => {
+    const { accountId } = authOf(res);
+    // Bean validation of the body runs first in the backend, then the premium check, then unknown codes.
+    const raw = isPlainObject(req.body) ? req.body.goalCodes : undefined;
+    if (!Array.isArray(raw) || !raw.every((c): c is string => typeof c === 'string')) {
+      throw new HttpError(400, 'VALIDATION_ERROR', VALIDATION_MESSAGE, {
+        goalCodes: 'Передайте список целей (может быть пустым)',
+      });
+    }
+    if (raw.length > MAX_EXCLUDED_GOALS_REQUEST) {
+      throw new HttpError(400, 'VALIDATION_ERROR', VALIDATION_MESSAGE, { goalCodes: 'Слишком длинный список' });
+    }
+    requireFeature(accountId, 'ADVANCED_FILTERS');
+    const codes = [...new Set(raw.map((c) => c.trim()).filter(Boolean))];
+    const unknown = codes.filter((c) => !GOALS_BY_CODE.has(c));
+    if (unknown.length > 0) {
+      throw new HttpError(400, 'UNKNOWN_GOAL', VALIDATION_MESSAGE, { goalCodes: `Неизвестные цели: ${unknown.join(', ')}` });
+    }
+    const sorted = goalsOf(codes).map((g) => g.code);
+    if (sorted.length === 0) excludedGoals.delete(accountId);
+    else excludedGoals.set(accountId, sorted);
+    res.json(excludedGoalsDto(accountId));
   }))
   .all(methodNotAllowed);
 
@@ -1391,6 +1564,8 @@ api.route('/me/profile')
     if (patch.city !== undefined) profile.city = patch.city;
     if (patch.aboutText !== undefined) profile.aboutText = patch.aboutText;
     if (patch.tagCodes !== undefined) profile.tagCodes = patch.tagCodes;
+    if (patch.heightCm !== undefined) profile.heightCm = patch.heightCm;
+    if (patch.goalCodes !== undefined) profile.goalCodes = patch.goalCodes;
     if (patch.dailyStatusText !== undefined) {
       profile.dailyStatusText = patch.dailyStatusText;
       profile.dailyStatusExpiresAt = patch.dailyStatusText === null ? null : Date.now() + DAILY_STATUS_TTL_MS;
@@ -1547,6 +1722,8 @@ api.route('/discovery/profiles').get(auth, route((req, res) => {
   const limit = parseIntParam(q.limit, 'limit', errors, 1, 50) ?? 20;
   const minAge = parseIntParam(q.minAge, 'minAge', errors, 18, 100);
   const maxAge = parseIntParam(q.maxAge, 'maxAge', errors, 18, 100);
+  const minHeight = parseIntParam(q.minHeight, 'minHeight', errors, 0, 1000);
+  const maxHeight = parseIntParam(q.maxHeight, 'maxHeight', errors, 0, 1000);
   let tagLogic: 'AND' | 'OR' = 'OR';
   if (q.tagLogic !== undefined && q.tagLogic !== '') {
     const v = typeof q.tagLogic === 'string' ? q.tagLogic.toUpperCase() : '';
@@ -1555,8 +1732,15 @@ api.route('/discovery/profiles').get(auth, route((req, res) => {
   }
   if (q.city !== undefined && typeof q.city !== 'string') errors.city = 'Должно быть строкой';
   if (q.tagCodes !== undefined && typeof q.tagCodes !== 'string') errors.tagCodes = 'Перечислите коды через запятую';
+  if (q.goalCodes !== undefined && typeof q.goalCodes !== 'string') errors.goalCodes = 'Перечислите коды через запятую';
   if (Object.keys(errors).length > 0) {
     throw new HttpError(400, 'VALIDATION_ERROR', 'Некорректные параметры поиска', errors);
+  }
+  if (minAge !== undefined && maxAge !== undefined && minAge > maxAge) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'Минимальный возраст больше максимального');
+  }
+  if (minHeight !== undefined && maxHeight !== undefined && minHeight > maxHeight) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'Минимальный рост больше максимального');
   }
 
   const city = typeof q.city === 'string' ? q.city.trim().toLocaleLowerCase('ru') : '';
@@ -1565,7 +1749,20 @@ api.route('/discovery/profiles').get(auth, route((req, res) => {
       ? [...new Set(q.tagCodes.split(',').map((c) => c.trim()).filter(Boolean))]
       : [];
 
-  const excludedStems = (exclusionWords.get(accountId) ?? []).map(crudeStem);
+  const goalCodes =
+    typeof q.goalCodes === 'string'
+      ? [...new Set(q.goalCodes.split(',').map((c) => c.trim()).filter(Boolean))]
+      : [];
+  // Premium ADVANCED_FILTERS: height range and wanted goals.
+  if (minHeight !== undefined || maxHeight !== undefined || goalCodes.length > 0) {
+    requireFeature(accountId, 'ADVANCED_FILTERS');
+  }
+
+  // Saved hard filters are kept when premium ends, but applied only while the feature is available.
+  const excludedStems = isFeatureAllowed(accountId, 'EXCLUSION_WORDS')
+    ? (exclusionWords.get(accountId) ?? []).map(crudeStem)
+    : [];
+  const goalsToExclude = isFeatureAllowed(accountId, 'ADVANCED_FILTERS') ? (excludedGoals.get(accountId) ?? []) : [];
   // Test accounts and real users never see each other.
   const viewerIsTestAccount = accounts.get(accountId)?.testAccount === true;
 
@@ -1582,6 +1779,11 @@ api.route('/discovery/profiles').get(auth, route((req, res) => {
         const has = (c: string) => p.tagCodes.includes(c);
         if (tagLogic === 'AND' ? !tagCodes.every(has) : !tagCodes.some(has)) return false;
       }
+      // Profiles without height never match a height filter.
+      if (minHeight !== undefined && (p.heightCm === null || p.heightCm < minHeight)) return false;
+      if (maxHeight !== undefined && (p.heightCm === null || p.heightCm > maxHeight)) return false;
+      if (goalCodes.length > 0 && !goalCodes.some((c) => p.goalCodes.includes(c))) return false;
+      if (goalsToExclude.some((c) => p.goalCodes.includes(c))) return false;
       if (matchesExclusion(p, excludedStems)) return false;
       return true;
     })
