@@ -156,8 +156,8 @@ export const ProfileEditor: React.FC = () => {
         update.heightCm = parsed;
       }
     } else if (profile.heightCm != null) {
-      // The API has no way to clear the height (omitted = unchanged).
-      errors.heightCm = 'Рост нельзя удалить, только изменить';
+      // An emptied field removes the height (omitted heightCm would mean "unchanged").
+      update.clearHeight = true;
     }
 
     if (goalCodes.length > MAX_GOALS) {

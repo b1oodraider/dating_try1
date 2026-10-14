@@ -137,6 +137,8 @@ export interface ProfileUpdate {
   dailyStatusText?: string;
   /** 120..230 cm. */
   heightCm?: number;
+  /** true removes the height (400 fieldErrors.heightCm if sent together with heightCm). */
+  clearHeight?: boolean;
   /** <= 3 known goal codes (else 400 UNKNOWN_GOAL); [] clears. */
   goalCodes?: string[];
 }

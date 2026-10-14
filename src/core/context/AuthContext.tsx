@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Account, AuthChallenge, MyProfile, ProfileUpdate } from '../types';
 import { api, ApiError, onUnauthorized, type SessionState } from '../api/client';
+import { clearAccountStorage } from '../storage/accountStorage';
 
 interface AuthContextType {
   account: Account | null;
@@ -102,6 +103,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveChallenge(null);
   }, []);
 
+  const accountId = account?.id ?? null;
+
+  // Per-account UI data (e.g. saved discovery filters) survives logout and lost sessions, so logging in
+  // again restores the same filters; only account deletion forgets it.
   const logout = useCallback(async () => {
     try {
       await api.logout();
@@ -115,8 +120,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteAccount = useCallback(async () => {
     await api.deleteAccount();
+    if (accountId) clearAccountStorage(accountId);
     resetSession();
-  }, [resetSession]);
+  }, [accountId, resetSession]);
 
   const updateProfile = useCallback(async (update: ProfileUpdate): Promise<MyProfile> => {
     const updated = await api.updateMyProfile(update);

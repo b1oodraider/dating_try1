@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { PREMIUM_FEATURE, type PublicProfile, type TagLogic, type Wallet } from '../../../core/types';
+import { PREMIUM_FEATURE, type PublicProfile, type Wallet } from '../../../core/types';
 import { api, ApiError, getErrorMessage, isAbortError } from '../../../core/api/client';
 import { useAuth } from '../../../core/context/AuthContext';
-import { DiscoveryFilters } from './DiscoveryFilters';
+import { DiscoveryFiltersModal } from './DiscoveryFiltersModal';
 import {
-  AdvancedSearchPanel,
   countAdvancedFilters,
-  EMPTY_ADVANCED_FILTERS,
-  type AdvancedFilters,
-} from './AdvancedSearchPanel';
+  countBasicFilters,
+  loadDiscoveryFilters,
+  saveDiscoveryFilters,
+  withoutAdvanced,
+  type DiscoveryFilterState,
+} from '../filterStorage';
 import { lockedFeaturesOf } from '../../premium/premium';
 import { ProfileFeedCard } from './ProfileFeedCard';
 import { ProfileDetailModal } from './ProfileDetailModal';
-import { Frown, LogIn, AlertCircle, Compass, Crown } from 'lucide-react';
+import { Frown, LogIn, AlertCircle, Compass, Crown, SlidersHorizontal, Lock } from 'lucide-react';
 import { Button } from '../../../shared/components/Button';
 
 const PAGE_SIZE = 12;
@@ -36,13 +38,24 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({ onRequestAuth, rev
   const [error, setError] = useState<string | null>(null);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
 
-  const [selectedTagCodes, setSelectedTagCodes] = useState<string[]>([]);
-  const [tagFilterLogic, setTagFilterLogic] = useState<TagLogic>('OR');
-  const [selectedCity, setSelectedCity] = useState<string>('ALL');
   const [activeProfileModal, setActiveProfileModal] = useState<PublicProfile | null>(null);
-  /** Premium "advanced search" filters (height, wanted goals); sent only while the feature is available. */
-  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>(EMPTY_ADVANCED_FILTERS);
-  /** Applied saved hard filters (excluded goals, exclusion words): only used to explain an empty feed. */
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+
+  /** Filters of the "Фильтры" modal, persisted per account (survive reloads and re-login). */
+  const [filtersOwner, setFiltersOwner] = useState(accountId);
+  const [filters, setFilters] = useState<DiscoveryFilterState>(() => loadDiscoveryFilters(accountId));
+  if (filtersOwner !== accountId) {
+    // Another account (or logout): switch to its own saved filters during render, before any fetch.
+    setFiltersOwner(accountId);
+    setFilters(loadDiscoveryFilters(accountId));
+  }
+  const applyFilters = (next: DiscoveryFilterState) => {
+    setPremiumNotice(null);
+    setFilters(next);
+    if (accountId) saveDiscoveryFilters(accountId, next);
+  };
+
+  /** Applied saved hard filters (excluded goals, exclusion words): filter indicator and empty-feed hint. */
   const [savedListsInfo, setSavedListsInfo] = useState({ excludedGoals: 0, exclusionWords: 0 });
   /** Premium state; null while unknown (then nothing is locked and the server decides). */
   const [wallet, setWallet] = useState<Wallet | null>(null);
@@ -57,9 +70,10 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({ onRequestAuth, rev
   const advancedLocked = lockedFeatures.has(PREMIUM_FEATURE.ADVANCED_FILTERS);
   const wordsLocked = lockedFeatures.has(PREMIUM_FEATURE.EXCLUSION_WORDS);
 
-  // Without premium the advanced filters are kept in the UI but not sent (else 403). Stable identity when
-  // nothing is set, so a wallet load that only locks/unlocks the feature doesn't refetch the feed.
-  const effectiveAdvanced = advancedLocked ? EMPTY_ADVANCED_FILTERS : advancedFilters;
+  // Without premium the advanced filters stay saved but are not sent (else 403). Keyed by content, so a
+  // wallet load that only locks/unlocks the feature doesn't refetch the feed when nothing changes.
+  const queryKey = JSON.stringify(advancedLocked ? withoutAdvanced(filters) : filters);
+  const query = useMemo(() => JSON.parse(queryKey) as DiscoveryFilterState, [queryKey]);
 
   const handlePremiumRequired = useCallback((feature: string) => {
     setRefusedFeatures((prev) => (prev.includes(feature) ? prev : [...prev, feature]));
@@ -94,6 +108,28 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({ onRequestAuth, rev
     return () => controller.abort();
   }, [accountId, revision]);
 
+  // Saved hard filters summary (for the indicator and the empty-feed hint); the modal refreshes it too.
+  useEffect(() => {
+    if (!accountId) {
+      setSavedListsInfo({ excludedGoals: 0, exclusionWords: 0 });
+      return;
+    }
+    const controller = new AbortController();
+    void Promise.allSettled([
+      api.getExcludedGoals(controller.signal),
+      api.getExclusionWords(controller.signal),
+    ]).then(([goalsResult, wordsResult]) => {
+      if (controller.signal.aborted) return;
+      setSavedListsInfo({
+        excludedGoals:
+          goalsResult.status === 'fulfilled' && goalsResult.value.active ? goalsResult.value.goalCodes.length : 0,
+        exclusionWords:
+          wordsResult.status === 'fulfilled' && wordsResult.value.active !== false ? wordsResult.value.words.length : 0,
+      });
+    });
+    return () => controller.abort();
+  }, [accountId, revision]);
+
   // Only the latest request may write to state: older ones are aborted.
   const controllerRef = useRef<AbortController | null>(null);
 
@@ -115,12 +151,14 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({ onRequestAuth, rev
       try {
         const result = await api.getDiscoveryProfiles(
           {
-            city: selectedCity === 'ALL' ? undefined : selectedCity,
-            tagCodes: selectedTagCodes,
-            tagLogic: tagFilterLogic,
-            minHeight: effectiveAdvanced.minHeight,
-            maxHeight: effectiveAdvanced.maxHeight,
-            goalCodes: effectiveAdvanced.goalCodes,
+            city: query.city ?? undefined,
+            minAge: query.minAge,
+            maxAge: query.maxAge,
+            tagCodes: query.tagCodes,
+            tagLogic: query.tagLogic,
+            minHeight: query.minHeight,
+            maxHeight: query.maxHeight,
+            goalCodes: query.goalCodes,
             page: pageToLoad,
             limit: PAGE_SIZE,
           },
@@ -159,7 +197,7 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({ onRequestAuth, rev
         }
       }
     },
-    [selectedCity, selectedTagCodes, tagFilterLogic, effectiveAdvanced, handlePremiumRequired]
+    [query, handlePremiumRequired]
   );
 
   useEffect(() => {
@@ -177,19 +215,20 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({ onRequestAuth, rev
     };
   }, [accountId, fetchPage, feedNonce]);
 
-  const handleResetFilters = () => {
-    setSelectedTagCodes([]);
-    setSelectedCity('ALL');
-    setTagFilterLogic('OR');
-    setAdvancedFilters(EMPTY_ADVANCED_FILTERS);
-  };
-
   const handleSavedListsInfo = useCallback((info: { excludedGoals?: number; exclusionWords?: number }) => {
     setSavedListsInfo((prev) => ({ ...prev, ...info }));
   }, []);
 
-  const appliedAdvancedCount = advancedLocked ? 0 : countAdvancedFilters(advancedFilters);
+  const appliedAdvancedCount = advancedLocked ? 0 : countAdvancedFilters(filters);
   const hiddenBySavedLists = savedListsInfo.excludedGoals > 0 || savedListsInfo.exclusionWords > 0;
+  /** Filters that currently narrow the feed (the "Фильтры" button indicator). */
+  const activeFilterCount =
+    countBasicFilters(filters) +
+    appliedAdvancedCount +
+    (savedListsInfo.excludedGoals > 0 ? 1 : 0) +
+    (savedListsInfo.exclusionWords > 0 ? 1 : 0);
+  /** Premium filter values are saved but not applied right now. */
+  const hasLockedFilters = advancedLocked && countAdvancedFilters(filters) > 0;
 
   const hasMore = page + 1 < totalPages;
 
@@ -227,32 +266,29 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({ onRequestAuth, rev
           </div>
         </div>
 
-        <DiscoveryFilters
-          selectedTagCodes={selectedTagCodes}
-          tagFilterLogic={tagFilterLogic}
-          selectedCity={selectedCity}
-          onFilterChange={(f) => {
-            setSelectedTagCodes(f.selectedTagCodes);
-            setTagFilterLogic(f.tagFilterLogic);
-            setSelectedCity(f.selectedCity);
-          }}
-          onReset={handleResetFilters}
-        />
-
-        <AdvancedSearchPanel
-          filters={advancedFilters}
-          onFiltersChange={(f) => {
-            setPremiumNotice(null);
-            setAdvancedFilters(f);
-          }}
-          advancedLocked={advancedLocked}
-          wordsLocked={wordsLocked}
-          savedListsKey={`${accountId}:${revision}`}
-          onSavedListsInfo={handleSavedListsInfo}
-          // The server applies saved lists before pagination: start the feed over from page 0.
-          onSavedListsChanged={() => void fetchPage(0, false)}
-          onPremiumRequired={handlePremiumRequired}
-        />
+        {/* The single entry point to every filter. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant={activeFilterCount > 0 ? 'primary' : 'outline'}
+            size="sm"
+            onClick={() => setIsFiltersOpen(true)}
+            aria-label={activeFilterCount > 0 ? `Фильтры, активно: ${activeFilterCount}` : 'Фильтры'}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            Фильтры
+            {activeFilterCount > 0 && (
+              <span className="ml-0.5 px-1.5 py-0.5 leading-none bg-amber-500 text-white rounded-full text-[10px] font-bold">
+                {activeFilterCount}
+              </span>
+            )}
+          </Button>
+          {hasLockedFilters && (
+            <span className="text-[11px] text-amber-700 flex items-center gap-1">
+              <Lock className="w-3 h-3" /> Премиум-фильтры сохранены, но не применяются
+            </span>
+          )}
+        </div>
 
         {premiumNotice && (
           <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-center gap-1.5">
@@ -302,13 +338,13 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({ onRequestAuth, rev
             Ни одной анкеты не найдено
           </h3>
           <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-            Попробуйте переключить логику фильтра на «Любая (ИЛИ)» или сбросить фильтры по карточкам и городу.
+            Попробуйте ослабить фильтры: переключить логику карточек на «Любая (ИЛИ)», расширить возраст или сбросить город.
             {appliedAdvancedCount > 0 && ' Учтите фильтры расширенного поиска по росту и целям.'}
             {hiddenBySavedLists && ' Часть анкет также скрыта вашими скрытыми целями или словами-исключениями.'}
           </p>
           <div className="pt-2">
-            <Button variant="outline" size="sm" onClick={handleResetFilters}>
-              Сбросить все фильтры
+            <Button variant="outline" size="sm" onClick={() => setIsFiltersOpen(true)}>
+              <SlidersHorizontal className="w-3.5 h-3.5" /> Изменить фильтры
             </Button>
           </div>
         </div>
@@ -343,6 +379,20 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({ onRequestAuth, rev
             </div>
           )}
         </>
+      )}
+
+      {isFiltersOpen && (
+        <DiscoveryFiltersModal
+          onClose={() => setIsFiltersOpen(false)}
+          filters={filters}
+          onApply={applyFilters}
+          advancedLocked={advancedLocked}
+          wordsLocked={wordsLocked}
+          onSavedListsInfo={handleSavedListsInfo}
+          // The server applies saved lists before pagination: start the feed over from page 0.
+          onSavedListsChanged={() => void fetchPage(0, false)}
+          onPremiumRequired={handlePremiumRequired}
+        />
       )}
 
       {/* Profile Detail Modal */}

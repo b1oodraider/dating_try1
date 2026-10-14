@@ -1107,6 +1107,7 @@ interface ProfilePatch {
   tagCodes?: string[];
   dailyStatusText?: string | null;
   heightCm?: number;
+  clearHeight?: boolean;
   goalCodes?: string[];
 }
 
@@ -1188,6 +1189,18 @@ function validateProfileUpdate(body: unknown): ProfilePatch {
       errors.heightCm = `Рост должен быть от ${HEIGHT_MIN_CM} до ${HEIGHT_MAX_CM} см`;
     } else {
       patch.heightCm = body.heightCm;
+    }
+  }
+  // clearHeight: true removes the height; together with a heightCm it is a contradiction (ProfileService).
+  if (body.clearHeight !== undefined && body.clearHeight !== null) {
+    if (typeof body.clearHeight !== 'boolean') {
+      errors.clearHeight = 'clearHeight должен быть true или false';
+    } else if (body.clearHeight) {
+      if (body.heightCm !== undefined && body.heightCm !== null) {
+        errors.heightCm = 'Нельзя одновременно указать и удалить рост';
+      } else {
+        patch.clearHeight = true;
+      }
     }
   }
 
@@ -1564,7 +1577,8 @@ api.route('/me/profile')
     if (patch.city !== undefined) profile.city = patch.city;
     if (patch.aboutText !== undefined) profile.aboutText = patch.aboutText;
     if (patch.tagCodes !== undefined) profile.tagCodes = patch.tagCodes;
-    if (patch.heightCm !== undefined) profile.heightCm = patch.heightCm;
+    if (patch.clearHeight) profile.heightCm = null;
+    else if (patch.heightCm !== undefined) profile.heightCm = patch.heightCm;
     if (patch.goalCodes !== undefined) profile.goalCodes = patch.goalCodes;
     if (patch.dailyStatusText !== undefined) {
       profile.dailyStatusText = patch.dailyStatusText;
