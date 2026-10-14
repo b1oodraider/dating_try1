@@ -41,6 +41,8 @@ export interface MyProfile {
   photos: Photo[];
   completenessPercent: number;
   missingForPublish: PublishRequirement[];
+  /** How other users see my profile (public cosmetic slots). */
+  decorations: Decorations;
   createdAt: string;
   updatedAt: string;
 }
@@ -54,6 +56,7 @@ export interface PublicProfile {
   dailyStatusText: string | null;
   tags: Tag[];
   photos: Photo[];
+  decorations: Decorations;
 }
 
 export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'DELETED';
@@ -63,6 +66,8 @@ export interface Account {
   phoneMasked: string;
   status: AccountStatus;
   createdAt: string;
+  /** QA account: isolated in discovery, may use the testing API (test panel). */
+  testAccount: boolean;
 }
 
 export interface AuthChallenge {
@@ -127,4 +132,72 @@ export interface ApiErrorBody {
   message: string;
   traceId: string;
   fieldErrors?: Record<string, string>;
+}
+
+// ---------------------------------------------------------------------------
+// Economy: decorations, wallet, cosmetics, achievements, testing API
+// ---------------------------------------------------------------------------
+
+export type Rarity = 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
+
+/** Known slots; the server may add more, clients ignore unknown ones. */
+export type CosmeticSlot = 'PHOTO_FRAME' | 'PROFILE_STATUS' | 'CHAT_WALLPAPER';
+
+/** An equipped cosmetic as other users see it. Render generically from attributes, ignore unknown keys. */
+export interface Decoration {
+  code: string;
+  title: string;
+  rarity: Rarity | null;
+  attributes: Record<string, unknown>;
+}
+
+/** slot -> decoration; only public slots; may be {}. */
+export type Decorations = Partial<Record<string, Decoration>>;
+
+export interface WalletItem {
+  code: string;
+  kind: 'CONSUMABLE' | 'COSMETIC';
+  /** SUPERLIKE | GACHA_TICKET | BOOST | STICKER_PACK | CHAT_WALLPAPER | PROFILE_STATUS | PHOTO_FRAME | ... */
+  category: string;
+  title: string;
+  rarity: Rarity | string | null;
+  equipSlot: string | null;
+  attributes: Record<string, unknown>;
+  /** Total units (cosmetics: 1). */
+  quantity: number;
+  /** Part of quantity from the premium allowance (spent first). */
+  periodicQuantity: number;
+}
+
+export interface Wallet {
+  premium: { active: boolean; until: string | null };
+  premiumFeatures: string[];
+  /** Only quantity > 0; consumables first. */
+  items: WalletItem[];
+  /** slot -> itemCode, including private slots (CHAT_WALLPAPER). */
+  equipped: Partial<Record<string, string>>;
+}
+
+export type AchievementReward =
+  | { type: 'ITEM'; itemCode: string; quantity: number; days?: null }
+  | { type: 'PREMIUM_DAYS'; days: number; itemCode?: null; quantity?: null };
+
+export interface Achievement {
+  code: string;
+  title: string;
+  description: string | null;
+  completed: boolean;
+  completedAt: string | null;
+  rewards: AchievementReward[];
+}
+
+/** Returned by every /testing/* endpoint. */
+export interface TestingState {
+  accountId: string;
+  /** How far this account's economy clock is moved forward. */
+  clockOffsetDays: number;
+  /** "Now" used for premium expiry and allowance periods of this account. */
+  economyNow: string;
+  wallet: Wallet;
+  achievements: Achievement[];
 }

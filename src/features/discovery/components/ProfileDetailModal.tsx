@@ -4,6 +4,12 @@ import { Modal } from '../../../shared/components/Modal';
 import { TagChip } from '../../tags/components/TagChip';
 import { MapPin, Sparkles, ShieldCheck } from 'lucide-react';
 import { Button } from '../../../shared/components/Button';
+import {
+  getPhotoFrame,
+  PhotoFrameOverlay,
+  photoFrameOuterStyle,
+  ProfileStatusPill,
+} from '../../cosmetics/decorations';
 
 interface ProfileDetailModalProps {
   profile: PublicProfile | null;
@@ -29,12 +35,16 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
   const tags = profile.tags ?? [];
   const currentPhoto = photos[activePhotoIdx] ?? photos[0];
   const dailyStatusText = profile.dailyStatusText?.trim() || null;
+  const frame = getPhotoFrame(profile.decorations);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} maxWidth="xl">
       <div className="space-y-5 -mt-2">
         {/* Photo Gallery */}
-        <div className="relative aspect-4/3 w-full bg-zinc-900 rounded-2xl overflow-hidden shadow-inner">
+        <div
+          className="relative aspect-4/3 w-full bg-zinc-900 rounded-2xl overflow-hidden shadow-inner"
+          style={photoFrameOuterStyle(frame)}
+        >
           {currentPhoto ? (
             <img
               src={currentPhoto.url}
@@ -46,6 +56,8 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
               Нет фотографий
             </div>
           )}
+
+          <PhotoFrameOverlay frame={frame} />
 
           {photos.length > 1 && (
             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full">
@@ -84,9 +96,12 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
         <div className="space-y-4">
           <div className="flex items-start justify-between">
             <div>
-              <h2 className="text-2xl font-bold text-zinc-900">
-                {profile.displayName}, <span className="text-zinc-600 font-normal">{profile.age}</span>
-              </h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-2xl font-bold text-zinc-900">
+                  {profile.displayName}, <span className="text-zinc-600 font-normal">{profile.age}</span>
+                </h2>
+                <ProfileStatusPill decorations={profile.decorations} size="md" />
+              </div>
               <p className="text-sm text-zinc-500 flex items-center gap-1 mt-0.5">
                 <MapPin className="w-3.5 h-3.5 text-zinc-400" />
                 {profile.city}

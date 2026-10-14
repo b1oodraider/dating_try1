@@ -1,19 +1,31 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { AuthProvider, useAuth } from './core/context/AuthContext';
-import { Navbar } from './shared/components/Navbar';
+import { Navbar, type AppTab } from './shared/components/Navbar';
 import { DiscoveryFeed } from './features/discovery/components/DiscoveryFeed';
 import { ProfileEditor } from './features/profile/components/ProfileEditor';
 import { AboutView } from './features/about/AboutView';
 import { AuthModal } from './features/auth/components/AuthModal';
 import { AccountSettingsModal } from './features/account/components/AccountSettingsModal';
+import { CollectionView } from './features/cosmetics/components/CollectionView';
+import { TestPanelModal } from './features/testing/components/TestPanelModal';
 import { Button } from './shared/components/Button';
 import { WifiOff } from 'lucide-react';
 
 const AppContent: React.FC = () => {
-  const { account, isLoading, loadError, reloadSession, forgetSession } = useAuth();
-  const [currentTab, setCurrentTab] = useState<'discovery' | 'profile' | 'about'>('discovery');
+  const { account, isLoading, loadError, reloadSession, forgetSession, refreshProfile } = useAuth();
+  const [currentTab, setCurrentTab] = useState<AppTab>('discovery');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  /** Account the test panel was opened for: it never reopens by itself after switching accounts. */
+  const [testPanelAccountId, setTestPanelAccountId] = useState<string | null>(null);
+  /** Bumped after test-panel actions so the collection reloads the wallet. */
+  const [economyRevision, setEconomyRevision] = useState(0);
+
+  const handleEconomyChanged = useCallback(() => {
+    setEconomyRevision((r) => r + 1);
+    // Decorations depend on ownership (e.g. a frame balance set to 0 hides it): refresh the own profile.
+    refreshProfile().catch((e: unknown) => console.warn('Profile refresh failed', e));
+  }, [refreshProfile]);
 
   if (isLoading) {
     return (
@@ -58,6 +70,7 @@ const AppContent: React.FC = () => {
         onTabChange={(tab) => setCurrentTab(tab)}
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
+        onOpenTestPanel={() => setTestPanelAccountId(account?.id ?? null)}
       />
 
       {/* Main Content View */}
@@ -66,9 +79,9 @@ const AppContent: React.FC = () => {
           <DiscoveryFeed onRequestAuth={() => setIsAuthModalOpen(true)} />
         )}
 
-        {currentTab === 'profile' && (
+        {(currentTab === 'profile' || currentTab === 'collection') && (
           account ? (
-            <ProfileEditor />
+            currentTab === 'profile' ? <ProfileEditor /> : <CollectionView revision={economyRevision} />
           ) : (
             <div className="max-w-md mx-auto text-center py-16 space-y-4">
               <div className="w-12 h-12 bg-zinc-200/80 rounded-2xl flex items-center justify-center mx-auto text-zinc-600 font-bold text-lg">
@@ -116,6 +129,14 @@ const AppContent: React.FC = () => {
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
       />
+
+      {account?.testAccount && (
+        <TestPanelModal
+          isOpen={testPanelAccountId === account.id}
+          onClose={() => setTestPanelAccountId(null)}
+          onChanged={handleEconomyChanged}
+        />
+      )}
     </div>
   );
 };

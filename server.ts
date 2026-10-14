@@ -4,6 +4,9 @@
  * Started by `npm run dev:mock`: serves /api/v1 from memory plus the SPA through Vite middleware.
  * Everything is lost on restart. OTP codes are NOT sent anywhere: they are returned as `devMockCode`
  * and printed to the console. The real backend is the Java service in backend/.
+ *
+ * Test accounts (MOCK_TEST_PHONES, default +7 900 000-00-01..03) log in with the fixed code
+ * MOCK_TEST_OTP_CODE (default 123456), see only each other in discovery and may call /api/v1/testing.
  */
 import 'dotenv/config';
 import crypto from 'node:crypto';
@@ -59,6 +62,8 @@ interface AccountRecord {
   phoneMasked: string;
   status: AccountStatus;
   createdAt: string;
+  /** QA account (phone in the test list): isolated from real users in discovery, may use /testing. */
+  testAccount: boolean;
 }
 
 interface SessionRecord {
@@ -481,6 +486,7 @@ function toMyProfile(p: ProfileRecord) {
     photos: activePhotosOf(p.accountId).map(toPhotoDto),
     completenessPercent: completenessPercent(p),
     missingForPublish: missingForPublish(p),
+    decorations: publicDecorations(p.accountId),
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };
@@ -497,11 +503,12 @@ function toPublicProfile(p: ProfileRecord) {
     dailyStatusText: p.dailyStatusText,
     tags: tagsOf(p),
     photos: activePhotosOf(p.accountId).map(toPhotoDto),
+    decorations: publicDecorations(p.accountId),
   };
 }
 
 function toAccountDto(a: AccountRecord) {
-  return { id: a.id, phoneMasked: a.phoneMasked, status: a.status, createdAt: a.createdAt };
+  return { id: a.id, phoneMasked: a.phoneMasked, status: a.status, createdAt: a.createdAt, testAccount: a.testAccount };
 }
 
 function getOrCreateProfile(accountId: string): ProfileRecord {
@@ -526,6 +533,352 @@ function getOrCreateProfile(accountId: string): ProfileRecord {
   }
   return profile;
 }
+
+// ---------------------------------------------------------------------------
+// Test accounts (mirror of app.testing.* in the Java backend, dev profile)
+// ---------------------------------------------------------------------------
+
+/** Phones that become test accounts. Override with MOCK_TEST_PHONES="+7 900 000-00-01, ..." ("" = none). */
+const TEST_PHONES_RAW =
+  process.env.MOCK_TEST_PHONES ?? '+7 900 000-00-01, +7 900 000-00-02, +7 900 000-00-03';
+/** Fixed OTP code for test phones (no SMS). */
+const TEST_OTP_CODE = process.env.MOCK_TEST_OTP_CODE ?? '123456';
+if (!/^\d{6}$/.test(TEST_OTP_CODE)) {
+  console.error('[dev-mock] MOCK_TEST_OTP_CODE must be 6 digits');
+  process.exit(1);
+}
+
+const TEST_PHONES: string[] = TEST_PHONES_RAW.split(',')
+  .map((raw) => raw.trim())
+  .filter(Boolean)
+  .map((raw) => {
+    const phone = normalizePhone(raw);
+    if (!phone) {
+      console.error(`[dev-mock] MOCK_TEST_PHONES: invalid phone ${raw}`);
+      process.exit(1);
+    }
+    return phone;
+  });
+const TEST_PHONE_HASHES = new Set(TEST_PHONES.map(keyedHash));
+
+const isTestPhoneHash = (phoneHash: string): boolean => TEST_PHONE_HASHES.has(phoneHash);
+
+// ---------------------------------------------------------------------------
+// Economy: catalog, wallet buckets, premium, allowances, cosmetics, achievements
+// (mirror of migration 007 + EconomyService / AllowanceService / CosmeticsService / AchievementService)
+// ---------------------------------------------------------------------------
+
+const DAY_MS = 24 * HOUR_MS;
+const MAX_TESTING_QUANTITY = 100_000;
+const MAX_TESTING_DAYS = 3650;
+
+type ItemKind = 'CONSUMABLE' | 'COSMETIC';
+type Rarity = 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
+type Bucket = 'PERMANENT' | 'PERIODIC';
+type CosmeticSlot = 'PHOTO_FRAME' | 'PROFILE_STATUS' | 'CHAT_WALLPAPER';
+
+interface CatalogItem {
+  code: string;
+  kind: ItemKind;
+  category: string;
+  equipSlot: CosmeticSlot | null;
+  title: string;
+  rarity: Rarity | null;
+  attributes: Record<string, unknown>;
+}
+
+/** Slot -> visible to other users (PublicProfile.decorations). */
+const COSMETIC_SLOTS: Record<CosmeticSlot, boolean> = {
+  PHOTO_FRAME: true,
+  PROFILE_STATUS: true,
+  CHAT_WALLPAPER: false,
+};
+const ALL_SLOTS = Object.keys(COSMETIC_SLOTS) as CosmeticSlot[];
+const PUBLIC_SLOTS = ALL_SLOTS.filter((s) => COSMETIC_SLOTS[s]);
+
+function catalogItem(
+  code: string,
+  kind: ItemKind,
+  category: string,
+  equipSlot: CosmeticSlot | null,
+  title: string,
+  rarity: Rarity | null,
+  attributes: Record<string, unknown>
+): CatalogItem {
+  return { code, kind, category, equipSlot, title, rarity, attributes: { stub: true, ...attributes } };
+}
+
+/** Stub catalog: same codes, titles and attributes as changeset 007-stub-catalog-and-achievements. */
+const CATALOG: CatalogItem[] = [
+  catalogItem('SUPERLIKE', 'CONSUMABLE', 'SUPERLIKE', null, 'Суперлайк', null, { icon: 'star' }),
+  catalogItem('GACHA_TICKET', 'CONSUMABLE', 'GACHA_TICKET', null, 'Билет удачи', null, { icon: 'ticket' }),
+  catalogItem('BOOST', 'CONSUMABLE', 'BOOST', null, 'Буст анкеты', null, { icon: 'rocket', durationMinutes: 30 }),
+  catalogItem('STICKERS_STUB_CATS', 'COSMETIC', 'STICKER_PACK', null, 'Котики (тест)', 'COMMON',
+    { emoji: '🐱', stickers: ['cat_wave', 'cat_heart', 'cat_sleep'] }),
+  catalogItem('STICKERS_STUB_SPACE', 'COSMETIC', 'STICKER_PACK', null, 'Космос (тест)', 'RARE',
+    { emoji: '🚀', stickers: ['rocket', 'planet', 'alien'] }),
+  catalogItem('WALLPAPER_STUB_NIGHT', 'COSMETIC', 'CHAT_WALLPAPER', 'CHAT_WALLPAPER', 'Ночной город (тест)', 'COMMON',
+    { background: '#1E1B4B', accent: '#A5B4FC', pattern: 'stars' }),
+  catalogItem('WALLPAPER_STUB_SUNSET', 'COSMETIC', 'CHAT_WALLPAPER', 'CHAT_WALLPAPER', 'Закат (тест)', 'RARE',
+    { background: '#FDBA74', accent: '#DB2777', pattern: 'waves' }),
+  catalogItem('STATUS_STUB_EARLY_BIRD', 'COSMETIC', 'PROFILE_STATUS', 'PROFILE_STATUS', 'Ранняя пташка (тест)', 'RARE',
+    { emoji: '🐦', label: 'Ранняя пташка', color: '#0EA5E9' }),
+  catalogItem('STATUS_STUB_BOOKWORM', 'COSMETIC', 'PROFILE_STATUS', 'PROFILE_STATUS', 'Книжный червь (тест)', 'EPIC',
+    { emoji: '📚', label: 'Книжный червь', color: '#7C3AED' }),
+  catalogItem('FRAME_STUB_GOLD', 'COSMETIC', 'PHOTO_FRAME', 'PHOTO_FRAME', 'Золотая рамка (тест)', 'EPIC',
+    { borderColor: '#D4AF37', borderWidth: 4 }),
+  catalogItem('FRAME_STUB_NEON', 'COSMETIC', 'PHOTO_FRAME', 'PHOTO_FRAME', 'Неоновая рамка (тест)', 'LEGENDARY',
+    { borderColor: '#22D3EE', borderWidth: 3, glow: true }),
+];
+const CATALOG_BY_CODE = new Map(CATALOG.map((i) => [i.code, i]));
+
+type Reward = { kind: 'item'; itemCode: string; quantity: number } | { kind: 'premium'; days: number };
+
+interface AchievementDefinition {
+  code: string;
+  title: string;
+  description: string;
+  rewards: Reward[];
+}
+
+/** Same definitions and rewards as changeset 007; listed by code like the backend. */
+const ACHIEVEMENTS: AchievementDefinition[] = [
+  {
+    code: 'STUB_FIRST_PHOTO',
+    title: 'Первое фото (тест)',
+    description: 'Загрузить первую фотографию',
+    rewards: [{ kind: 'item', itemCode: 'SUPERLIKE', quantity: 1 }],
+  },
+  {
+    code: 'STUB_PROFILE_PUBLISHED',
+    title: 'Анкета опубликована (тест)',
+    description: 'Опубликовать анкету',
+    rewards: [{ kind: 'item', itemCode: 'FRAME_STUB_GOLD', quantity: 1 }, { kind: 'premium', days: 3 }],
+  },
+  {
+    code: 'STUB_COLLECTOR',
+    title: 'Коллекционер (тест)',
+    description: 'Набор косметики для проверки витрины',
+    rewards: [
+      { kind: 'item', itemCode: 'GACHA_TICKET', quantity: 2 },
+      { kind: 'item', itemCode: 'STATUS_STUB_EARLY_BIRD', quantity: 1 },
+      { kind: 'item', itemCode: 'STICKERS_STUB_CATS', quantity: 1 },
+      { kind: 'item', itemCode: 'WALLPAPER_STUB_NIGHT', quantity: 1 },
+    ],
+  },
+];
+ACHIEVEMENTS.sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
+const ACHIEVEMENTS_BY_CODE = new Map(ACHIEVEMENTS.map((a) => [a.code, a]));
+
+/** app.economy.premium-features: empty until decided. */
+const PREMIUM_FEATURES: string[] = [];
+
+/** app.economy.premium-allowances (STUB values). WEEKLY = ISO week of the account's economy time (UTC). */
+const PREMIUM_ALLOWANCES: { itemCode: string; quantity: number; period: 'WEEKLY'; mode: 'TOP_UP' | 'ADD' }[] = [
+  { itemCode: 'SUPERLIKE', quantity: 5, period: 'WEEKLY', mode: 'TOP_UP' },
+  { itemCode: 'GACHA_TICKET', quantity: 1, period: 'WEEKLY', mode: 'ADD' },
+];
+
+interface EconomyRecord {
+  /** itemCode -> bucket -> quantity */
+  balances: Map<string, Record<Bucket, number>>;
+  premiumUntil: number | null;
+  /** slot -> itemCode */
+  equipped: Map<CosmeticSlot, string>;
+  clockOffsetMs: number;
+  /** Idempotency keys of applied grants (allowance periods, achievement rewards). */
+  appliedKeys: Set<string>;
+  /** achievementCode -> completedAt (real time, like DB now()) */
+  achievements: Map<string, string>;
+}
+
+const economies = new Map<string, EconomyRecord>(); // accountId -> economy state
+
+function economyOf(accountId: string): EconomyRecord {
+  let e = economies.get(accountId);
+  if (!e) {
+    e = {
+      balances: new Map(),
+      premiumUntil: null,
+      equipped: new Map(),
+      clockOffsetMs: 0,
+      appliedKeys: new Set(),
+      achievements: new Map(),
+    };
+    economies.set(accountId, e);
+  }
+  return e;
+}
+
+/** "Now" for premium expiry and allowance periods of this account (test accounts may be shifted). */
+function economyNow(accountId: string): number {
+  return Date.now() + (economies.get(accountId)?.clockOffsetMs ?? 0);
+}
+
+/** ISO-8601 week key like "2026-W42" (UTC), same as AllowancePeriod.WEEKLY.keyFor. */
+function isoWeekKey(epochMs: number): string {
+  const d = new Date(epochMs);
+  const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const dayOfWeek = date.getUTCDay() || 7; // Mon=1 .. Sun=7
+  date.setUTCDate(date.getUTCDate() + 4 - dayOfWeek); // the Thursday of this week decides the year
+  const weekYear = date.getUTCFullYear();
+  const week = Math.ceil(((date.getTime() - Date.UTC(weekYear, 0, 1)) / DAY_MS + 1) / 7);
+  return `${weekYear}-W${String(week).padStart(2, '0')}`;
+}
+
+function requireItem(itemCode: string): CatalogItem {
+  const item = CATALOG_BY_CODE.get(itemCode);
+  if (!item) throw new HttpError(404, 'ITEM_NOT_FOUND', `Предмет не найден: ${itemCode}`);
+  return item;
+}
+
+function bucketsOf(e: EconomyRecord, itemCode: string): Record<Bucket, number> {
+  let b = e.balances.get(itemCode);
+  if (!b) {
+    b = { PERMANENT: 0, PERIODIC: 0 };
+    e.balances.set(itemCode, b);
+  }
+  return b;
+}
+
+function totalBalance(e: EconomyRecord, itemCode: string): number {
+  const b = e.balances.get(itemCode);
+  return b ? b.PERMANENT + b.PERIODIC : 0;
+}
+
+function isPremium(accountId: string): boolean {
+  const until = economies.get(accountId)?.premiumUntil ?? null;
+  return until !== null && until > economyNow(accountId);
+}
+
+/**
+ * Applies rewards once per idempotency key (null = always). Consumables go to PERMANENT; cosmetics
+ * become owned (an owned one stays at 1); premium days extend from max(premiumUntil, economy now).
+ * Items are validated first, so an unknown code changes nothing.
+ */
+function grantRewards(accountId: string, rewards: Reward[], idempotencyKey: string | null): boolean {
+  for (const r of rewards) if (r.kind === 'item') requireItem(r.itemCode);
+  const e = economyOf(accountId);
+  if (idempotencyKey !== null) {
+    if (e.appliedKeys.has(idempotencyKey)) return false;
+    e.appliedKeys.add(idempotencyKey);
+  }
+  for (const reward of rewards) {
+    if (reward.kind === 'premium') {
+      const now = economyNow(accountId);
+      e.premiumUntil = Math.max(e.premiumUntil ?? now, now) + reward.days * DAY_MS;
+      continue;
+    }
+    const item = requireItem(reward.itemCode);
+    const buckets = bucketsOf(e, item.code);
+    if (item.kind === 'CONSUMABLE') buckets.PERMANENT += reward.quantity;
+    else if (buckets.PERMANENT === 0) buckets.PERMANENT = 1;
+  }
+  return true;
+}
+
+/** Grants due premium allowances into PERIODIC, at most once per item and period. */
+function ensureAllowances(accountId: string): void {
+  if (!isPremium(accountId)) return;
+  const e = economyOf(accountId);
+  const periodKey = isoWeekKey(economyNow(accountId));
+  for (const allowance of PREMIUM_ALLOWANCES) {
+    const key = `allowance:${allowance.itemCode}:${allowance.period}:${periodKey}`;
+    if (e.appliedKeys.has(key)) continue;
+    e.appliedKeys.add(key);
+    const buckets = bucketsOf(e, requireItem(allowance.itemCode).code);
+    // TOP_UP refills the periodic units up to quantity (bought units are not counted); ADD adds.
+    buckets.PERIODIC +=
+      allowance.mode === 'ADD' ? allowance.quantity : Math.max(0, allowance.quantity - buckets.PERIODIC);
+  }
+}
+
+function compareStrings(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** GET /me/wallet body. Grants due allowances first (like WalletQueryService). */
+function toWalletDto(accountId: string) {
+  ensureAllowances(accountId);
+  const e = economyOf(accountId);
+  const until = e.premiumUntil;
+  const items = [...e.balances.entries()]
+    .map(([code, b]) => ({ item: requireItem(code), quantity: b.PERMANENT + b.PERIODIC, periodic: b.PERIODIC }))
+    .filter((row) => row.quantity > 0)
+    // ORDER BY kind, category, code: CONSUMABLE < COSMETIC, so consumables come first.
+    .sort(
+      (a, b) =>
+        compareStrings(a.item.kind, b.item.kind) ||
+        compareStrings(a.item.category, b.item.category) ||
+        compareStrings(a.item.code, b.item.code)
+    )
+    .map(({ item, quantity, periodic }) => ({
+      code: item.code,
+      kind: item.kind,
+      category: item.category,
+      title: item.title,
+      rarity: item.rarity,
+      equipSlot: item.equipSlot,
+      attributes: item.attributes,
+      quantity,
+      periodicQuantity: periodic,
+    }));
+  const equipped = Object.fromEntries([...e.equipped.entries()].sort(([a], [b]) => compareStrings(a, b)));
+  return {
+    premium: {
+      active: until !== null && until > economyNow(accountId),
+      until: until === null ? null : new Date(until).toISOString(),
+    },
+    premiumFeatures: PREMIUM_FEATURES,
+    items,
+    equipped,
+  };
+}
+
+interface DecorationDto {
+  code: string;
+  title: string;
+  rarity: Rarity | null;
+  attributes: Record<string, unknown>;
+}
+
+/** Equipped, still owned cosmetics in public slots: what other users see on the profile. */
+function publicDecorations(accountId: string): Record<string, DecorationDto> {
+  const result: Record<string, DecorationDto> = {};
+  const e = economies.get(accountId);
+  if (!e) return result;
+  for (const slot of PUBLIC_SLOTS) {
+    const code = e.equipped.get(slot);
+    const item = code ? CATALOG_BY_CODE.get(code) : undefined;
+    if (!item || totalBalance(e, item.code) <= 0) continue;
+    result[slot] = { code: item.code, title: item.title, rarity: item.rarity, attributes: item.attributes };
+  }
+  return result;
+}
+
+function parseSlot(raw: string): CosmeticSlot {
+  const slot = ALL_SLOTS.find((s) => s === raw.toUpperCase());
+  if (!slot) throw new HttpError(400, 'UNKNOWN_SLOT', `Неизвестный слот: ${raw}`);
+  return slot;
+}
+
+function toAchievementDtos(accountId: string) {
+  const completions = economies.get(accountId)?.achievements ?? new Map<string, string>();
+  return ACHIEVEMENTS.map((a) => ({
+    code: a.code,
+    title: a.title,
+    description: a.description,
+    rewards: a.rewards.map((r) =>
+      r.kind === 'item'
+        ? { type: 'ITEM', itemCode: r.itemCode, quantity: r.quantity, days: null }
+        : { type: 'PREMIUM_DAYS', itemCode: null, quantity: null, days: r.days }
+    ),
+    completed: completions.has(a.code),
+    completedAt: completions.get(a.code) ?? null,
+  }));
+}
+
+const achievementRewardKey = (code: string) => `achievement:${code}`;
 
 // ---------------------------------------------------------------------------
 // Seed data: a few PUBLISHED demo profiles with generated placeholder photos
@@ -553,9 +906,20 @@ function seed(): void {
       daily: 'Собираю команду на партию в Catan в эти выходные' },
   ];
 
-  demo.forEach((d, i) => {
-    // Fictitious numbers +7 999 000-00-0X: logging in with one of them opens the demo account.
-    const phone = `7999000000${i}`;
+  // Test accounts get their own PUBLISHED profiles: they see only each other in discovery
+  // (MOCK ONLY convenience; the real backend does not seed them).
+  const testDemo = [
+    { name: 'Тестер Один', age: 30, city: 'Москва', colors: [[148, 163, 184], [51, 65, 85]], photoCount: 1,
+      about: 'Тестовый аккаунт №1 для проверки экономики и косметики.', tags: ['PACE_FAST_CHAT', 'FORMAT_WALK_FIRST'],
+      daily: null },
+    { name: 'Тестер Два', age: 28, city: 'Москва', colors: [[252, 165, 165], [153, 27, 27]], photoCount: 1,
+      about: 'Тестовый аккаунт №2: смотрю ленту других тестеров.', tags: ['PACE_ASYNCHRONOUS', 'SOC_DEEP_TALKS'],
+      daily: null },
+    { name: 'Тестер Три', age: 35, city: 'Казань', colors: [[134, 239, 172], [22, 101, 52]], photoCount: 1,
+      about: 'Тестовый аккаунт №3.', tags: ['CALLS_TEXT_ONLY'], daily: null },
+  ];
+
+  const seedAccount = (phone: string, d: (typeof demo)[number], testAccount: boolean) => {
     const accountId = crypto.randomUUID();
     const ts = nowIso();
     accounts.set(accountId, {
@@ -564,6 +928,7 @@ function seed(): void {
       phoneMasked: maskPhone(phone),
       status: 'ACTIVE',
       createdAt: ts,
+      testAccount,
     });
     profiles.set(accountId, {
       id: crypto.randomUUID(),
@@ -592,6 +957,13 @@ function seed(): void {
         createdAt: ts,
       });
     }
+  };
+
+  // Fictitious numbers +7 999 000-00-0X: logging in with one of them opens the demo account.
+  demo.forEach((d, i) => seedAccount(`7999000000${i}`, d, isTestPhoneHash(keyedHash(`7999000000${i}`))));
+  TEST_PHONES.forEach((phone, i) => {
+    if ([...accounts.values()].some((a) => a.phoneHash === keyedHash(phone))) return;
+    seedAccount(phone, testDemo[i % testDemo.length], true);
   });
 }
 
@@ -875,7 +1247,10 @@ api.route('/auth/otp/request').post(route((req, res) => {
   const phoneHash = keyedHash(phone);
   checkOtpRateLimit(phoneHash);
 
-  const code = crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
+  // Test phones log in with the fixed code (like app.testing.otp-code); everyone else gets a random one.
+  const code = isTestPhoneHash(phoneHash)
+    ? TEST_OTP_CODE
+    : crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
   const challenge: ChallengeRecord = {
     id: crypto.randomUUID(),
     phoneHash,
@@ -945,9 +1320,12 @@ api.route('/auth/otp/verify').post(route((req, res) => {
       phoneMasked: challenge.phoneMasked,
       status: 'ACTIVE',
       createdAt: nowIso(),
+      testAccount: false,
     };
     accounts.set(account.id, account);
   }
+  // The flag follows the configured test phones on every login (like AccountService.updateTestAccountFlag).
+  account.testAccount = isTestPhoneHash(challenge.phoneHash);
 
   const token = crypto.randomBytes(32).toString('base64url');
   const session: SessionRecord = {
@@ -975,6 +1353,7 @@ api.route('/me')
     const { accountId } = authOf(res);
     profiles.delete(accountId);
     exclusionWords.delete(accountId);
+    economies.delete(accountId);
     for (const [id, photo] of photos) if (photo.accountId === accountId) photos.delete(id);
     for (const [hash, s] of sessions) if (s.accountId === accountId) sessions.delete(hash);
     // Removing the account frees the phone: the next login creates a fresh account.
@@ -1187,12 +1566,15 @@ api.route('/discovery/profiles').get(auth, route((req, res) => {
       : [];
 
   const excludedStems = (exclusionWords.get(accountId) ?? []).map(crudeStem);
+  // Test accounts and real users never see each other.
+  const viewerIsTestAccount = accounts.get(accountId)?.testAccount === true;
 
   // All filters (including the caller's exclusion words) are applied BEFORE pagination, so totals are exact.
   const matched = [...profiles.values()]
     .filter((p) => {
       if (p.accountId === accountId || p.publicationStatus !== 'PUBLISHED') return false;
-      if (accounts.get(p.accountId)?.status !== 'ACTIVE') return false;
+      const owner = accounts.get(p.accountId);
+      if (owner?.status !== 'ACTIVE' || owner.testAccount !== viewerIsTestAccount) return false;
       if (city && (p.city ?? '').toLocaleLowerCase('ru') !== city) return false;
       if (minAge !== undefined && (p.age === null || p.age < minAge)) return false;
       if (maxAge !== undefined && (p.age === null || p.age > maxAge)) return false;
@@ -1213,6 +1595,163 @@ api.route('/discovery/profiles').get(auth, route((req, res) => {
     totalElements,
     totalPages: Math.ceil(totalElements / limit),
   });
+})).all(methodNotAllowed);
+
+// --- WALLET & COSMETICS ---
+
+api.route('/me/wallet').get(auth, route((_req, res) => {
+  res.json(toWalletDto(authOf(res).accountId));
+})).all(methodNotAllowed);
+
+const VALIDATION_MESSAGE = 'Ошибка валидации входных данных';
+
+function requireJsonObject(body: unknown): Record<string, unknown> {
+  if (!isPlainObject(body)) throw new HttpError(400, 'MALFORMED_REQUEST', 'Некорректный запрос');
+  return body;
+}
+
+/** Integer field of a JSON body; absent = 0 (Java primitive), wrong type = MALFORMED_REQUEST. */
+function intField(body: Record<string, unknown>, name: string, min: number, max: number): number {
+  const raw = body[name] ?? 0;
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+    throw new HttpError(400, 'MALFORMED_REQUEST', 'Некорректный запрос');
+  }
+  if (!Number.isInteger(raw) || raw < min || raw > max) {
+    throw new HttpError(400, 'VALIDATION_ERROR', VALIDATION_MESSAGE, {
+      [name]: `Должно быть целым числом от ${min} до ${max}`,
+    });
+  }
+  return raw;
+}
+
+api.route('/me/cosmetics/equipped/:slot')
+  .put(auth, route((req, res) => {
+    const { accountId } = authOf(res);
+    const body = requireJsonObject(req.body);
+    const itemCode = body.itemCode;
+    if (typeof itemCode !== 'string' || itemCode.trim() === '') {
+      throw new HttpError(400, 'VALIDATION_ERROR', VALIDATION_MESSAGE, { itemCode: 'Укажите предмет' });
+    }
+    const slot = parseSlot(req.params.slot);
+    const item = requireItem(itemCode);
+    if (item.equipSlot !== slot) {
+      throw new HttpError(400, 'WRONG_SLOT', `Этот предмет нельзя надеть в слот ${slot}`);
+    }
+    const e = economyOf(accountId);
+    if (totalBalance(e, item.code) <= 0) {
+      throw new HttpError(403, 'ITEM_NOT_OWNED', 'У вас нет этого предмета');
+    }
+    e.equipped.set(slot, item.code);
+    res.json(toWalletDto(accountId));
+  }))
+  .delete(auth, route((req, res) => {
+    const { accountId } = authOf(res);
+    economyOf(accountId).equipped.delete(parseSlot(req.params.slot));
+    res.json(toWalletDto(accountId));
+  }))
+  .all(methodNotAllowed);
+
+// --- ACHIEVEMENTS ---
+
+api.route('/me/achievements').get(auth, route((_req, res) => {
+  res.json(toAchievementDtos(authOf(res).accountId));
+})).all(methodNotAllowed);
+
+// --- TESTING (test accounts only; the mock always runs with testing enabled) ---
+
+function requireTestAccount(res: Response): string {
+  const { accountId } = authOf(res);
+  if (accounts.get(accountId)?.testAccount !== true) {
+    throw new HttpError(403, 'TEST_ACCOUNT_REQUIRED', 'Доступно только тестовым аккаунтам');
+  }
+  return accountId;
+}
+
+function toTestingState(accountId: string) {
+  const wallet = toWalletDto(accountId);
+  const offsetMs = economies.get(accountId)?.clockOffsetMs ?? 0;
+  return {
+    accountId,
+    clockOffsetDays: offsetMs / DAY_MS,
+    economyNow: new Date(economyNow(accountId)).toISOString(),
+    wallet,
+    achievements: toAchievementDtos(accountId),
+  };
+}
+
+api.route('/testing/state').get(auth, route((_req, res) => {
+  res.json(toTestingState(requireTestAccount(res)));
+})).all(methodNotAllowed);
+
+api.route('/testing/achievements/:code/complete').post(auth, route((req, res) => {
+  const accountId = requireTestAccount(res);
+  const { code } = req.params;
+  const definition = ACHIEVEMENTS_BY_CODE.get(code);
+  if (!definition) throw new HttpError(404, 'ACHIEVEMENT_NOT_FOUND', `Достижение не найдено: ${code}`);
+  const e = economyOf(accountId);
+  if (!e.achievements.has(code)) {
+    grantRewards(accountId, definition.rewards, achievementRewardKey(code));
+    e.achievements.set(code, nowIso());
+  }
+  res.json(toTestingState(accountId));
+})).all(methodNotAllowed);
+
+api.route('/testing/achievements/:code').delete(auth, route((req, res) => {
+  const accountId = requireTestAccount(res);
+  const e = economyOf(accountId);
+  // Forget the completion and the reward transaction; already granted rewards are kept.
+  e.achievements.delete(req.params.code);
+  e.appliedKeys.delete(achievementRewardKey(req.params.code));
+  res.json(toTestingState(accountId));
+})).all(methodNotAllowed);
+
+api.route('/testing/wallet/items/:itemCode')
+  .post(auth, route((req, res) => {
+    const quantity = intField(requireJsonObject(req.body), 'quantity', 0, MAX_TESTING_QUANTITY);
+    const accountId = requireTestAccount(res);
+    if (quantity < 1) throw new HttpError(400, 'VALIDATION_ERROR', 'Количество должно быть больше нуля');
+    grantRewards(accountId, [{ kind: 'item', itemCode: req.params.itemCode, quantity }], null);
+    res.json(toTestingState(accountId));
+  }))
+  .put(auth, route((req, res) => {
+    const quantity = intField(requireJsonObject(req.body), 'quantity', 0, MAX_TESTING_QUANTITY);
+    const accountId = requireTestAccount(res);
+    const item = requireItem(req.params.itemCode);
+    if (item.kind !== 'CONSUMABLE' && quantity > 1) {
+      throw new HttpError(400, 'VALIDATION_ERROR', `Некорректное количество для ${item.code}`);
+    }
+    bucketsOf(economyOf(accountId), item.code).PERMANENT = quantity;
+    res.json(toTestingState(accountId));
+  }))
+  .all(methodNotAllowed);
+
+api.route('/testing/premium')
+  .post(auth, route((req, res) => {
+    const days = intField(requireJsonObject(req.body), 'days', 1, MAX_TESTING_DAYS);
+    const accountId = requireTestAccount(res);
+    grantRewards(accountId, [{ kind: 'premium', days }], null);
+    res.json(toTestingState(accountId));
+  }))
+  .delete(auth, route((_req, res) => {
+    const accountId = requireTestAccount(res);
+    const e = economyOf(accountId);
+    const now = economyNow(accountId);
+    if (e.premiumUntil !== null && e.premiumUntil > now) e.premiumUntil = now;
+    res.json(toTestingState(accountId));
+  }))
+  .all(methodNotAllowed);
+
+api.route('/testing/clock/advance').post(auth, route((req, res) => {
+  const days = intField(requireJsonObject(req.body), 'days', 1, MAX_TESTING_DAYS);
+  const accountId = requireTestAccount(res);
+  economyOf(accountId).clockOffsetMs += days * DAY_MS;
+  res.json(toTestingState(accountId));
+})).all(methodNotAllowed);
+
+api.route('/testing/clock').delete(auth, route((_req, res) => {
+  const accountId = requireTestAccount(res);
+  economyOf(accountId).clockOffsetMs = 0;
+  res.json(toTestingState(accountId));
 })).all(methodNotAllowed);
 
 // ---------------------------------------------------------------------------
@@ -1276,6 +1815,7 @@ async function start(): Promise<void> {
   app.listen(port, () => {
     console.log(`[dev-mock] In-memory MOCK API + SPA on http://localhost:${port} (data is lost on restart)`);
     console.log('[dev-mock] OTP codes are mocked: they are printed here and returned as devMockCode.');
+    console.log(`[dev-mock] Test accounts (fixed OTP ${TEST_OTP_CODE}, /api/v1/testing): ${TEST_PHONES.map(maskPhone).join(', ') || 'none'}`);
   });
 }
 

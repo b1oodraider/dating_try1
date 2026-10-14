@@ -1,5 +1,6 @@
 import type {
   Account,
+  Achievement,
   ApiErrorBody,
   AuthChallenge,
   AuthToken,
@@ -10,6 +11,8 @@ import type {
   Photo,
   ProfileUpdate,
   Tag,
+  TestingState,
+  Wallet,
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -372,5 +375,68 @@ export const api = {
   /** Replaces the whole list. 400 VALIDATION_ERROR → ApiError.fieldErrors.words. */
   updateExclusionWords(words: string[]): Promise<ExclusionWords> {
     return request<ExclusionWords>('/me/exclusion-words', { method: 'PUT', body: { words } });
+  },
+
+  // --- WALLET & COSMETICS ---
+  /** Also grants due premium allowances on the server (idempotent per period). */
+  getWallet(signal?: AbortSignal): Promise<Wallet> {
+    return request<Wallet>('/me/wallet', { signal });
+  },
+
+  /** 400 UNKNOWN_SLOT | WRONG_SLOT ; 403 ITEM_NOT_OWNED ; 404 ITEM_NOT_FOUND. */
+  equipCosmetic(slot: string, itemCode: string): Promise<Wallet> {
+    return request<Wallet>(`/me/cosmetics/equipped/${encodeURIComponent(slot)}`, {
+      method: 'PUT',
+      body: { itemCode },
+    });
+  },
+
+  unequipCosmetic(slot: string): Promise<Wallet> {
+    return request<Wallet>(`/me/cosmetics/equipped/${encodeURIComponent(slot)}`, { method: 'DELETE' });
+  },
+
+  // --- ACHIEVEMENTS ---
+  getAchievements(signal?: AbortSignal): Promise<Achievement[]> {
+    return request<Achievement[]>('/me/achievements', { signal });
+  },
+
+  // --- TESTING (test accounts only; 403 TEST_ACCOUNT_REQUIRED otherwise) ---
+  testing: {
+    getState(signal?: AbortSignal): Promise<TestingState> {
+      return request<TestingState>('/testing/state', { signal });
+    },
+    completeAchievement(code: string): Promise<TestingState> {
+      return request<TestingState>(`/testing/achievements/${encodeURIComponent(code)}/complete`, { method: 'POST' });
+    },
+    resetAchievement(code: string): Promise<TestingState> {
+      return request<TestingState>(`/testing/achievements/${encodeURIComponent(code)}`, { method: 'DELETE' });
+    },
+    /** Adds consumables / grants a cosmetic (quantity >= 1). */
+    grantItem(itemCode: string, quantity: number): Promise<TestingState> {
+      return request<TestingState>(`/testing/wallet/items/${encodeURIComponent(itemCode)}`, {
+        method: 'POST',
+        body: { quantity },
+      });
+    },
+    /** Sets the bought (PERMANENT) balance exactly (quantity >= 0; cosmetics 0 or 1). */
+    setItemBalance(itemCode: string, quantity: number): Promise<TestingState> {
+      return request<TestingState>(`/testing/wallet/items/${encodeURIComponent(itemCode)}`, {
+        method: 'PUT',
+        body: { quantity },
+      });
+    },
+    grantPremium(days: number): Promise<TestingState> {
+      return request<TestingState>('/testing/premium', { method: 'POST', body: { days } });
+    },
+    removePremium(): Promise<TestingState> {
+      return request<TestingState>('/testing/premium', { method: 'DELETE' });
+    },
+    /** 7 days = "next premium week": allowances refill, premium may expire. */
+    advanceClock(days: number): Promise<TestingState> {
+      return request<TestingState>('/testing/clock/advance', { method: 'POST', body: { days } });
+    },
+    resetClock(): Promise<TestingState> {
+      return request<TestingState>('/testing/clock', { method: 'DELETE' });
+    },
   },
 };

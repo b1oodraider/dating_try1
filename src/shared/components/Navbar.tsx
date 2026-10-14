@@ -1,13 +1,17 @@
 import React from 'react';
 import { useAuth } from '../../core/context/AuthContext';
 import { Button } from './Button';
-import { HeartHandshake, User, Compass, Settings, ShieldCheck, LogIn } from 'lucide-react';
+import { HeartHandshake, User, Compass, Settings, ShieldCheck, LogIn, Gem, FlaskConical } from 'lucide-react';
+
+export type AppTab = 'discovery' | 'profile' | 'collection' | 'about';
 
 interface NavbarProps {
-  currentTab: 'discovery' | 'profile' | 'about';
-  onTabChange: (tab: 'discovery' | 'profile' | 'about') => void;
+  currentTab: AppTab;
+  onTabChange: (tab: AppTab) => void;
   onOpenAuth: () => void;
   onOpenSettings: () => void;
+  /** Shown only for test accounts (Account.testAccount). */
+  onOpenTestPanel: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -15,6 +19,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onTabChange,
   onOpenAuth,
   onOpenSettings,
+  onOpenTestPanel,
 }) => {
   const { account, profile } = useAuth();
 
@@ -76,6 +81,25 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <button
             type="button"
+            onClick={() => {
+              if (!account) {
+                onOpenAuth();
+              } else {
+                onTabChange('collection');
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              currentTab === 'collection'
+                ? 'bg-white text-zinc-900 shadow-xs'
+                : 'text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            <Gem className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Коллекция</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => onTabChange('about')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
               currentTab === 'about'
@@ -92,6 +116,17 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center gap-2">
           {account ? (
             <div className="flex items-center gap-1.5">
+              {account.testAccount && (
+                <button
+                  type="button"
+                  onClick={onOpenTestPanel}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-xl border border-violet-200 transition-colors"
+                  title="Тест-панель (тестовый аккаунт)"
+                >
+                  <FlaskConical className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">Тест-панель</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onOpenSettings}

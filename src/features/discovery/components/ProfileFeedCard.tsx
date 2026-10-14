@@ -2,6 +2,7 @@ import React from 'react';
 import type { PublicProfile } from '../../../core/types';
 import { TagChip } from '../../tags/components/TagChip';
 import { MapPin, Sparkles, MessageCircleHeart } from 'lucide-react';
+import { getPhotoFrame, PhotoFrameOverlay, ProfileStatusPill } from '../../cosmetics/decorations';
 
 interface ProfileFeedCardProps {
   profile: PublicProfile;
@@ -16,6 +17,7 @@ export const ProfileFeedCard: React.FC<ProfileFeedCardProps> = ({
   const tags = profile.tags ?? [];
   const primaryPhoto = photos.find((p) => p.isPrimary) ?? photos[0];
   const dailyStatusText = profile.dailyStatusText?.trim() || null;
+  const frame = getPhotoFrame(profile.decorations);
 
   return (
     <div
@@ -45,6 +47,8 @@ export const ProfileFeedCard: React.FC<ProfileFeedCardProps> = ({
             </div>
           )}
 
+          <PhotoFrameOverlay frame={frame} />
+
           {/* 24-hour status badge overlay */}
           {dailyStatusText && (
             <div className="absolute top-2 left-2 right-2 bg-zinc-900/80 backdrop-blur-md text-white text-[11px] p-2 rounded-xl flex items-center gap-1.5 shadow-sm">
@@ -56,10 +60,13 @@ export const ProfileFeedCard: React.FC<ProfileFeedCardProps> = ({
 
         {/* Info */}
         <div className="p-4 space-y-3">
-          <div className="flex items-baseline justify-between">
-            <h3 className="text-base font-bold text-zinc-900 truncate">
-              {profile.displayName}, <span className="font-normal text-zinc-600">{profile.age}</span>
-            </h3>
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 min-w-0">
+              <h3 className="text-base font-bold text-zinc-900 truncate max-w-full">
+                {profile.displayName}, <span className="font-normal text-zinc-600">{profile.age}</span>
+              </h3>
+              <ProfileStatusPill decorations={profile.decorations} />
+            </div>
             <span className="text-xs text-zinc-400 flex items-center gap-0.5 shrink-0">
               <MapPin className="w-3 h-3" />
               {profile.city}
