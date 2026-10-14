@@ -8,3 +8,5 @@ backend/data/
 *.log
 .env*
 !.env.example
+mobile/.dart_tool/
+mobile/.flutter-plugins-dependencies
