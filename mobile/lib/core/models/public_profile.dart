@@ -1,3 +1,4 @@
+import 'decoration.dart';
 import 'json_utils.dart';
 import 'photo.dart';
 import 'tag.dart';
@@ -14,6 +15,7 @@ class PublicProfile {
     required this.dailyStatusText,
     required this.tags,
     required this.photos,
+    this.decorations = const <String, ProfileDecoration>{},
   });
 
   final String id;
@@ -26,6 +28,10 @@ class PublicProfile {
 
   /// Sorted by [Photo.sortOrder].
   final List<Photo> photos;
+
+  /// Public cosmetics by slot (PHOTO_FRAME, PROFILE_STATUS, ...); may be
+  /// empty. Unknown slots are kept here but not rendered.
+  final Map<String, ProfileDecoration> decorations;
 
   Photo? get primaryPhoto {
     if (photos.isEmpty) return null;
@@ -47,6 +53,7 @@ class PublicProfile {
       dailyStatusText: asStringOrNull(json['dailyStatusText']),
       tags: asList<Tag>(json['tags'], Tag.fromJson),
       photos: photos,
+      decorations: ProfileDecoration.parseAll(json['decorations']),
     );
   }
 }

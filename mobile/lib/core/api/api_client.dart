@@ -3,10 +3,14 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../models/account.dart';
+import '../models/achievement.dart';
 import '../models/auth.dart';
 import '../models/discovery_page.dart';
 import '../models/exclusion_words.dart';
 import '../models/tag.dart';
+import '../models/testing_state.dart';
+import '../models/wallet.dart';
 import 'api_config.dart';
 import 'api_exception.dart';
 
@@ -89,6 +93,14 @@ class DatingApiClient {
     await _send('POST', '/auth/logout', bearerToken: token);
   }
 
+  // ------------------------------------------------------------- Account
+
+  /// Requires auth. The caller's account (incl. the `testAccount` flag).
+  Future<Account> getMe() async {
+    final json = await _send('GET', '/me');
+    return Account.fromJson(_expectMap(json));
+  }
+
   // ---------------------------------------------------------------- Tags
 
   Future<List<Tag>> getTags() async {
@@ -148,6 +160,101 @@ class DatingApiClient {
     return ExclusionWords.fromJson(_expectMap(json));
   }
 
+  // ---------------------------------------------------- Wallet, cosmetics
+
+  /// Requires auth. Premium status, consumables and cosmetics. Opening the
+  /// wallet also grants due premium allowances on the server.
+  Future<Wallet> getWallet() async {
+    final json = await _send('GET', '/me/wallet');
+    return Wallet.fromJson(_expectMap(json));
+  }
+
+  /// Requires auth. Puts the owned cosmetic [itemCode] into [slot] and
+  /// returns the updated wallet.
+  Future<Wallet> equipCosmetic(String slot, String itemCode) async {
+    final json = await _send(
+      'PUT',
+      '/me/cosmetics/equipped/${_segment(slot)}',
+      body: {'itemCode': itemCode},
+    );
+    return Wallet.fromJson(_expectMap(json));
+  }
+
+  /// Requires auth. Empties [slot] and returns the updated wallet.
+  Future<Wallet> unequipCosmetic(String slot) async {
+    final json =
+        await _send('DELETE', '/me/cosmetics/equipped/${_segment(slot)}');
+    return Wallet.fromJson(_expectMap(json));
+  }
+
+  // -------------------------------------------------------- Achievements
+
+  Future<List<Achievement>> getAchievements() async {
+    final json = await _send('GET', '/me/achievements');
+    if (json is! List) throw _badResponse();
+    return json
+        .whereType<Map<String, dynamic>>()
+        .map(Achievement.fromJson)
+        .toList();
+  }
+
+  // ------------------------------------------------------------- Testing
+  //
+  // Test accounts only (403 TEST_ACCOUNT_REQUIRED otherwise); the endpoints
+  // exist only when the server runs with app.testing.enabled=true. Every
+  // call returns the full [TestingState].
+
+  Future<TestingState> getTestingState() =>
+      _testing('GET', '/testing/state');
+
+  /// Marks the achievement completed and grants its rewards (once).
+  Future<TestingState> completeTestAchievement(String code) =>
+      _testing('POST', '/testing/achievements/${_segment(code)}/complete');
+
+  /// Resets the completion; already granted rewards are kept.
+  Future<TestingState> resetTestAchievement(String code) =>
+      _testing('DELETE', '/testing/achievements/${_segment(code)}');
+
+  /// Adds [quantity] (>= 1) units of a consumable or grants a cosmetic.
+  Future<TestingState> grantTestItem(String itemCode, int quantity) => _testing(
+        'POST',
+        '/testing/wallet/items/${_segment(itemCode)}',
+        body: {'quantity': quantity},
+      );
+
+  /// Sets the bought (PERMANENT) balance to exactly [quantity] (>= 0).
+  Future<TestingState> setTestItemBalance(String itemCode, int quantity) =>
+      _testing(
+        'PUT',
+        '/testing/wallet/items/${_segment(itemCode)}',
+        body: {'quantity': quantity},
+      );
+
+  /// Adds [days] (1..3650) of premium.
+  Future<TestingState> addTestPremiumDays(int days) =>
+      _testing('POST', '/testing/premium', body: {'days': days});
+
+  /// Ends premium now.
+  Future<TestingState> removeTestPremium() =>
+      _testing('DELETE', '/testing/premium');
+
+  /// Moves this account's economy clock forward by [days] (1..3650);
+  /// 7 = "next premium week".
+  Future<TestingState> advanceTestClock(int days) =>
+      _testing('POST', '/testing/clock/advance', body: {'days': days});
+
+  /// Returns the economy clock to real time.
+  Future<TestingState> resetTestClock() => _testing('DELETE', '/testing/clock');
+
+  Future<TestingState> _testing(
+    String method,
+    String path, {
+    Object? body,
+  }) async {
+    final json = await _send(method, path, body: body);
+    return TestingState.fromJson(_expectMap(json));
+  }
+
   // ------------------------------------------------------------ Internals
 
   Future<Object?> _send(
@@ -205,6 +312,9 @@ class DatingApiClient {
       traceIdHeader: response.headers['x-trace-id'],
     );
   }
+
+  /// Encodes a value (item code, slot) used as a single path segment.
+  static String _segment(String value) => Uri.encodeComponent(value);
 
   Uri _uri(String path, Map<String, String>? query) {
     final uri = baseUri.replace(path: '${baseUri.path}$path');

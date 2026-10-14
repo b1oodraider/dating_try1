@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_exception.dart';
+import '../../core/models/account.dart';
 import '../../core/models/public_profile.dart';
 import '../auth/session_controller.dart';
+import '../collection/collection_screen.dart';
 import '../exclusion_words/exclusion_words_screen.dart';
+import '../testing/test_panel_screen.dart';
 import 'profile_card.dart';
 
 /// Feed of published profiles with pull-to-refresh and load-more paging.
@@ -33,11 +36,15 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   /// Bumped on every first-page load; stale responses are dropped.
   int _generation = 0;
 
+  /// The caller's account; decides whether the test panel is offered.
+  Account? _account;
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
     _loadFirstPage();
+    _loadAccount();
   }
 
   @override
@@ -83,6 +90,23 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         });
       }
     }
+  }
+
+  /// Best effort: without the account the test panel button stays hidden.
+  Future<void> _loadAccount() async {
+    try {
+      final account = await widget.session.api.getMe();
+      if (!mounted) return;
+      setState(() => _account = account);
+    } catch (e) {
+      if (!mounted) return;
+      debugPrint('Failed to load account: $e');
+    }
+  }
+
+  Future<void> _refresh() async {
+    if (_account == null) _loadAccount();
+    await _loadFirstPage();
   }
 
   void _retry() {
@@ -152,6 +176,22 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     await _loadFirstPage();
   }
 
+  void _openCollection() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => CollectionScreen(session: widget.session),
+      ),
+    );
+  }
+
+  void _openTestPanel() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => TestPanelScreen(session: widget.session),
+      ),
+    );
+  }
+
   Future<void> _confirmLogout() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -185,6 +225,17 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             onPressed: _openExclusionWords,
           ),
           IconButton(
+            tooltip: 'Коллекция',
+            icon: const Icon(Icons.collections_bookmark_outlined),
+            onPressed: _openCollection,
+          ),
+          if (_account?.testAccount ?? false)
+            IconButton(
+              tooltip: 'Тест-панель',
+              icon: const Icon(Icons.science_outlined),
+              onPressed: _openTestPanel,
+            ),
+          IconButton(
             tooltip: 'Выйти',
             icon: const Icon(Icons.logout),
             onPressed: _confirmLogout,
@@ -207,7 +258,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
     if (_items.isEmpty) {
       return RefreshIndicator(
-        onRefresh: _loadFirstPage,
+        onRefresh: _refresh,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           children: const [
@@ -219,7 +270,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
 
     return RefreshIndicator(
-      onRefresh: _loadFirstPage,
+      onRefresh: _refresh,
       child: ListView.builder(
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),

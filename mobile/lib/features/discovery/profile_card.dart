@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../core/models/decoration.dart';
 import '../../core/models/public_profile.dart';
+import '../cosmetics/cosmetic_visuals.dart';
 
 class ProfileCard extends StatelessWidget {
   const ProfileCard({super.key, required this.profile, this.photoUrl});
@@ -21,22 +23,45 @@ class ProfileCard extends StatelessWidget {
     final status = profile.dailyStatusText;
     final about = profile.aboutText;
 
+    // Only known public slots are rendered; anything else is ignored.
+    final frameDecoration = profile.decorations[CosmeticSlots.photoFrame];
+    final frame = frameDecoration == null
+        ? null
+        : PhotoFrameStyle.fromAttributes(frameDecoration.attributes);
+    final statusDecoration = profile.decorations[CosmeticSlots.profileStatus];
+    final profileStatus = statusDecoration == null
+        ? null
+        : ProfileStatusStyle.fromAttributes(statusDecoration.attributes);
+
+    final photo = AspectRatio(
+      aspectRatio: 4 / 3,
+      child: _ProfilePhoto(url: photoUrl),
+    );
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          AspectRatio(
-            aspectRatio: 4 / 3,
-            child: _ProfilePhoto(url: photoUrl),
-          ),
+          if (frame == null)
+            photo
+          else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+              child: FramedPhoto(frame: frame, child: photo),
+            ),
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title, style: theme.textTheme.titleLarge),
+                if (profileStatus != null) ...[
+                  const SizedBox(height: 6),
+                  ProfileStatusChip(status: profileStatus),
+                  const SizedBox(height: 4),
+                ],
                 if (city != null && city.isNotEmpty)
                   Text(
                     city,
