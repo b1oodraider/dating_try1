@@ -1,0 +1,179 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002-seed-communication-tags
+      author: dating-team
+      changes:
+        # Pace
+        - insert:
+            tableName: communication_tags
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: code, value: "PACE_ASYNCHRONOUS" }
+              - column: { name: category, value: "pace" }
+              - column: { name: category_label, value: "Темп переписки" }
+              - column: { name: label, value: "Асинхронный ответ" }
+              - column: { name: description, value: "Отвечаю в течение дня без спешки и не жду мгновенных ответов" }
+              - column: { name: active, valueBoolean: true }
+              - column: { name: sort_order, valueNumeric: 1 }
+        - insert:
+            tableName: communication_tags
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: code, value: "PACE_FAST_CHAT" }
+              - column: { name: category, value: "pace" }
+              - column: { name: category_label, value: "Темп переписки" }
+              - column: { name: label, value: "Люблю живой диалог" }
+              - column: { name: description, value: "Когда свободен(-на), переписываюсь в моменте" }
+              - column: { name: active, valueBoolean: true }
+              - column: { name: sort_order, valueNumeric: 2 }
+        - insert:
+            tableName: communication_tags
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: code, value: "PACE_LOW_BATTERY" }
+              - column: { name: category, value: "pace" }
+              - column: { name: category_label, value: "Темп переписки" }
+              - column: { name: label, value: "Иногда беру паузу" }
+              - column: { name: description, value: "Могу на пару дней уйти в офлайн, это не значит потерю интереса" }
+              - column: { name: active, valueBoolean: true }
+              - column: { name: sort_order, valueNumeric: 3 }
+
+        # Format
+        - insert:
+            tableName: communication_tags
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: code, value: "FORMAT_WALK_FIRST" }
+              - column: { name: category, value: "format" }
+              - column: { name: category_label, value: "Формат первой встречи" }
+              - column: { name: label, value: "Прогулка на воздухе" }
+              - column: { name: description, value: "Спокойная прогулка по парку или городу без шума заведений" }
+              - column: { name: active, valueBoolean: true }
+              - column: { name: sort_order, valueNumeric: 10 }
+        - insert:
+            tableName: communication_tags
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: code, value: "FORMAT_COFFEE_SHORT" }
+              - column: { name: category, value: "format" }
+              - column: { name: category_label, value: "Формат первой встречи" }
+              - column: { name: label, value: "Кофе на 30–40 минут" }
+              - column: { name: description, value: "Короткая встреча без давления, чтобы познакомиться вживую" }
+              - column: { name: active, valueBoolean: true }
+              - column: { name: sort_order, valueNumeric: 11 }
+        - insert:
+            tableName: communication_tags
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: code, value: "FORMAT_TEXT_BEFORE_MEET" }
+              - column: { name: category, value: "format" }
+              - column: { name: category_label, value: "Формат первой встречи" }
+              - column: { name: label, value: "Сначала переписка" }
+              - column: { name: description, value: "Предпочитаю пообщаться несколько дней перед первой встречей" }
+              - column: { name: active, valueBoolean: true }
+              - column: { name: sort_order, valueNumeric: 12 }
+        - insert:
+            tableName: communication_tags
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: code, value: "FORMAT_SHARED_ACTIVITY" }
+              - column: { name: category, value: "format" }
+              - column: { name: category_label, value: "Формат первой встречи" }
+              - column: { name: label, value: "Совместное занятие" }
+              - column: { name: description, value: "Выставка, настолки или музей вместо сидения друг напротив друга" }
+              - column: { name: active, valueBoolean: true }
+              - column: { name: sort_order, valueNumeric: 13 }
+
+        # Calls
+        - insert:
+            tableName: communication_tags
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: code, value: "CALLS_TEXT_ONLY" }
+              - column: { name: category, value: "calls" }
+              - column: { name: category_label, value: "Звонки и сообщения" }
+              - column: { name: label, value: "Только текст" }
+              - column: { name: description, value: "Без неожиданных звонков и голосовых сообщений" }
+              - column: { name: active, valueBoolean: true }
+              - column: { name: sort_order, valueNumeric: 20 }
+        - insert:
+            tableName: communication_tags
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: code, value: "CALLS_VOICE_WELCOME" }
+              - column: { name: category, value: "calls" }
+              - column: { name: category_label, value: "Звонки и сообщения" }
+              - column: { name: label, value: "Голосовые ок" }
+              - column: { name: description, value: "Удобно слушать и отправлять аудиосообщения" }
+              - column: { name: active, valueBoolean: true }
+              - column: { name: sort_order, valueNumeric: 21 }
+        - insert:
+            tableName: communication_tags
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: code, value: "CALLS_PRE_CALL_CHECK" }
+              - column: { name: category, value: "calls" }
+              - column: { name: category_label, value: "Звонки и сообщения" }
+              - column: { name: label, value: "Звонок по согласованию" }
+              - column: { name: description, value: "Не против созвониться, если заранее договорились о времени" }
+              - column: { name: active, valueBoolean: true }
+              - column: { name: sort_order, valueNumeric: 22 }
+
+        # Boundaries & Topics
+        - insert:
+            tableName: communication_tags
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: code, value: "BOUND_NO_SMALLTALK" }
+              - column: { name: category, value: "boundaries" }
+              - column: { name: category_label, value: "Комфорт и темы" }
+              - column: { name: label, value: "Сразу к интересным темам" }
+              - column: { name: description, value: "Меньше протокольных «как дела», больше разговоров о том, что вдохновляет" }
+              - column: { name: active, valueBoolean: true }
+              - column: { name: sort_order, valueNumeric: 30 }
+        - insert:
+            tableName: communication_tags
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: code, value: "BOUND_RESPECT_LIMITS" }
+              - column: { name: category, value: "boundaries" }
+              - column: { name: category_label, value: "Комфорт и темы" }
+              - column: { name: label, value: "Без настойчивости" }
+              - column: { name: description, value: "Ценю, когда уважают ответ «нет» или просьбу сменить тему" }
+              - column: { name: active, valueBoolean: true }
+              - column: { name: sort_order, valueNumeric: 31 }
+        - insert:
+            tableName: communication_tags
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: code, value: "BOUND_DIRECT_COMMUNICATION" }
+              - column: { name: category, value: "boundaries" }
+              - column: { name: category_label, value: "Комфорт и темы" }
+              - column: { name: label, value: "Прямота без намеков" }
+              - column: { name: description, value: "Предпочитаю ясные слова догадкам и полунамекам" }
+              - column: { name: active, valueBoolean: true }
+              - column: { name: sort_order, valueNumeric: 32 }
+
+        # Social
+        - insert:
+            tableName: communication_tags
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: code, value: "SOC_QUIET_SPACES" }
+              - column: { name: category, value: "social" }
+              - column: { name: category_label, value: "Социальная среда" }
+              - column: { name: label, value: "Тихие места" }
+              - column: { name: description, value: "Быстро утомляюсь в шумных толпах и клубах, выбираю уютные пространства" }
+              - column: { name: active, valueBoolean: true }
+              - column: { name: sort_order, valueNumeric: 40 }
+        - insert:
+            tableName: communication_tags
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: code, value: "SOC_DEEP_TALKS" }
+              - column: { name: category, value: "social" }
+              - column: { name: category_label, value: "Социальная среда" }
+              - column: { name: label, value: "Глубокие разговоры" }
+              - column: { name: description, value: "Интереснее обсудить идеи, книги, взгляды на мир, чем светскую суету" }
+              - column: { name: active, valueBoolean: true }
+              - column: { name: sort_order, valueNumeric: 41 }

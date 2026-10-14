@@ -1,0 +1,15 @@
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/dating}
+    username: ${SPRING_DATASOURCE_USERNAME:dating_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:dating_secret_password}
+    hikari:
+      maximum-pool-size: 5
+
+app:
+  auth:
+    mock-enabled: true # Mock OTP is only permitted in dev/test profile

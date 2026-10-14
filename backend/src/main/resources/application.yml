@@ -1,0 +1,49 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: dating-backend
+  profiles:
+    active: dev
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 10MB
+
+  jpa:
+    hibernate:
+      ddl-auto: validate # Strictly no ddl-auto=update in production per requirements
+    open-in-view: false
+    properties:
+      hibernate:
+        default_batch_fetch_size: 20
+        jdbc:
+          time_zone: UTC
+
+  liquibase:
+    enabled: true
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+app:
+  auth:
+    otp-expiration-seconds: 300
+    max-attempts: 5
+    mock-enabled: false # Default false
+  media:
+    storage-path: ./data/media
+    allowed-mime-types:
+      - image/jpeg
+      - image/png
+      - image/webp
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized

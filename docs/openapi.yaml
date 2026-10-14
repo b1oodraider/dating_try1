@@ -1,0 +1,450 @@
+openapi: 3.1.0
+info:
+  title: Dating API
+  version: 1.0.0
+  description: REST API закрытого MVP сервиса комфортных знакомств (модульный монолит).
+
+servers:
+  - url: /api/v1
+    description: Основной сервер API v1
+
+paths:
+  /auth/otp/request:
+    post:
+      summary: Запрос одноразового OTP-кода по номеру телефона
+      operationId: requestOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone:
+                  type: string
+                  example: "+79991234567"
+      responses:
+        '200':
+          description: Challenge успешно создан
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  challengeId:
+                    type: string
+                    format: uuid
+                  expiresAt:
+                    type: string
+                    format: date-time
+                  maskedPhone:
+                    type: string
+                    example: "+7 (***) ***-**-67"
+                  devMockCode:
+                    type: string
+                    nullable: true
+                    description: Доступен только в dev/test окружении
+        '400':
+          $ref: '#/components/responses/ApiError'
+
+  /auth/otp/verify:
+    post:
+      summary: Подтверждение кода и выдача сессии
+      operationId: verifyOtp
+      parameters:
+        - name: phone
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challengeId, code]
+              properties:
+                challengeId:
+                  type: string
+                  format: uuid
+                code:
+                  type: string
+                  pattern: '^[0-9]{6}$'
+                  example: "123456"
+      responses:
+        '200':
+          description: Успешная авторизация
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+                  accountId:
+                    type: string
+                    format: uuid
+        '400':
+          $ref: '#/components/responses/ApiError'
+
+  /auth/logout:
+    post:
+      summary: Отзыв текущей сессии
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Сессия успешно отозвана
+
+  /me:
+    get:
+      summary: Получение данных текущего аккаунта
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Данные аккаунта
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+    delete:
+      summary: Запрос на каскадное удаление аккаунта
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Запрос на удаление принят
+
+  /me/profile:
+    get:
+      summary: Получение собственной анкеты
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+    put:
+      summary: Обновление собственной анкеты
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdate'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+
+  /me/profile/publish:
+    post:
+      summary: Публикация анкеты в поиск
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+
+  /me/profile/hide:
+    post:
+      summary: Скрытие анкеты из поиска
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+
+  /me/profile/photos:
+    get:
+      summary: Список фотографий текущего пользователя
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Photo'
+    post:
+      summary: Загрузка новой фотографии (макс 6 шт, до 5 МБ)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Photo'
+
+  /me/profile/photos/{photoId}:
+    patch:
+      summary: Назначение фотографии основной
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: photoId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Успешно обновлено
+    delete:
+      summary: Удаление фотографии
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: photoId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Фотография удалена
+
+  /discovery/profiles:
+    get:
+      summary: Поиск опубликованных анкет с фильтрами
+      parameters:
+        - name: city
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: minAge
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: maxAge
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: tagCodes
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+        - name: tagLogic
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [AND, OR]
+            default: OR
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Profile'
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  totalElements:
+                    type: integer
+                  totalPages:
+                    type: integer
+
+  /tags:
+    get:
+      summary: Справочник активных функциональных карточек
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommunicationTag'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  responses:
+    ApiError:
+      description: Единый формат ошибок API
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [code, message, traceId]
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+              traceId:
+                type: string
+              fieldErrors:
+                type: object
+                additionalProperties:
+                  type: string
+
+  schemas:
+    Account:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        phoneMasked:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, DELETION_PENDING, DELETED]
+        createdAt:
+          type: string
+          format: date-time
+
+    Profile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        accountId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        age:
+          type: integer
+        city:
+          type: string
+        aboutText:
+          type: string
+          nullable: true
+        publicationStatus:
+          type: string
+          enum: [DRAFT, PUBLISHED, HIDDEN]
+        visibilityStatus:
+          type: string
+          enum: [PUBLIC, HIDDEN]
+        dailyStatusText:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommunicationTag'
+        completenessPercent:
+          type: integer
+
+    ProfileUpdate:
+      type: object
+      properties:
+        displayName:
+          type: string
+        age:
+          type: integer
+          minimum: 18
+        city:
+          type: string
+        aboutText:
+          type: string
+        tagCodes:
+          type: array
+          items:
+            type: string
+        dailyStatusText:
+          type: string
+
+    CommunicationTag:
+      type: object
+      properties:
+        code:
+          type: string
+        category:
+          type: string
+        categoryLabel:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        sortOrder:
+          type: integer
+
+    Photo:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        profileId:
+          type: string
+          format: uuid
+        url:
+          type: string
+        mimeType:
+          type: string
+        sizeBytes:
+          type: integer
+        sortOrder:
+          type: integer
+        isPrimary:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time

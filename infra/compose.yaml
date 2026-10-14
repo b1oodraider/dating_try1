@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dating-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-dating}
+      POSTGRES_USER: ${DB_USER:-dating_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dating_secret_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal_net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-dating_user} -d ${DB_NAME:-dating}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: dating-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-dating}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-dating_user}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-dating_secret_password}
+      APP_STORAGE_LOCAL_PATH: /app/data/media
+      APP_AUTH_MOCK_ENABLED: "false" # Strictly prohibited in production per AGENTS.md
+    volumes:
+      - media_data:/app/data/media
+    networks:
+      - internal_net
+      - public_net
+    ports:
+      - "8080:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1024M
+
+volumes:
+  postgres_data:
+  media_data:
+
+networks:
+  internal_net:
+    internal: true # PostgreSQL is strictly not accessible from outside
+  public_net:
