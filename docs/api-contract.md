@@ -4,10 +4,13 @@ Base path: /api/v1. JSON, camelCase. Timestamps ISO-8601 UTC strings.
 Auth: header `Authorization: Bearer <token>`.
 
 ## Errors
-Every error body: { code: string, message: string (Russian, user-facing), traceId: string, fieldErrors?: { [field]: message } }
+Every error body: { code: string, message: string (Russian, user-facing), traceId: string, fieldErrors?: { [field]: message }, details?: object }
 Response header `X-Trace-Id` on every response.
 Status codes: 400 validation/business, 401 UNAUTHORIZED (missing/invalid/expired token, or account not ACTIVE),
 403 FORBIDDEN, 404 *_NOT_FOUND, 405, 413/400 FILE_TOO_LARGE, 415 UNSUPPORTED_MEDIA_TYPE, 429 RATE_LIMITED (+ `Retry-After` seconds header), 503 OTP_DELIVERY_UNAVAILABLE, 500 INTERNAL_ERROR.
+Economy errors (no endpoint returns them yet; clients should already handle them generically):
+  403 PREMIUM_REQUIRED     details: { feature }              → show paywall for that feature
+  409 INSUFFICIENT_BALANCE details: { itemCode, available }  → show "not enough super likes" etc.
 
 ## Types
 Tag        = { code, category: 'pace'|'format'|'calls'|'boundaries'|'social', categoryLabel, label, description, sortOrder }
@@ -77,3 +80,12 @@ PUT /me/exclusion-words      body { words: string[] }  → 200 { words: string[]
   contains any of the words in any grammatical form (PostgreSQL full-text search, Russian stemming:
   "курю" also hides "курить", "курит"). displayName, city and tags are NOT matched.
   An empty list disables the filter.
+
+## Wallet (auth) — premium status and owned items
+GET /me/wallet  200 {
+  premium: { active: boolean, until: string|null },
+  premiumFeatures: string[],          // feature codes that require premium (from server config)
+  items: [ { code, kind: 'CONSUMABLE'|'COSMETIC'|'STICKER_PACK', quantity } ]   // only quantity > 0
+}
+  Opening the wallet also grants due premium allowances (e.g. weekly super likes), idempotently per period.
+  Item display names/icons are a client concern keyed by `code` for now.

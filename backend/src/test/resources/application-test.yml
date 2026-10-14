@@ -8,3 +8,10 @@ app:
     url-signing-secret: test-photo-url-signing-secret-0123456789
   cors:
     allowed-origins: http://localhost:3000
+  economy:
+    premium-features: [TEST_PREMIUM_FEATURE]
+    premium-allowances:
+      - item-code: TEST_SUPERLIKE
+        quantity: 5
+        period: WEEKLY
+        mode: TOP_UP

@@ -9,6 +9,7 @@ import com.dating.profiles.api.PhotoDto;
 import com.dating.profiles.application.ProfileService;
 import com.dating.profiles.domain.Profile;
 import com.dating.profiles.domain.PublicationStatus;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ public class MediaService {
     private final PhotoUrlSigner urlSigner;
     private final MediaProperties properties;
     private final ProductEventPublisher productEvents;
+    private final ApplicationEventPublisher eventPublisher;
 
     public MediaService(ProfilePhotoRepository photoRepository,
                         FileStorageService fileStorage,
@@ -39,7 +41,9 @@ public class MediaService {
                         PhotoQueryService photoQuery,
                         PhotoUrlSigner urlSigner,
                         MediaProperties properties,
-                        ProductEventPublisher productEvents) {
+                        ProductEventPublisher productEvents,
+                        ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
         this.photoRepository = photoRepository;
         this.fileStorage = fileStorage;
         this.profileService = profileService;
@@ -97,6 +101,7 @@ public class MediaService {
         );
         photoRepository.save(photo);
         productEvents.publish("profile_photo_added", Map.of("photoCount", currentCount + 1));
+        eventPublisher.publishEvent(new ProfilePhotoAddedEvent(accountId, photo.getId(), currentCount + 1));
         return photoQuery.toDto(photo);
     }
 

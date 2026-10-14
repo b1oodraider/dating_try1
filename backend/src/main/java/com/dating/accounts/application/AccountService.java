@@ -35,11 +35,13 @@ public class AccountService {
     @Transactional
     public Account findOrCreateAccount(String phoneHash, String phoneMasked) {
         int inserted = accountRepository.insertIfAbsent(UUID.randomUUID(), phoneHash, phoneMasked);
+        Account account = accountRepository.findByPhoneHash(phoneHash)
+                .orElseThrow(() -> new IllegalStateException("Account must exist after insertIfAbsent"));
         if (inserted > 0) {
             productEvents.publish("account_created", Map.of());
+            eventPublisher.publishEvent(new AccountCreatedEvent(account.getId()));
         }
-        return accountRepository.findByPhoneHash(phoneHash)
-                .orElseThrow(() -> new IllegalStateException("Account must exist after insertIfAbsent"));
+        return account;
     }
 
     /**

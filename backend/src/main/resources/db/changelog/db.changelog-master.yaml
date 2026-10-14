@@ -7,3 +7,5 @@ databaseChangeLog:
       file: db/changelog/changesets/003-security-and-integrity.yaml
   - include:
       file: db/changelog/changesets/004-exclusion-words.yaml
+  - include:
+      file: db/changelog/changesets/005-economy.yaml

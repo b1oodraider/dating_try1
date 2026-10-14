@@ -48,6 +48,15 @@ app:
     url-ttl: 1h
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+  economy:
+    # Feature codes reserved for premium (checked via FeatureAccess.require). Empty until decided.
+    premium-features: []
+    # Consumables granted to premium users every period, e.g.:
+    #   - item-code: SUPERLIKE   # must exist in catalog_items as CONSUMABLE
+    #     quantity: 5
+    #     period: WEEKLY         # DAILY | WEEKLY | MONTHLY (UTC calendar)
+    #     mode: TOP_UP           # TOP_UP: refill up to quantity; ADD: add quantity every period
+    premium-allowances: []
 
 management:
   endpoints:

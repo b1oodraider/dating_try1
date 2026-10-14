@@ -39,7 +39,8 @@ public class GlobalExceptionHandler {
         if (ex.getRetryAfterSeconds() != null) {
             builder.header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()));
         }
-        return builder.body(ApiErrorResponse.of(ex.getCode(), ex.getMessage(), traceId(), ex.getFieldErrors()));
+        return builder.body(new ApiErrorResponse(ex.getCode(), ex.getMessage(), traceId(),
+                ex.getFieldErrors(), ex.getDetails()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

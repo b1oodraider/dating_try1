@@ -1,0 +1,60 @@
+databaseChangeLog:
+  # Economy foundation: item catalog, wallet balances, an append-only ledger with idempotency,
+  # and time-based premium. Achievements and gacha will only add their own tables and call the
+  # same grant operation. Real-money payments will live in a separate billing module.
+  - changeSet:
+      id: 005-economy
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE catalog_items (
+                code       VARCHAR(50) PRIMARY KEY,
+                kind       VARCHAR(20) NOT NULL CHECK (kind IN ('CONSUMABLE', 'COSMETIC', 'STICKER_PACK')),
+                active     BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+        - sql:
+            sql: >
+              CREATE TABLE premium_entitlements (
+                account_id    UUID PRIMARY KEY REFERENCES accounts (id),
+                premium_until TIMESTAMP WITH TIME ZONE NOT NULL,
+                updated_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+        - sql:
+            sql: CREATE INDEX idx_premium_entitlements_until ON premium_entitlements (premium_until)
+        - sql:
+            sql: >
+              CREATE TABLE wallet_balances (
+                account_id UUID NOT NULL REFERENCES accounts (id),
+                item_code  VARCHAR(50) NOT NULL REFERENCES catalog_items (code),
+                quantity   BIGINT NOT NULL CHECK (quantity >= 0),
+                updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                PRIMARY KEY (account_id, item_code)
+              )
+        - sql:
+            sql: >
+              CREATE TABLE economy_transactions (
+                id              UUID PRIMARY KEY,
+                account_id      UUID NOT NULL REFERENCES accounts (id),
+                type            VARCHAR(10) NOT NULL CHECK (type IN ('GRANT', 'SPEND')),
+                source          VARCHAR(30) NOT NULL,
+                source_ref      VARCHAR(120),
+                idempotency_key VARCHAR(150) NOT NULL,
+                created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                CONSTRAINT uq_economy_transactions_idempotency UNIQUE (account_id, idempotency_key)
+              )
+        - sql:
+            sql: >
+              CREATE TABLE economy_ledger_lines (
+                transaction_id UUID NOT NULL REFERENCES economy_transactions (id) ON DELETE CASCADE,
+                line_no        INT NOT NULL,
+                item_code      VARCHAR(50) REFERENCES catalog_items (code),
+                quantity_delta BIGINT,
+                premium_days   INT,
+                PRIMARY KEY (transaction_id, line_no),
+                CHECK ((item_code IS NOT NULL AND quantity_delta IS NOT NULL) OR premium_days IS NOT NULL)
+              )
+      rollback:
+        - sql:
+            sql: DROP TABLE IF EXISTS economy_ledger_lines, economy_transactions, wallet_balances, premium_entitlements, catalog_items

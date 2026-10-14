@@ -12,6 +12,7 @@ import com.dating.profiles.domain.Profile;
 import com.dating.profiles.domain.PublicationStatus;
 import com.dating.profiles.persistence.CommunicationTagRepository;
 import com.dating.profiles.persistence.ProfileRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
@@ -34,15 +35,18 @@ public class ProfileService {
     private final CommunicationTagRepository tagRepository;
     private final ProfilePhotoQuery photoQuery;
     private final ProductEventPublisher productEvents;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ProfileService(ProfileRepository profileRepository,
                           CommunicationTagRepository tagRepository,
                           ProfilePhotoQuery photoQuery,
-                          ProductEventPublisher productEvents) {
+                          ProductEventPublisher productEvents,
+                          ApplicationEventPublisher eventPublisher) {
         this.profileRepository = profileRepository;
         this.tagRepository = tagRepository;
         this.photoQuery = photoQuery;
         this.productEvents = productEvents;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -161,6 +165,7 @@ public class ProfileService {
         if (profile.getPublicationStatus() != PublicationStatus.PUBLISHED) {
             profile.setPublicationStatus(PublicationStatus.PUBLISHED);
             productEvents.publish("profile_published", Map.of("photoCount", photoCount, "tagCount", profile.getTags().size()));
+            eventPublisher.publishEvent(new ProfilePublishedEvent(accountId, profile.getId()));
         }
         return toMyProfileDto(profile);
     }

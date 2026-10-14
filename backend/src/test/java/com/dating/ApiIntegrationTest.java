@@ -16,7 +16,6 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
@@ -38,32 +37,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * End-to-end checks of the defects found in review, against a real PostgreSQL (Testcontainers).
- * Skipped automatically when Docker is not available.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
-@Testcontainers(disabledWithoutDocker = true)
-class ApiIntegrationTest {
-
-    @Container
-    @ServiceConnection
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
-
-    private static final Path MEDIA_DIR = createTempDir();
-    private static final AtomicLong PHONE_SEQ = new AtomicLong(System.nanoTime() % 1_000_000);
-    private static final String MOCK_CODE = "123456";
-
-    @DynamicPropertySource
-    static void mediaProperties(DynamicPropertyRegistry registry) {
-        registry.add("app.media.storage-path", MEDIA_DIR::toString);
-    }
-
-    @Autowired
-    MockMvc mvc;
-
-    @Autowired
-    JdbcTemplate jdbc;
+class ApiIntegrationTest extends IntegrationTestBase {
 
     // ------------------------------------------------------------------ auth
 
@@ -408,117 +383,4 @@ class ApiIntegrationTest {
         assertEquals(0, left);
     }
 
-    // ------------------------------------------------------------------ helpers
-
-    private ResultActions putWords(String token, String wordsJson) throws Exception {
-        return mvc.perform(put("/api/v1/me/exclusion-words")
-                .header("Authorization", bearer(token))
-                .contentType(MediaType.APPLICATION_JSON)
-                .characterEncoding(StandardCharsets.UTF_8)
-                .content("{\"words\":" + wordsJson + "}"));
-    }
-
-    private String publishWith(String token, String name, String city, List<String> tags) throws Exception {
-        String tagJson = tags.stream().map(t -> "\"" + t + "\"").reduce((a, b) -> a + "," + b).orElse("");
-        putProfile(token, "{\"displayName\":\"" + name + "\",\"age\":30,\"city\":\"" + city + "\",\"tagCodes\":[" + tagJson + "]}")
-                .andExpect(status().isOk());
-        String photoId = uploadPng(token);
-        mvc.perform(post("/api/v1/me/profile/publish").header("Authorization", bearer(token)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.publicationStatus").value("PUBLISHED"));
-        return photoId;
-    }
-
-    private String uploadPng(String token) throws Exception {
-        MvcResult result = mvc.perform(multipart("/api/v1/me/profile/photos")
-                        .file(new MockMultipartFile("file", "p.png", "image/png", TestImages.png(3, 3)))
-                        .header("Authorization", bearer(token)))
-                .andExpect(status().isOk())
-                .andReturn();
-        return JsonPath.read(body(result), "$.id");
-    }
-
-    private ResultActions discovery(String token, String city, String tagCodes, String tagLogic, int limit) throws Exception {
-        var request = get("/api/v1/discovery/profiles")
-                .header("Authorization", bearer(token))
-                .queryParam("city", city)
-                .queryParam("limit", String.valueOf(limit));
-        if (tagCodes != null) {
-            request.queryParam("tagCodes", tagCodes).queryParam("tagLogic", tagLogic);
-        }
-        return mvc.perform(request).andExpect(status().isOk());
-    }
-
-    private ResultActions putProfile(String token, String json) throws Exception {
-        return mvc.perform(put("/api/v1/me/profile")
-                .header("Authorization", bearer(token))
-                .contentType(MediaType.APPLICATION_JSON)
-                .characterEncoding(StandardCharsets.UTF_8)
-                .content(json));
-    }
-
-    private String login(String phone) throws Exception {
-        MvcResult result = verify(requestOtp(phone), MOCK_CODE).andExpect(status().isOk()).andReturn();
-        return JsonPath.read(body(result), "$.token");
-    }
-
-    private String requestOtp(String phone) throws Exception {
-        MvcResult result = mvc.perform(post("/api/v1/auth/otp/request")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(phoneBody(phone)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.devMockCode").value(MOCK_CODE))
-                .andReturn();
-        return JsonPath.read(body(result), "$.challengeId");
-    }
-
-    private ResultActions verify(String challengeId, String code) throws Exception {
-        return mvc.perform(post("/api/v1/auth/otp/verify")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(verifyBody(challengeId, code)));
-    }
-
-    private String json(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request,
-                        String token, String path) throws Exception {
-        MvcResult result = mvc.perform(request.header("Authorization", bearer(token)))
-                .andExpect(status().isOk())
-                .andReturn();
-        return JsonPath.read(body(result), path);
-    }
-
-    private static String body(MvcResult result) throws Exception {
-        return result.getResponse().getContentAsString(StandardCharsets.UTF_8);
-    }
-
-    private static String bearer(String token) {
-        return "Bearer " + token;
-    }
-
-    private static String phoneBody(String phone) {
-        return "{\"phone\":\"" + phone + "\"}";
-    }
-
-    private static String verifyBody(String challengeId, String code) {
-        return "{\"challengeId\":\"" + challengeId + "\",\"code\":\"" + code + "\"}";
-    }
-
-    private static String newPhoneDigits() {
-        return String.format("9%09d", PHONE_SEQ.incrementAndGet() % 1_000_000_000L);
-    }
-
-    private static String newPhone() {
-        return "+7" + newPhoneDigits();
-    }
-
-    private static String uniqueCity() {
-        return "Тестоград-" + UUID.randomUUID().toString().substring(0, 8);
-    }
-
-    private static Path createTempDir() {
-        try {
-            return Files.createTempDirectory("dating-media-test");
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
 }
