@@ -102,8 +102,8 @@ economyService.spend(accountId, "SUPERLIKE", 1, likeId, "superlike:" + likeId); 
 
 ## Подключение будущих модулей
 
-- **Гача**: таблицы баннеров/дроп-таблиц и `gacha_pulls` (аудит, pity); `spend` билета + `grant(..., GACHA, pullId,
-  "gacha:" + pullId, rewards)` в одной транзакции; показывать шансы в клиенте (требование сторов).
+- **Гача** — реализована, см. [docs/gacha.md](gacha.md): `spend` билета (`gacha:spend:<requestId>`) +
+  `grant(..., GACHA, requestId, "gacha:" + requestId, rewards)` в одной транзакции; дубли → `GACHA_SHARD`.
 - **Подписка/покупки** (будущий `billing`): после подтверждённого вебхука —
   `grant(..., SUBSCRIPTION, id, "subscription:" + id + ":" + period, List.of(new Reward.PremiumDays(30)))`.
   Денежные записи хранятся отдельно от игровой экономики.

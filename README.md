@@ -29,6 +29,7 @@ dating/
 │       ├── discovery/        # лента: фильтры по карточкам (AND/OR), городу, возрасту
 │       ├── media/            # фото: проверка формата, очистка EXIF, подписанные ссылки
 │       ├── economy/          # кошелёк, премиум-дни и функции, расходники, косметика (docs/economy.md)
+│       ├── gacha/            # баннеры, шансы, гарантии (pity), крутки, осколки за дубли (docs/gacha.md)
 │       └── productevents/    # продуктовые события без PII
 ├── src/                      # Web-клиент (React + TypeScript)
 ├── server.ts                 # dev-мок API (npm run dev:mock)
@@ -113,6 +114,9 @@ npm run build
 | GET | `/me/wallet` | Премиум, премиум-функции, расходники и косметика; устройство экономики — [docs/economy.md](docs/economy.md) |
 | PUT / DELETE | `/me/cosmetics/equipped/{slot}` | Надеть / снять косметику (рамка фото, статус, обои чата) |
 | GET | `/me/achievements` | Достижения и их награды |
+| GET / POST | `/gacha/banners`, `/gacha/banners/{code}`, `/gacha/banners/{code}/pull` | Гача: баннеры с раскрытыми шансами и гарантиями, крутки 1/10 за билеты — [docs/gacha.md](docs/gacha.md) |
+| GET / POST | `/gacha/history`, `/gacha/shards`, `/gacha/shards/exchange` | История круток, осколки за дубли и обмен на билеты |
+| … | `/admin/gacha/*` | Управление баннерами и пулами (временно: тестовые аккаунты при `APP_TESTING_ENABLED=true`) |
 | GET / PUT | `/me/exclusion-words` | Приватные слова-исключения: анкеты с этими словами в «о себе» или статусе дня (в любой словоформе, словарь Hunspell) скрываются из ленты |
 | GET | `/tags` | Справочник карточек общения |
 | … | `/testing/*` | Инструменты QA для тестовых аккаунтов (только при `APP_TESTING_ENABLED=true`) |

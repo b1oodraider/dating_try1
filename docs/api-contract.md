@@ -173,3 +173,84 @@ DELETE /testing/profiles/{accountId}              204
 DELETE /testing/profiles                          200 { deleted: number }   — all seed profiles
   Unknown/deleted ids and non-seed accounts: 404 SEED_PROFILE_NOT_FOUND.
   Bulk loading from a folder: scripts/seed-profiles.mjs (see seed/README.md).
+
+## Gacha (auth) — design and decisions: docs/gacha.md
+Pulls cost the banner's cost item (GACHA_TICKET by default, see Wallet). Results are rolled on the server (SecureRandom).
+Rarity = 'COMMON'|'RARE'|'EPIC'|'LEGENDARY'
+GachaReward = { type: 'ITEM'|'PREMIUM_DAYS',
+                item: { code, kind, category, title, rarity, equipSlot, attributes } | null,   // render like WalletItem
+                quantity: number|null, days: number|null }
+PityRules   = { epicOrBetterWithin: number|null,   // EPIC or LEGENDARY guaranteed within N pulls (10: every 10-pull has one)
+                legendaryWithin: number|null,      // LEGENDARY guaranteed at the M-th pull without one (80)
+                softPityStartsAt: number|null, softPityLegendaryWeightStep: number }   // soft pity, off by default
+PityProgress = { pityGroup, pullsSinceEpic, pullsSinceLegendary,
+                 epicGuaranteedIn: number|null, legendaryGuaranteedIn: number|null,     // 1 = the next pull is guaranteed
+                 totalPulls }
+  Banners of one pityGroup share these counters (e.g. all limited banners). Counters reset when the rarity drops in any way.
+PoolEntry   = { entryId, rarity, reward: GachaReward, weight, percent: number, featured: boolean }
+Banner      = { code, title, description: string|null, type: 'PERMANENT'|'LIMITED',
+                startsAt: string|null, endsAt: string|null,   // window [startsAt, endsAt)
+                open: boolean,                                 // pulls possible now
+                attributes: object,                            // rendering hints (accent, art); ignore unknown keys
+                cost: { itemCode, perPull, multiPullSize, multiPullCost },
+                pityRules: PityRules, myPity: PityProgress,
+                rates: { totalWeight, rarities: [ { rarity, weight, percent } ] },  // all 4 rarities, base chance of one pull
+                featured: PoolEntry[],                         // preview (featured entries, or the rarest ones)
+                pool?: PoolEntry[] }                           // only in GET /gacha/banners/{code}
+  Rates disclosure: percent has 4 decimals; rarities and pool each sum to exactly 100 (largest remainder rounding).
+  Exact chance = weight / totalWeight. These are base chances; guarantees make EPIC/LEGENDARY more frequent.
+PullResult  = { index, entryId, rarity, reward: GachaReward,
+                isNew: boolean,                                // credited as is (new cosmetic, consumable, premium days)
+                outcome: 'NEW'|'DUPLICATE_SHARDS',             // DUPLICATE_SHARDS: owned cosmetic → shards instead of the item
+                shardsGranted: number,
+                pityTrigger: 'EPIC_PITY'|'LEGENDARY_PITY'|'FORCED'|null }
+
+GET  /gacha/banners           200 Banner[] (without pool) — banners open now, sorted by sortOrder
+GET  /gacha/banners/{code}    200 Banner (with pool) ; 404 BANNER_NOT_FOUND (unknown, deactivated or not started yet;
+                              ended banners are returned with open: false)
+POST /gacha/banners/{code}/pull  body { count: 1 | multiPullSize, idempotencyKey: string (1..100, new per user action) }
+  200 { requestId, bannerCode, count, replayed: boolean, results: PullResult[], shardsGranted,
+        pity: PityProgress, costBalance: { itemCode, quantity }, shardBalance: { itemCode, quantity } }
+  A retry with the same idempotencyKey returns the same results with replayed: true and spends nothing.
+  404 BANNER_NOT_FOUND ; 409 BANNER_NOT_ACTIVE (outside the window / deactivated / empty pool) ;
+  400 INVALID_PULL_COUNT | VALIDATION_ERROR ; 409 INSUFFICIENT_BALANCE details { itemCode, available } (nothing changes) ;
+  409 IDEMPOTENCY_KEY_REUSED (same key, other banner or count)
+GET  /gacha/history?limit=20&before=   newest first; limit 1..100 (else 400)
+  200 { items: [ { id, requestId, bannerCode, bannerTitle, index, entryId, rarity, reward, isNew, outcome,
+                   shardsGranted, pityTrigger, createdAt } ], nextBefore: number|null }   // pass nextBefore as before
+GET  /gacha/shards            200 { balance: { itemCode: 'GACHA_SHARD', quantity }, ticketItemCode, shardsPerTicket: 30,
+                                    maxTicketsPerExchange: 100, duplicateShards: { COMMON: 1, RARE: 5, EPIC: 20, LEGENDARY: 60 } }
+POST /gacha/shards/exchange   body { tickets: 1..maxTicketsPerExchange, idempotencyKey }
+  200 { applied: boolean (false = key already used, nothing changed), tickets, shardsSpent, shardBalance, ticketBalance }
+  409 INSUFFICIENT_BALANCE details.itemCode = 'GACHA_SHARD' ; 400 VALIDATION_ERROR
+
+## Gacha admin (auth + content editor role) — /admin/gacha
+TEMPORARY: until roles exist, only test accounts pass and only when app.testing.enabled=true; others get 403 ROLE_REQUIRED.
+AdminBanner = { code, title, description, type, startsAt, endsAt, active, costItemCode, costPerPull, multiPullSize,
+                pityGroup, pityRules: PityRules, sortOrder, attributes, rates, pool: PoolEntry[], pulls: number }
+GET    /admin/gacha/banners                     200 AdminBanner[] (all, incl. inactive)
+GET    /admin/gacha/banners/{code}              200 AdminBanner ; 404 BANNER_NOT_FOUND
+POST   /admin/gacha/banners                     201 AdminBanner ; 400 VALIDATION_ERROR ; 404 ITEM_NOT_FOUND ; 409 BANNER_ALREADY_EXISTS
+  body { code: [A-Z0-9_]{2,50}, title, description?, type, startsAt?, endsAt? (both required for LIMITED), active? (true),
+         costItemCode? (GACHA_TICKET, consumables only), costPerPull? (1), multiPullSize? (10), pityGroup? (= code),
+         epicPity? (10; 0 = off), legendaryPity? (80; 0 = off), softPityStart? (off), softPityWeightStep? (0),
+         sortOrder? (0), attributes? ({}) }
+PUT    /admin/gacha/banners/{code}              same body (full replacement, code from the path) 200 AdminBanner
+DELETE /admin/gacha/banners/{code}              204 ; 409 BANNER_HAS_PULLS (deactivate instead)
+PUT    /admin/gacha/banners/{code}/pool/{entryId}   create or replace an entry, entryId [A-Za-z0-9_-]{1,50}
+  body { rewardType: 'ITEM'|'PREMIUM_DAYS', itemCode?, quantity? (1; cosmetics must be 1), days? (1..3650),
+         rarity? (required unless the cosmetic has a catalog rarity; must match it), weight: 1..1e9, featured?, sortOrder? }
+  200 AdminBanner ; 400 VALIDATION_ERROR ; 404 ITEM_NOT_FOUND
+DELETE /admin/gacha/banners/{code}/pool/{entryId}   200 AdminBanner ; 404 POOL_ENTRY_NOT_FOUND
+
+## Testing: gacha (part of the Testing API: test accounts only, app.testing.enabled=true)
+GachaTestingState = { forcedQueue: { [bannerCode]: entryId[] }, pity: { [pityGroup]: { pullsSinceEpic, pullsSinceLegendary, totalPulls } },
+                      pulls: number }
+GET    /testing/gacha/state
+PUT    /testing/gacha/banners/{code}/forced   body { entryIds: string[] (<= 100) }  next pulls on the banner return these, in order
+                                              (pityTrigger FORCED; counters advance by their rarity) ; 404 POOL_ENTRY_NOT_FOUND
+DELETE /testing/gacha/forced                  clear all forced queues
+PUT    /testing/gacha/pity/{pityGroup}        body { pullsSinceEpic, pullsSinceLegendary } (0..10000)
+DELETE /testing/gacha/pity                    reset all counters
+DELETE /testing/gacha/history                 delete pull history (wallet and counters are kept)
+Tickets: POST /testing/wallet/items/GACHA_TICKET { quantity }. End of a limited banner: POST /testing/clock/advance { days }.
