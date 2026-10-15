@@ -48,6 +48,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/tags", "/api/v1/goals").permitAll()
                         // Signed URLs: authorization is the HMAC signature, so <img src> works without a header.
                         .requestMatchers(HttpMethod.GET, "/api/v1/media/photos/*").permitAll()
+                        // SSE stream: authenticated in EventsController (Authorization header or a one-time ticket,
+                        // EventSource cannot send headers); permitting it here also covers the async dispatches.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()
