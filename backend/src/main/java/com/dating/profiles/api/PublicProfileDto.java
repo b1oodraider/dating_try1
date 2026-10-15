@@ -2,6 +2,7 @@ package com.dating.profiles.api;
 
 import com.dating.profiles.application.ProfileService;
 import com.dating.profiles.domain.Profile;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.util.Comparator;
 import java.util.List;
@@ -13,6 +14,7 @@ import java.util.UUID;
  *
  * @param decorations equipped public cosmetics by slot (PHOTO_FRAME, PROFILE_STATUS, …)
  * @param premium     owner has premium right now (premium badge)
+ * @param boosted     true while the profile is boosted, only when app.boost.public-badge=true; otherwise omitted
  */
 public record PublicProfileDto(
         UUID id,
@@ -26,10 +28,16 @@ public record PublicProfileDto(
         Map<String, DecorationDto> decorations,
         Integer heightCm,
         List<GoalDto> goals,
-        boolean premium
+        boolean premium,
+        @JsonInclude(JsonInclude.Include.NON_NULL) Boolean boosted
 ) {
     public static PublicProfileDto from(Profile profile, List<PhotoDto> photos, Map<String, DecorationDto> decorations,
                                         boolean premium) {
+        return from(profile, photos, decorations, premium, null);
+    }
+
+    public static PublicProfileDto from(Profile profile, List<PhotoDto> photos, Map<String, DecorationDto> decorations,
+                                        boolean premium, Boolean boosted) {
         List<TagResponseDto> tags = profile.getTags().stream()
                 .map(TagResponseDto::from)
                 .sorted(Comparator.comparingInt(TagResponseDto::sortOrder))
@@ -46,7 +54,8 @@ public record PublicProfileDto(
                 decorations,
                 profile.getHeightCm(),
                 ProfileService.goalsOf(profile),
-                premium
+                premium,
+                boosted
         );
     }
 }

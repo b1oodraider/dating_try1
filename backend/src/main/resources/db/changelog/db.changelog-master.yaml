@@ -17,3 +17,4 @@ databaseChangeLog:
       file: db/changelog/changesets/008-height-goals-premium-filters.yaml
   - include:
       file: db/changelog/changesets/010-gacha.yaml
+      file: db/changelog/changesets/011-boost.yaml
