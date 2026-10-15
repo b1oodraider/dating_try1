@@ -1490,18 +1490,22 @@ api.route('/me')
     res.json(toAccountDto(accounts.get(authOf(res).accountId)!));
   }))
   .delete(auth, route((_req, res) => {
-    const { accountId } = authOf(res);
-    profiles.delete(accountId);
-    exclusionWords.delete(accountId);
-    excludedGoals.delete(accountId);
-    economies.delete(accountId);
-    for (const [id, photo] of photos) if (photo.accountId === accountId) photos.delete(id);
-    for (const [hash, s] of sessions) if (s.accountId === accountId) sessions.delete(hash);
-    // Removing the account frees the phone: the next login creates a fresh account.
-    accounts.delete(accountId);
+    deleteAccountData(authOf(res).accountId);
     res.status(204).end();
   }))
   .all(methodNotAllowed);
+
+/** DELETE /me: wipes profile, photos, private filters, economy and sessions, then the account itself. */
+function deleteAccountData(accountId: string): void {
+  profiles.delete(accountId);
+  exclusionWords.delete(accountId);
+  excludedGoals.delete(accountId);
+  economies.delete(accountId);
+  for (const [id, photo] of photos) if (photo.accountId === accountId) photos.delete(id);
+  for (const [hash, s] of sessions) if (s.accountId === accountId) sessions.delete(hash);
+  // Removing the account frees the phone: the next login creates a fresh account.
+  accounts.delete(accountId);
+}
 
 // --- EXCLUSION WORDS (private; never exposed in any public DTO) ---
 
@@ -1572,22 +1576,27 @@ api.route('/me/profile')
   .put(auth, route((req, res) => {
     const patch = validateProfileUpdate(req.body);
     const profile = getOrCreateProfile(authOf(res).accountId);
-    if (patch.displayName !== undefined) profile.displayName = patch.displayName;
-    if (patch.age !== undefined) profile.age = patch.age;
-    if (patch.city !== undefined) profile.city = patch.city;
-    if (patch.aboutText !== undefined) profile.aboutText = patch.aboutText;
-    if (patch.tagCodes !== undefined) profile.tagCodes = patch.tagCodes;
-    if (patch.clearHeight) profile.heightCm = null;
-    else if (patch.heightCm !== undefined) profile.heightCm = patch.heightCm;
-    if (patch.goalCodes !== undefined) profile.goalCodes = patch.goalCodes;
-    if (patch.dailyStatusText !== undefined) {
-      profile.dailyStatusText = patch.dailyStatusText;
-      profile.dailyStatusExpiresAt = patch.dailyStatusText === null ? null : Date.now() + DAILY_STATUS_TTL_MS;
-    }
-    profile.updatedAt = nowIso();
+    applyProfilePatch(profile, patch);
     res.json(toMyProfile(profile));
   }))
   .all(methodNotAllowed);
+
+/** Applies a validated PUT /me/profile patch (shared with the seed-profile endpoints). */
+function applyProfilePatch(profile: ProfileRecord, patch: ProfilePatch): void {
+  if (patch.displayName !== undefined) profile.displayName = patch.displayName;
+  if (patch.age !== undefined) profile.age = patch.age;
+  if (patch.city !== undefined) profile.city = patch.city;
+  if (patch.aboutText !== undefined) profile.aboutText = patch.aboutText;
+  if (patch.tagCodes !== undefined) profile.tagCodes = patch.tagCodes;
+  if (patch.clearHeight) profile.heightCm = null;
+  else if (patch.heightCm !== undefined) profile.heightCm = patch.heightCm;
+  if (patch.goalCodes !== undefined) profile.goalCodes = patch.goalCodes;
+  if (patch.dailyStatusText !== undefined) {
+    profile.dailyStatusText = patch.dailyStatusText;
+    profile.dailyStatusExpiresAt = patch.dailyStatusText === null ? null : Date.now() + DAILY_STATUS_TTL_MS;
+  }
+  profile.updatedAt = nowIso();
+}
 
 const PUBLISH_FIELD_MESSAGES: Record<PublishField, string> = {
   displayName: 'Укажите имя',
@@ -1596,8 +1605,8 @@ const PUBLISH_FIELD_MESSAGES: Record<PublishField, string> = {
   photos: 'Загрузите хотя бы одну фотографию',
 };
 
-api.route('/me/profile/publish').post(auth, route((_req, res) => {
-  const profile = getOrCreateProfile(authOf(res).accountId);
+/** POST /me/profile/publish logic: 400 PROFILE_INCOMPLETE keyed by the missing fields. */
+function publishProfile(profile: ProfileRecord): void {
   const missing = missingForPublish(profile);
   if (missing.length > 0) {
     throw new HttpError(
@@ -1609,6 +1618,11 @@ api.route('/me/profile/publish').post(auth, route((_req, res) => {
   }
   profile.publicationStatus = 'PUBLISHED';
   profile.updatedAt = nowIso();
+}
+
+api.route('/me/profile/publish').post(auth, route((_req, res) => {
+  const profile = getOrCreateProfile(authOf(res).accountId);
+  publishProfile(profile);
   res.json(toMyProfile(profile));
 })).all(methodNotAllowed);
 
@@ -1628,37 +1642,45 @@ api.route('/me/profile/photos')
   .post(auth, route(async (req, res) => {
     const { accountId } = authOf(res);
     await runUpload(req, res);
-    const file = req.file;
-    if (!file) {
-      throw new HttpError(400, 'VALIDATION_ERROR', 'Файл не передан', { file: 'Передайте файл в поле «file»' });
-    }
-    const mime = detectImageType(file.buffer);
-    if (!mime) {
-      throw new HttpError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Поддерживаются только JPEG, PNG и WebP');
-    }
-    const existing = activePhotosOf(accountId);
-    if (existing.length >= PHOTO_MAX_COUNT) {
-      throw new HttpError(400, 'PHOTO_LIMIT_EXCEEDED', `Можно загрузить не больше ${PHOTO_MAX_COUNT} фотографий`);
-    }
-    const data = stripMetadata(file.buffer, mime);
-    if (!data) {
-      throw new HttpError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Файл повреждён или не является изображением');
-    }
-    getOrCreateProfile(accountId);
-    const photo: PhotoRecord = {
-      id: crypto.randomUUID(),
-      accountId,
-      data,
-      mimeType: mime,
-      sortOrder: existing.length === 0 ? 0 : existing[existing.length - 1].sortOrder + 1,
-      isPrimary: !existing.some((p) => p.isPrimary),
-      createdAt: nowIso(),
-    };
-    photos.set(photo.id, photo);
-    profiles.get(accountId)!.updatedAt = nowIso();
-    res.json(toPhotoDto(photo));
+    res.json(toPhotoDto(addPhoto(accountId, requireUploadedFile(req))));
   }))
   .all(methodNotAllowed);
+
+function requireUploadedFile(req: Request): Express.Multer.File {
+  if (!req.file) {
+    throw new HttpError(400, 'VALIDATION_ERROR', 'Файл не передан', { file: 'Передайте файл в поле «file»' });
+  }
+  return req.file;
+}
+
+/** POST /me/profile/photos logic after the multipart parsing (shared with the seed-profile endpoints). */
+function addPhoto(accountId: string, file: Express.Multer.File): PhotoRecord {
+  const mime = detectImageType(file.buffer);
+  if (!mime) {
+    throw new HttpError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Поддерживаются только JPEG, PNG и WebP');
+  }
+  const existing = activePhotosOf(accountId);
+  if (existing.length >= PHOTO_MAX_COUNT) {
+    throw new HttpError(400, 'PHOTO_LIMIT_EXCEEDED', `Можно загрузить не больше ${PHOTO_MAX_COUNT} фотографий`);
+  }
+  const data = stripMetadata(file.buffer, mime);
+  if (!data) {
+    throw new HttpError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Файл повреждён или не является изображением');
+  }
+  getOrCreateProfile(accountId);
+  const photo: PhotoRecord = {
+    id: crypto.randomUUID(),
+    accountId,
+    data,
+    mimeType: mime,
+    sortOrder: existing.length === 0 ? 0 : existing[existing.length - 1].sortOrder + 1,
+    isPrimary: !existing.some((p) => p.isPrimary),
+    createdAt: nowIso(),
+  };
+  photos.set(photo.id, photo);
+  profiles.get(accountId)!.updatedAt = nowIso();
+  return photo;
+}
 
 function ownPhotoOr404(accountId: string, photoId: string): PhotoRecord {
   const photo = photos.get(photoId);
@@ -1968,6 +1990,191 @@ api.route('/testing/clock').delete(auth, route((_req, res) => {
   const accountId = requireTestAccount(res);
   economyOf(accountId).clockOffsetMs = 0;
   res.json(toTestingState(accountId));
+})).all(methodNotAllowed);
+
+// --- TESTING: SEED PROFILES (mirror of TestProfilesController / TestProfilesService) ---
+// Phone-less test accounts with a ready profile: being test accounts, they are visible only to test accounts.
+// Order of checks as in Spring: path id format and body binding/Bean Validation, then the test-account check,
+// then the seed check, then the service validation (validateProfileUpdate = ProfileService).
+
+/** phone_hash prefix of seed accounts (AccountService.SEED_PHONE_HASH_PREFIX); real hashes are hex, so no login. */
+const SEED_PHONE_HASH_PREFIX = 'seed:';
+const MAX_SEED_COSMETICS = 10;
+
+function isActiveSeedAccount(accountId: string): boolean {
+  const account = accounts.get(accountId);
+  return account?.status === 'ACTIVE' && account.phoneHash.startsWith(SEED_PHONE_HASH_PREFIX);
+}
+
+/** Oldest first: the accounts map keeps insertion (= creation) order. */
+function activeSeedAccountIds(): string[] {
+  return [...accounts.keys()].filter(isActiveSeedAccount);
+}
+
+function requireSeed(accountId: string): void {
+  if (!isActiveSeedAccount(accountId)) {
+    throw new HttpError(404, 'SEED_PROFILE_NOT_FOUND', 'Тестовый профиль не найден');
+  }
+}
+
+function toSeedProfile(accountId: string) {
+  return { accountId, profile: toMyProfile(getOrCreateProfile(accountId)) };
+}
+
+/** {accountId} path variable: a non-UUID is a type mismatch in Spring -> 400 MALFORMED_REQUEST. */
+function seedIdParam(raw: string): string {
+  if (!UUID_RE.test(raw)) throw new HttpError(400, 'MALFORMED_REQUEST', 'Некорректный запрос');
+  return raw.toLowerCase();
+}
+
+/**
+ * Bean Validation of ProfileUpdateDto (@Size/@Min/@Max on the raw values, before trimming). Trimmed lengths,
+ * unknown codes and the rest are checked later by validateProfileUpdate, like ProfileService does.
+ */
+function collectProfileConstraintErrors(
+  body: Record<string, unknown>,
+  prefix: string,
+  errors: Record<string, string>
+): void {
+  const put = (name: string, message: string) => {
+    errors[prefix + name] ??= message;
+  };
+  const maxLength = (name: string, max: number, message: string) => {
+    const v = body[name];
+    if ((typeof v === 'string' || Array.isArray(v)) && v.length > max) put(name, message);
+  };
+  maxLength('displayName', 50, 'Имя должно быть от 2 до 50 символов');
+  if (typeof body.age === 'number') {
+    if (body.age < 18) put('age', 'Возраст должен быть не менее 18 лет');
+    else if (body.age > 100) put('age', 'Некорректный возраст');
+  }
+  maxLength('city', 60, 'Город не должен превышать 60 символов');
+  maxLength('aboutText', 1000, 'Описание «О себе» не должно превышать 1000 символов');
+  maxLength('tagCodes', MAX_TAGS, `Можно выбрать не более ${MAX_TAGS} карточек`);
+  maxLength('dailyStatusText', 200, 'Статус на сегодня не должен превышать 200 символов');
+  if (typeof body.heightCm === 'number' && (body.heightCm < HEIGHT_MIN_CM || body.heightCm > HEIGHT_MAX_CM)) {
+    put('heightCm', `Рост должен быть от ${HEIGHT_MIN_CM} до ${HEIGHT_MAX_CM} см`);
+  }
+  maxLength('goalCodes', MAX_PROFILE_GOALS, `Можно выбрать не более ${MAX_PROFILE_GOALS} целей`);
+}
+
+function throwIfErrors(errors: Record<string, string>): void {
+  if (Object.keys(errors).length > 0) throw new HttpError(400, 'VALIDATION_ERROR', VALIDATION_MESSAGE, errors);
+}
+
+const malformed = () => new HttpError(400, 'MALFORMED_REQUEST', 'Некорректный запрос');
+
+/** TestProfilesService.CreateRequest: { profile (required), premiumDays 0..3650, cosmetics (<= 10) }. */
+function parseSeedCreateRequest(raw: unknown) {
+  const body = requireJsonObject(raw);
+  const errors: Record<string, string> = {};
+  let profile: Record<string, unknown> = {};
+  if (body.profile === undefined || body.profile === null) {
+    errors.profile = 'Заполните profile';
+  } else if (!isPlainObject(body.profile)) {
+    throw malformed();
+  } else {
+    profile = body.profile;
+    collectProfileConstraintErrors(profile, 'profile.', errors);
+  }
+  let premiumDays = 0;
+  if (body.premiumDays !== undefined && body.premiumDays !== null) {
+    if (typeof body.premiumDays !== 'number' || !Number.isFinite(body.premiumDays)) throw malformed();
+    if (!Number.isInteger(body.premiumDays) || body.premiumDays < 0 || body.premiumDays > MAX_TESTING_DAYS) {
+      errors.premiumDays = `Должно быть целым числом от 0 до ${MAX_TESTING_DAYS}`;
+    } else {
+      premiumDays = body.premiumDays;
+    }
+  }
+  let cosmetics: string[] = [];
+  if (body.cosmetics !== undefined && body.cosmetics !== null) {
+    if (!Array.isArray(body.cosmetics) || !body.cosmetics.every((c): c is string => typeof c === 'string')) {
+      throw malformed();
+    }
+    if (body.cosmetics.length > MAX_SEED_COSMETICS) errors.cosmetics = `Не более ${MAX_SEED_COSMETICS} предметов`;
+    else cosmetics = body.cosmetics;
+  }
+  throwIfErrors(errors);
+  return { profile, premiumDays, cosmetics };
+}
+
+api.route('/testing/profiles')
+  .get(auth, route((_req, res) => {
+    requireTestAccount(res);
+    res.json(activeSeedAccountIds().map(toSeedProfile));
+  }))
+  .post(auth, route((req, res) => {
+    const request = parseSeedCreateRequest(req.body);
+    requireTestAccount(res);
+    // The backend creates the account first and rolls back on an error; validating everything up front
+    // (profile, then items in list order) leaves nothing behind and keeps the same error order.
+    const patch = validateProfileUpdate(request.profile);
+    const items = request.cosmetics.map((code) => requireItem(code));
+
+    const accountId = crypto.randomUUID();
+    accounts.set(accountId, {
+      id: accountId,
+      phoneHash: SEED_PHONE_HASH_PREFIX + crypto.randomUUID(),
+      phoneMasked: 'тестовый профиль',
+      status: 'ACTIVE',
+      createdAt: nowIso(),
+      testAccount: true,
+    });
+    applyProfilePatch(getOrCreateProfile(accountId), patch);
+    if (request.premiumDays > 0) {
+      grantRewards(accountId, [{ kind: 'premium', days: request.premiumDays }], `testing:seed-premium:${accountId}`);
+    }
+    for (const item of items) {
+      grantRewards(accountId, [{ kind: 'item', itemCode: item.code, quantity: 1 }],
+        `testing:seed-item:${accountId}:${item.code}`);
+      if (item.equipSlot !== null) economyOf(accountId).equipped.set(item.equipSlot, item.code);
+    }
+    res.status(201).json(toSeedProfile(accountId));
+  }))
+  .delete(auth, route((_req, res) => {
+    requireTestAccount(res);
+    const ids = activeSeedAccountIds();
+    ids.forEach(deleteAccountData);
+    res.json({ deleted: ids.length });
+  }))
+  .all(methodNotAllowed);
+
+api.route('/testing/profiles/:accountId')
+  .put(auth, route((req, res) => {
+    const accountId = seedIdParam(req.params.accountId);
+    const body = requireJsonObject(req.body);
+    const errors: Record<string, string> = {};
+    collectProfileConstraintErrors(body, '', errors);
+    throwIfErrors(errors);
+    requireTestAccount(res);
+    requireSeed(accountId);
+    applyProfilePatch(getOrCreateProfile(accountId), validateProfileUpdate(body));
+    res.json(toSeedProfile(accountId));
+  }))
+  .delete(auth, route((req, res) => {
+    const accountId = seedIdParam(req.params.accountId);
+    requireTestAccount(res);
+    requireSeed(accountId);
+    deleteAccountData(accountId);
+    res.status(204).end();
+  }))
+  .all(methodNotAllowed);
+
+api.route('/testing/profiles/:accountId/photos').post(auth, route(async (req, res) => {
+  await runUpload(req, res); // multipart is parsed before the controller runs (413 FILE_TOO_LARGE first)
+  const accountId = seedIdParam(req.params.accountId);
+  const file = requireUploadedFile(req);
+  requireTestAccount(res);
+  requireSeed(accountId);
+  res.json(toPhotoDto(addPhoto(accountId, file)));
+})).all(methodNotAllowed);
+
+api.route('/testing/profiles/:accountId/publish').post(auth, route((req, res) => {
+  const accountId = seedIdParam(req.params.accountId);
+  requireTestAccount(res);
+  requireSeed(accountId);
+  publishProfile(getOrCreateProfile(accountId));
+  res.json(toSeedProfile(accountId));
 })).all(methodNotAllowed);
 
 // ---------------------------------------------------------------------------

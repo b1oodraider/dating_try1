@@ -10,3 +10,8 @@ backend/data/
 !.env.example
 mobile/.dart_tool/
 mobile/.flutter-plugins-dependencies
+
+# Seed profiles: personally generated photos and the working list (see seed/README.md)
+seed/profiles.json
+seed/photos/**
+!seed/photos/.gitkeep
