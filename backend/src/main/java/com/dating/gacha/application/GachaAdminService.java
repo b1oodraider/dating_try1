@@ -1,5 +1,6 @@
 package com.dating.gacha.application;
 
+import com.dating.admin.application.AdminAuditLog;
 import com.dating.common.errors.ApiException;
 import com.dating.economy.application.EconomyService;
 import com.dating.economy.domain.CatalogItem;
@@ -15,8 +16,6 @@ import com.dating.gacha.domain.PoolRewardType;
 import com.dating.gacha.domain.RateTable;
 import com.dating.gacha.domain.Rarity;
 import com.dating.gacha.persistence.GachaRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,13 +28,11 @@ import java.util.regex.Pattern;
 
 /**
  * Banner and pool management for content editors (contests, collaborations, rate changes) without releases.
- * Authorization is the caller's job (see {@link com.dating.common.security.AdminAccess}); every change is logged
- * with the editor's account id.
+ * Authorization is the caller's job (CONTENT_EDITOR or ADMIN); every change goes to the admin audit log.
  */
 @Service
 public class GachaAdminService {
 
-    private static final Logger log = LoggerFactory.getLogger(GachaAdminService.class);
     private static final Pattern CODE = Pattern.compile("[A-Z0-9_]{2,50}");
     private static final Pattern ENTRY_ID = Pattern.compile("[A-Za-z0-9_-]{1,50}");
     private static final int DEFAULT_EPIC_PITY = 10;
@@ -44,10 +41,12 @@ public class GachaAdminService {
 
     private final GachaRepository repository;
     private final EconomyService economyService;
+    private final AdminAuditLog auditLog;
 
-    public GachaAdminService(GachaRepository repository, EconomyService economyService) {
+    public GachaAdminService(GachaRepository repository, EconomyService economyService, AdminAuditLog auditLog) {
         this.repository = repository;
         this.economyService = economyService;
+        this.auditLog = auditLog;
     }
 
     // ---------------------------------------------------------------- banners
@@ -76,8 +75,9 @@ public class GachaAdminService {
         if (!repository.insertBanner(banner)) {
             throw new ApiException("BANNER_ALREADY_EXISTS", "Баннер с таким кодом уже есть", HttpStatus.CONFLICT);
         }
-        log.info("Gacha admin: account {} created banner {}", editorId, banner.code());
-        return getBanner(banner.code());
+        AdminBannerDto created = getBanner(banner.code());
+        auditLog.record(editorId, "CREATE", "GACHA_BANNER", banner.code(), null, created);
+        return created;
     }
 
     /**
@@ -85,10 +85,11 @@ public class GachaAdminService {
      */
     @Transactional
     public AdminBannerDto updateBanner(UUID editorId, String code, AdminBannerRequest request) {
-        requireBanner(code);
+        AdminBannerDto before = getBanner(code);
         repository.updateBanner(toBanner(code, request));
-        log.info("Gacha admin: account {} updated banner {}", editorId, code);
-        return getBanner(code);
+        AdminBannerDto after = getBanner(code);
+        auditLog.record(editorId, "UPDATE", "GACHA_BANNER", code, before, after);
+        return after;
     }
 
     /**
@@ -98,13 +99,13 @@ public class GachaAdminService {
      */
     @Transactional
     public void deleteBanner(UUID editorId, String code) {
-        requireBanner(code);
+        AdminBannerDto before = getBanner(code);
         if (repository.countPulls(code) > 0) {
             throw new ApiException("BANNER_HAS_PULLS",
                     "По баннеру уже были крутки — его можно только выключить (active = false)", HttpStatus.CONFLICT);
         }
         repository.deleteBanner(code);
-        log.info("Gacha admin: account {} deleted banner {}", editorId, code);
+        auditLog.record(editorId, "DELETE", "GACHA_BANNER", code, before, null);
     }
 
     // ---------------------------------------------------------------- pool
@@ -114,13 +115,14 @@ public class GachaAdminService {
      */
     @Transactional
     public AdminBannerDto putPoolEntry(UUID editorId, String bannerCode, String entryId, AdminPoolEntryRequest request) {
-        requireBanner(bannerCode);
+        AdminBannerDto before = getBanner(bannerCode);
         if (entryId == null || !ENTRY_ID.matcher(entryId).matches()) {
             throw fieldError("entryId", "1–50 символов: буквы, цифры, _ и -");
         }
         repository.upsertEntry(bannerCode, toEntry(entryId, request));
-        log.info("Gacha admin: account {} put pool entry {}/{}", editorId, bannerCode, entryId);
-        return getBanner(bannerCode);
+        AdminBannerDto after = getBanner(bannerCode);
+        auditLog.record(editorId, "PUT_POOL_ENTRY", "GACHA_BANNER", bannerCode, before, after);
+        return after;
     }
 
     /**
@@ -128,12 +130,13 @@ public class GachaAdminService {
      */
     @Transactional
     public AdminBannerDto deletePoolEntry(UUID editorId, String bannerCode, String entryId) {
-        requireBanner(bannerCode);
+        AdminBannerDto before = getBanner(bannerCode);
         if (!repository.deleteEntry(bannerCode, entryId)) {
             throw GachaErrors.entryNotFound(bannerCode, entryId);
         }
-        log.info("Gacha admin: account {} deleted pool entry {}/{}", editorId, bannerCode, entryId);
-        return getBanner(bannerCode);
+        AdminBannerDto after = getBanner(bannerCode);
+        auditLog.record(editorId, "DELETE_POOL_ENTRY", "GACHA_BANNER", bannerCode, before, after);
+        return after;
     }
 
     // ---------------------------------------------------------------- validation and mapping

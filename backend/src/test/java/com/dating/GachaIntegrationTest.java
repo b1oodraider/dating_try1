@@ -1,6 +1,8 @@
 package com.dating;
 
+import com.dating.accounts.application.RoleService;
 import com.dating.common.errors.ApiException;
+import com.dating.common.security.Role;
 import com.dating.economy.application.EconomyClock;
 import com.dating.economy.domain.Reward;
 import com.dating.economy.domain.RewardSource;
@@ -42,6 +44,9 @@ class GachaIntegrationTest extends IntegrationTestBase {
     private static final String LIMITED = "LIMITED_DEMO_STARFALL";
     private static final String TICKET = "GACHA_TICKET";
     private static final String SHARD = "GACHA_SHARD";
+
+    @Autowired
+    private RoleService roleService;
 
     @Autowired
     GachaService gachaService;
@@ -236,7 +241,7 @@ class GachaIntegrationTest extends IntegrationTestBase {
         pull(me, STANDARD, 1, "permanent-still-open").andExpect(status().isOk());
 
         // A banner that has not started yet: not listed, not found, not pullable.
-        Account editor = newAccount(true);
+        Account editor = newEditor();
         String future = "FUTURE_" + suffix();
         admin(editor, post("/api/v1/admin/gacha/banners"), bannerJson(future, "LIMITED",
                 Instant.now().plus(10, ChronoUnit.DAYS), Instant.now().plus(20, ChronoUnit.DAYS)), 201);
@@ -367,7 +372,7 @@ class GachaIntegrationTest extends IntegrationTestBase {
         Account outsider = newAccount(false);
         admin(outsider, get("/api/v1/admin/gacha/banners"), null, 403).andExpect(jsonPath("$.code").value("ROLE_REQUIRED"));
 
-        Account editor = newAccount(true);
+        Account editor = newEditor();
         String code = "COLLAB_" + suffix();
         admin(editor, post("/api/v1/admin/gacha/banners"), bannerJson(code, "LIMITED", null, null), 400)
                 .andExpect(jsonPath("$.fieldErrors.endsAt").exists());
@@ -462,6 +467,13 @@ class GachaIntegrationTest extends IntegrationTestBase {
             jdbc.update("UPDATE accounts SET test_account = TRUE WHERE id = ?", id);
         }
         return new Account(token, id);
+    }
+
+    /** A fresh real account with the CONTENT_EDITOR role (admin endpoints check roles, not the test flag). */
+    private Account newEditor() throws Exception {
+        Account account = newAccount(false);
+        roleService.grant(account.id(), Role.CONTENT_EDITOR, null);
+        return account;
     }
 
     private void grantTickets(Account account, long quantity) {

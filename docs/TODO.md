@@ -21,7 +21,7 @@
       результат, счётчики pity, очистка истории), админ-API баннеров и пулов.
 - [x] Временные баннеры под конкурсы и коллаборации: окно `startsAt/endsAt`, общая группа гарантий.
 - [ ] Экраны гачи в вебе и мобилке, тест-панель для гачи (API готов).
-- [ ] Админ-API гачи под реальные роли: заменить временный `AdminAccess` (сейчас — тестовые аккаунты).
+- [x] Админ-API гачи под реальные роли (`CONTENT_EDITOR`/`ADMIN`), изменения баннеров — в `admin_audit_log`.
 - [ ] Сводные (эффективные) шансы с учётом гарантий в API; лимиты трат и отдельные платные билеты.
 
 ## Буст
@@ -66,9 +66,12 @@ Backend сделан, см. [boost.md](boost.md). Клиенты (веб, моб
 (они же лежат на origin отдельно). Конфликты в `api-contract.md`, `application*.yml`, `SecurityConfig`,
 `DiscoveryService`, `db.changelog-master.yaml` разрешены объединением — стоит перечитать.
 Бэкенд: 129 тестов, 2 падают:
-- [ ] `AdminEconomyIntegrationTest.achievementDefinitionsAreEditable` — ожидает отсутствие TEST_SUPERLIKE в кошельке, а он есть
+- [x] `AdminEconomyIntegrationTest.achievementDefinitionsAreEditable` — ожидает отсутствие TEST_SUPERLIKE в кошельке, а он есть
       (вероятно, недельная премиум-аллокация после слияния с гачой/бустом).
-- [ ] `SocialChatIntegrationTest.mutualLikeCreatesExactlyOneMatchEvenConcurrently` — нехватка соединений
+- [x] `SocialChatIntegrationTest.mutualLikeCreatesExactlyOneMatchEvenConcurrently` — нехватка соединений
       (пул Hikari = 5, тест параллельный).
 Не сделано: доки агентов местами недописаны (админка, лайки/чаты), клиенты (веб, мок, мобилка) под новые API,
-конкурсы/выплаты авторам, перевод `AdminAccess` гачи на реальные роли.
+конкурсы/выплаты авторам.
+Исправлено (2026-10-16): тест достижений ждал 0 суперлайков, хотя премиум из награды пополняет их до 5;
+параллельный тест мэтча упирался в реальный дедлок пула — аналитика писалась в REQUIRES_NEW внутри afterCommit,
+теперь пишется в фоновом потоке. Все 129 тестов проходят.

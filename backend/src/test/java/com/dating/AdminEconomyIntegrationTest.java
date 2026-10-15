@@ -71,7 +71,10 @@ class AdminEconomyIntegrationTest extends AdminTestSupport {
                 // GACHA_TICKET is not a premium allowance in the test profile, so all 3 come from the achievement.
                 .andExpect(jsonPath("$.items[?(@.code == 'GACHA_TICKET')].quantity", contains(3)))
                 .andExpect(jsonPath("$.items[?(@.code == 'TEST_FRAME')].quantity", contains(1)))
-                .andExpect(jsonPath("$.items[?(@.code == 'TEST_SUPERLIKE')]", hasSize(0)));
+                // The granted premium tops up the TEST_SUPERLIKE allowance (5, all periodic); the old 1-unit
+                // reward would show up as a non-periodic extra.
+                .andExpect(jsonPath("$.items[?(@.code == 'TEST_SUPERLIKE')].quantity", contains(5)))
+                .andExpect(jsonPath("$.items[?(@.code == 'TEST_SUPERLIKE')].periodicQuantity", contains(5)));
         as(user, get("/api/v1/me/achievements"), null)
                 .andExpect(jsonPath("$[?(@.code == '" + code + "')].title", contains("Новое")));
 

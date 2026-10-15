@@ -1,7 +1,8 @@
 package com.dating.gacha.api;
 
-import com.dating.common.security.AdminAccess;
 import com.dating.common.security.AuthenticatedUser;
+import com.dating.common.security.Role;
+import com.dating.common.security.RoleAccess;
 import com.dating.gacha.application.GachaAdminService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -13,19 +14,18 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Banner and pool management. Every call requires {@link AdminAccess#requireContentEditor}
- * (403 ROLE_REQUIRED); until roles exist only test accounts pass, and only with app.testing.enabled=true.
+ * Banner and pool management. Every call requires the CONTENT_EDITOR or ADMIN role (403 ROLE_REQUIRED).
  */
 @RestController
 @RequestMapping("/api/v1/admin/gacha")
 public class GachaAdminController {
 
     private final GachaAdminService adminService;
-    private final AdminAccess adminAccess;
+    private final RoleAccess roleAccess;
 
-    public GachaAdminController(GachaAdminService adminService, AdminAccess adminAccess) {
+    public GachaAdminController(GachaAdminService adminService, RoleAccess roleAccess) {
         this.adminService = adminService;
-        this.adminAccess = adminAccess;
+        this.roleAccess = roleAccess;
     }
 
     @GetMapping("/banners")
@@ -71,7 +71,7 @@ public class GachaAdminController {
     }
 
     private UUID editor(AuthenticatedUser user) {
-        adminAccess.requireContentEditor(user.accountId());
+        roleAccess.require(user.accountId(), Role.CONTENT_EDITOR, Role.ADMIN);
         return user.accountId();
     }
 }
