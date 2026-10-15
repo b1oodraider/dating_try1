@@ -7,10 +7,13 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
- * Periodic consumables included in premium (configured in app.economy.premium-allowances).
+ * Periodic consumables included in premium (app.economy.premium-allowances or the admin override,
+ * see PremiumCompositionService). A changed allowance applies from the next period: the period key of an
+ * already granted allowance is not granted again.
  * Granted lazily when the user opens the wallet and by a daily job; the period key makes both
  * paths idempotent, so a user gets each allowance at most once per period.
  */
@@ -19,15 +22,15 @@ public class AllowanceService {
 
     private static final Logger log = LoggerFactory.getLogger(AllowanceService.class);
 
-    private final EconomyProperties properties;
+    private final PremiumCompositionService composition;
     private final PremiumService premiumService;
     private final EconomyService economyService;
     private final EconomyRepository repository;
     private final EconomyClock clock;
 
-    public AllowanceService(EconomyProperties properties, PremiumService premiumService,
+    public AllowanceService(PremiumCompositionService composition, PremiumService premiumService,
                             EconomyService economyService, EconomyRepository repository, EconomyClock clock) {
-        this.properties = properties;
+        this.composition = composition;
         this.premiumService = premiumService;
         this.economyService = economyService;
         this.repository = repository;
@@ -39,11 +42,12 @@ public class AllowanceService {
      * so a misconfigured item cannot break the others or the caller.
      */
     public void ensureAllowances(UUID accountId) {
-        if (properties.premiumAllowances().isEmpty() || !premiumService.isPremium(accountId)) {
+        List<EconomyProperties.Allowance> allowances = composition.current().allowances();
+        if (allowances.isEmpty() || !premiumService.isPremium(accountId)) {
             return;
         }
         Instant now = clock.now(accountId);
-        for (EconomyProperties.Allowance allowance : properties.premiumAllowances()) {
+        for (EconomyProperties.Allowance allowance : allowances) {
             try {
                 economyService.grantAllowance(accountId, allowance, allowance.period().keyFor(now));
             } catch (RuntimeException e) {
@@ -54,7 +58,7 @@ public class AllowanceService {
 
     @Scheduled(cron = "0 10 0 * * *", zone = "UTC")
     public void grantToActivePremiumAccounts() {
-        if (properties.premiumAllowances().isEmpty()) {
+        if (composition.current().allowances().isEmpty()) {
             return;
         }
         for (UUID accountId : repository.accountsWithActivePremium()) {

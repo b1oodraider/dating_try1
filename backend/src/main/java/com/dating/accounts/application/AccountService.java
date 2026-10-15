@@ -37,6 +37,11 @@ public class AccountService {
                 .orElseThrow(() -> ApiException.notFound("ACCOUNT_NOT_FOUND", "Аккаунт не найден"));
     }
 
+    @Transactional(readOnly = true)
+    public java.util.Optional<Account> findByPhoneHash(String phoneHash) {
+        return accountRepository.findByPhoneHash(phoneHash);
+    }
+
     @Transactional
     public Account findOrCreateAccount(String phoneHash, String phoneMasked) {
         int inserted = accountRepository.insertIfAbsent(UUID.randomUUID(), phoneHash, phoneMasked);

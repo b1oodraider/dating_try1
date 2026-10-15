@@ -20,3 +20,6 @@ app:
     enabled: true
     test-phones: +7 900 000-00-01, +7 900 000-00-02, +7 900 000-00-03
     otp-code: "123456"
+  admin:
+    # The first dev test phone is also the admin (log in with 123456, open the admin API).
+    bootstrap-phones: +7 900 000-00-01

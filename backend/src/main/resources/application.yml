@@ -80,6 +80,12 @@ app:
     duration: ${APP_BOOST_DURATION:30m}
     # Show others that a profile is boosted (PublicProfile.boosted). Off on purpose: a hidden boost keeps the feed fair.
     public-badge: ${APP_BOOST_PUBLIC_BADGE:false}
+  admin:
+    # Phones that get the ADMIN role on login (comma-separated). Further roles are granted via /api/v1/admin.
+    bootstrap-phones: ${APP_ADMIN_BOOTSTRAP_PHONES:}
+  authors:
+    # Revenue share of a new catalog item author, percent of sales (editable per author).
+    default-revenue-share-percent: 30
   testing:
     # Test accounts: phones below become test accounts (isolated from real users in discovery).
     # enabled=true additionally exposes /api/v1/testing and a fixed OTP code (no SMS) for these phones.

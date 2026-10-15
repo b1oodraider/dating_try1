@@ -20,12 +20,12 @@ import java.util.UUID;
 public class PremiumService implements FeatureAccess {
 
     private final EconomyRepository repository;
-    private final EconomyProperties properties;
+    private final PremiumCompositionService composition;
     private final EconomyClock clock;
 
-    public PremiumService(EconomyRepository repository, EconomyProperties properties, EconomyClock clock) {
+    public PremiumService(EconomyRepository repository, PremiumCompositionService composition, EconomyClock clock) {
         this.repository = repository;
-        this.properties = properties;
+        this.composition = composition;
         this.clock = clock;
     }
 
@@ -40,13 +40,16 @@ public class PremiumService implements FeatureAccess {
         return premiumUntil(accountId).map(until -> until.isAfter(now)).orElse(false);
     }
 
+    /**
+     * Current premium-only feature codes (config default or admin override).
+     */
     public List<String> premiumFeatures() {
-        return properties.premiumFeatures();
+        return composition.current().features();
     }
 
     @Override
     public boolean isAllowed(UUID accountId, String feature) {
-        return !properties.premiumFeatures().contains(feature) || isPremium(accountId);
+        return !premiumFeatures().contains(feature) || isPremium(accountId);
     }
 
     @Override

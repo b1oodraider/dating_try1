@@ -4,14 +4,19 @@ import com.dating.accounts.application.AccountDeletedEvent;
 import com.dating.common.errors.ApiException;
 import com.dating.economy.domain.Bucket;
 import com.dating.economy.domain.CatalogItem;
+import com.dating.economy.domain.ItemAvailability;
 import com.dating.economy.domain.Reward;
 import com.dating.economy.domain.RewardSource;
+import com.dating.economy.persistence.CatalogRepository;
 import com.dating.economy.persistence.EconomyRepository;
 import com.dating.productevents.application.ProductEventPublisher;
 import org.springframework.context.event.EventListener;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -31,18 +36,24 @@ public class EconomyService {
     private final EconomyRepository repository;
     private final EconomyClock clock;
     private final ProductEventPublisher productEvents;
+    private final CatalogRepository catalogRepository;
 
-    public EconomyService(EconomyRepository repository, EconomyClock clock, ProductEventPublisher productEvents) {
+    public EconomyService(EconomyRepository repository, EconomyClock clock, ProductEventPublisher productEvents,
+                          CatalogRepository catalogRepository) {
         this.repository = repository;
         this.clock = clock;
         this.productEvents = productEvents;
+        this.catalogRepository = catalogRepository;
     }
 
     /**
      * Grants rewards. Consumables go to the PERMANENT bucket; cosmetics become owned
      * (an already-owned cosmetic is recorded as a 0-delta duplicate that gacha can convert later).
+     * Offer-like sources (PURCHASE, PROMO) cannot grant a time-limited item outside its availability window,
+     * see {@link ItemAvailability#appliesTo}.
      *
      * @return true if applied now, false if this idempotency key was already applied
+     * @throws ApiException 409 ITEM_NOT_AVAILABLE (details: itemCode, availableFrom, availableUntil)
      */
     @Transactional
     public boolean grant(UUID accountId, RewardSource source, String sourceRef, String idempotencyKey,
@@ -60,6 +71,9 @@ public class EconomyService {
             switch (reward) {
                 case Reward.Item item -> {
                     CatalogItem catalogItem = requireItem(item.itemCode());
+                    if (ItemAvailability.appliesTo(source)) {
+                        requireAvailable(accountId, item.itemCode());
+                    }
                     long applied;
                     if (catalogItem.kind().stackable()) {
                         repository.credit(accountId, item.itemCode(), Bucket.PERMANENT, item.quantity());
@@ -186,6 +200,19 @@ public class EconomyService {
     public CatalogItem requireItem(String itemCode) {
         return repository.findActiveItem(itemCode)
                 .orElseThrow(() -> ApiException.notFound("ITEM_NOT_FOUND", "Предмет не найден: " + itemCode));
+    }
+
+    private void requireAvailable(UUID accountId, String itemCode) {
+        ItemAvailability window = catalogRepository.availability(itemCode).orElse(ItemAvailability.ALWAYS);
+        Instant now = clock.now(accountId);
+        if (!window.isAvailableAt(now)) {
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("itemCode", itemCode);
+            details.put("availableFrom", window.availableFrom() == null ? null : window.availableFrom().toString());
+            details.put("availableUntil", window.availableUntil() == null ? null : window.availableUntil().toString());
+            throw ApiException.withDetails("ITEM_NOT_AVAILABLE", "Этот предмет сейчас недоступен",
+                    HttpStatus.CONFLICT, details);
+        }
     }
 
     private static void validateKey(String idempotencyKey) {
