@@ -145,6 +145,8 @@ public class DiscoveryService {
             }
             return cb.conjunction();
         };
+    }
+
     // ---------------------------------------------------------------- filters contributed by other modules
 
     /** E.g. social: already liked / passed profiles and blocks. Setter injection keeps the constructor stable. */

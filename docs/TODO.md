@@ -60,3 +60,15 @@ Backend сделан, см. [boost.md](boost.md). Клиенты (веб, моб
       временных баннеров гачи.
 - [ ] Авторство предмета и процент с продаж авторам: учёт продаж/выпадений по автору, отчёты, выплаты
       (юридическая часть: договор, налоги, способ выплат).
+
+## Состояние WIP-слияния (2026-10-15)
+В `develop` слиты незавершённые ветки агентов: `wip/admin-roles-catalog`, `wip/gacha`, `wip/boost`, `wip/likes-chats`
+(они же лежат на origin отдельно). Конфликты в `api-contract.md`, `application*.yml`, `SecurityConfig`,
+`DiscoveryService`, `db.changelog-master.yaml` разрешены объединением — стоит перечитать.
+Бэкенд: 129 тестов, 2 падают:
+- [ ] `AdminEconomyIntegrationTest.achievementDefinitionsAreEditable` — ожидает отсутствие TEST_SUPERLIKE в кошельке, а он есть
+      (вероятно, недельная премиум-аллокация после слияния с гачой/бустом).
+- [ ] `SocialChatIntegrationTest.mutualLikeCreatesExactlyOneMatchEvenConcurrently` — нехватка соединений
+      (пул Hikari = 5, тест параллельный).
+Не сделано: доки агентов местами недописаны (админка, лайки/чаты), клиенты (веб, мок, мобилка) под новые API,
+конкурсы/выплаты авторам, перевод `AdminAccess` гачи на реальные роли.
