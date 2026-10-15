@@ -212,6 +212,7 @@ public class ProfileService {
      */
     public static List<GoalDto> goalsOf(Profile profile) {
         return profile.getGoals().stream()
+                .filter(RelationshipGoal::isActive) // hidden by an admin
                 .map(GoalDto::from)
                 .sorted(Comparator.comparingInt(GoalDto::sortOrder))
                 .toList();
@@ -254,6 +255,7 @@ public class ProfileService {
     MyProfileDto toMyProfileDto(Profile profile) {
         List<PhotoDto> photos = photoQuery.photosOf(profile.getId());
         List<TagResponseDto> tags = profile.getTags().stream()
+                .filter(CommunicationTag::isActive) // hidden by an admin
                 .map(TagResponseDto::from)
                 .sorted(Comparator.comparingInt(TagResponseDto::sortOrder))
                 .toList();

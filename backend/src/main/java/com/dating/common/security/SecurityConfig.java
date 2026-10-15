@@ -48,6 +48,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/tags", "/api/v1/goals").permitAll()
                         // Signed URLs: authorization is the HMAC signature, so <img src> works without a header.
                         .requestMatchers(HttpMethod.GET, "/api/v1/media/photos/*").permitAll()
+                        // Cosmetics are public, so are their images (immutable by id).
+                        .requestMatchers(HttpMethod.GET, "/api/v1/catalog/images/*").permitAll()
+                        // Staff endpoints: authentication here, roles are checked per action (RoleAccess, from the DB).
+                        .requestMatchers("/api/v1/admin/**").authenticated()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()

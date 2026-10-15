@@ -1,6 +1,7 @@
 package com.dating.profiles.api;
 
 import com.dating.profiles.application.ProfileService;
+import com.dating.profiles.domain.CommunicationTag;
 import com.dating.profiles.domain.Profile;
 
 import java.util.Comparator;
@@ -31,6 +32,7 @@ public record PublicProfileDto(
     public static PublicProfileDto from(Profile profile, List<PhotoDto> photos, Map<String, DecorationDto> decorations,
                                         boolean premium) {
         List<TagResponseDto> tags = profile.getTags().stream()
+                .filter(CommunicationTag::isActive) // hidden by an admin
                 .map(TagResponseDto::from)
                 .sorted(Comparator.comparingInt(TagResponseDto::sortOrder))
                 .toList();

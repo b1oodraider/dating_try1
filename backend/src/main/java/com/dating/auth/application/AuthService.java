@@ -2,6 +2,7 @@ package com.dating.auth.application;
 
 import com.dating.accounts.application.AccountDeletedEvent;
 import com.dating.accounts.application.AccountService;
+import com.dating.accounts.application.RoleService;
 import com.dating.accounts.domain.Account;
 import com.dating.accounts.domain.AccountStatus;
 import com.dating.auth.api.AuthChallengeResponseDto;
@@ -14,8 +15,11 @@ import com.dating.auth.persistence.SessionRepository;
 import com.dating.common.errors.ApiException;
 import com.dating.common.ratelimit.FixedWindowRateLimiter;
 import com.dating.common.security.AuthenticatedUser;
+import com.dating.common.security.Role;
 import com.dating.common.security.SessionValidator;
 import com.dating.common.util.Hashing;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
@@ -30,6 +34,8 @@ import java.util.UUID;
 @Service
 public class AuthService implements SessionValidator {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+
     /** Fixed code for local development only (mock mode is refused with the prod profile). */
     static final String MOCK_CODE = "123456";
     private static final int CODE_LENGTH = 6;
@@ -41,6 +47,8 @@ public class AuthService implements SessionValidator {
     private final OtpSender otpSender;
     private final AuthProperties properties;
     private final TestAccountPolicy testAccountPolicy;
+    private final AdminBootstrapPolicy adminBootstrapPolicy;
+    private final RoleService roleService;
     private final FixedWindowRateLimiter ipLimiter;
     private final FixedWindowRateLimiter phoneCooldownLimiter;
 
@@ -49,13 +57,17 @@ public class AuthService implements SessionValidator {
                        AccountService accountService,
                        OtpSender otpSender,
                        AuthProperties properties,
-                       TestAccountPolicy testAccountPolicy) {
+                       TestAccountPolicy testAccountPolicy,
+                       AdminBootstrapPolicy adminBootstrapPolicy,
+                       RoleService roleService) {
         this.challengeRepository = challengeRepository;
         this.sessionRepository = sessionRepository;
         this.accountService = accountService;
         this.otpSender = otpSender;
         this.properties = properties;
         this.testAccountPolicy = testAccountPolicy;
+        this.adminBootstrapPolicy = adminBootstrapPolicy;
+        this.roleService = roleService;
         this.ipLimiter = new FixedWindowRateLimiter(properties.maxChallengesPerIpPerHour(), HOUR);
         this.phoneCooldownLimiter = new FixedWindowRateLimiter(1, properties.resendCooldown());
     }
@@ -145,6 +157,10 @@ public class AuthService implements SessionValidator {
         String phoneMasked = challenge.getPhoneMasked() != null ? challenge.getPhoneMasked() : "+*** ***-**-**";
         Account account = accountService.findOrCreateAccount(challenge.getPhoneHash(), phoneMasked);
         accountService.updateTestAccountFlag(account, testAccountPolicy.isTestPhoneHash(challenge.getPhoneHash()));
+        if (adminBootstrapPolicy.isBootstrapAdmin(challenge.getPhoneHash())
+                && roleService.grant(account.getId(), Role.ADMIN, null)) {
+            log.info("Bootstrap ADMIN role granted to account {}", account.getId());
+        }
         if (!account.isActive()) {
             throw ApiException.forbidden("ACCOUNT_SUSPENDED", "Аккаунт заблокирован");
         }

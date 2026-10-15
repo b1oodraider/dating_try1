@@ -6,7 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.util.List;
 
 /**
- * What premium includes. Kept in configuration because the feature set is not decided yet.
+ * What premium includes by default. Admins can override both lists without a release
+ * (PremiumCompositionService); runtime code reads the composition from there, not from here.
  *
  * @param premiumFeatures   feature codes reserved for premium (checked via FeatureAccess)
  * @param premiumAllowances consumables periodically granted to premium users

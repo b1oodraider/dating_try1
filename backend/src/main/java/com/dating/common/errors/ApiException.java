@@ -46,6 +46,27 @@ public class ApiException extends RuntimeException {
                 null, null, Map.of("itemCode", itemCode, "available", available));
     }
 
+    /**
+     * 403 for staff endpoints; details.roles lists the roles any of which would grant access.
+     */
+    public static ApiException roleRequired(java.util.List<String> roles) {
+        return new ApiException("ROLE_REQUIRED", "Недостаточно прав для этого действия", HttpStatus.FORBIDDEN,
+                null, null, Map.of("roles", roles));
+    }
+
+    /**
+     * Any error with machine-readable details (e.g. 409 ITEM_NOT_AVAILABLE with the availability window).
+     */
+    public static ApiException withDetails(String code, String message, HttpStatus status, Map<String, Object> details) {
+        // Values may be null (e.g. an open-ended window), so no Map.copyOf here.
+        return new ApiException(code, message, status, null, null,
+                java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(details)));
+    }
+
+    public static ApiException conflict(String code, String message) {
+        return new ApiException(code, message, HttpStatus.CONFLICT);
+    }
+
     public String getCode() {
         return code;
     }
