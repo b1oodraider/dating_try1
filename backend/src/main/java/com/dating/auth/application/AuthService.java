@@ -40,6 +40,7 @@ public class AuthService implements SessionValidator {
     static final String MOCK_CODE = "123456";
     private static final int CODE_LENGTH = 6;
     private static final Duration HOUR = Duration.ofHours(1);
+    private static final Duration DAY = Duration.ofDays(1);
 
     private final AuthChallengeRepository challengeRepository;
     private final SessionRepository sessionRepository;
@@ -49,6 +50,7 @@ public class AuthService implements SessionValidator {
     private final TestAccountPolicy testAccountPolicy;
     private final AdminBootstrapPolicy adminBootstrapPolicy;
     private final RoleService roleService;
+    private final PhoneHasher phoneHasher;
     private final FixedWindowRateLimiter ipLimiter;
     private final FixedWindowRateLimiter phoneCooldownLimiter;
 
@@ -59,7 +61,8 @@ public class AuthService implements SessionValidator {
                        AuthProperties properties,
                        TestAccountPolicy testAccountPolicy,
                        AdminBootstrapPolicy adminBootstrapPolicy,
-                       RoleService roleService) {
+                       RoleService roleService,
+                       PhoneHasher phoneHasher) {
         this.challengeRepository = challengeRepository;
         this.sessionRepository = sessionRepository;
         this.accountService = accountService;
@@ -68,6 +71,7 @@ public class AuthService implements SessionValidator {
         this.testAccountPolicy = testAccountPolicy;
         this.adminBootstrapPolicy = adminBootstrapPolicy;
         this.roleService = roleService;
+        this.phoneHasher = phoneHasher;
         this.ipLimiter = new FixedWindowRateLimiter(properties.maxChallengesPerIpPerHour(), HOUR);
         this.phoneCooldownLimiter = new FixedWindowRateLimiter(1, properties.resendCooldown());
     }
@@ -83,7 +87,7 @@ public class AuthService implements SessionValidator {
             throw ApiException.tooManyRequests("Слишком много запросов кода. Попробуйте позже", ipWait);
         }
 
-        String phoneHash = Hashing.sha256Hex(phone);
+        String phoneHash = phoneHasher.hash(phone);
         Instant now = Instant.now();
         enforcePhoneLimits(phoneHash, now);
 
@@ -121,6 +125,12 @@ public class AuthService implements SessionValidator {
         if (lastHour >= properties.maxChallengesPerPhonePerHour()) {
             throw ApiException.tooManyRequests("Превышен лимит запросов кода для этого номера. Попробуйте через час",
                     HOUR.toSeconds());
+        }
+        // Each challenge allows maxAttempts guesses, so this caps code guessing per phone per day.
+        long lastDay = challengeRepository.countByPhoneHashAndCreatedAtAfter(phoneHash, now.minus(DAY));
+        if (lastDay >= properties.maxChallengesPerPhonePerDay()) {
+            throw ApiException.tooManyRequests("Превышен суточный лимит запросов кода для этого номера. Попробуйте завтра",
+                    DAY.toSeconds());
         }
     }
 

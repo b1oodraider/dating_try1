@@ -45,7 +45,7 @@ dating/
 ### 3.1. Backend + PostgreSQL через Docker Compose
 
 ```bash
-cp infra/.env.example infra/.env   # заполнить DB_PASSWORD, APP_MEDIA_URL_SIGNING_SECRET, APP_CORS_ALLOWED_ORIGINS
+cp infra/.env.example infra/.env   # заполнить DB_PASSWORD, APP_MEDIA_URL_SIGNING_SECRET, APP_AUTH_PHONE_HASH_SECRET, APP_CORS_ALLOWED_ORIGINS
 docker compose -f infra/compose.yaml --env-file infra/.env up -d --build
 ```
 

@@ -13,6 +13,17 @@ public record AuthProperties(
         @DefaultValue("30d") Duration sessionTtl,
         @DefaultValue("60s") Duration resendCooldown,
         @DefaultValue("5") int maxChallengesPerPhonePerHour,
-        @DefaultValue("30") int maxChallengesPerIpPerHour
+        @DefaultValue("10") int maxChallengesPerPhonePerDay,
+        @DefaultValue("30") int maxChallengesPerIpPerHour,
+        String phoneHashSecret
 ) {
+    private static final int MIN_SECRET_LENGTH = 32;
+
+    public AuthProperties {
+        if (phoneHashSecret == null || phoneHashSecret.length() < MIN_SECRET_LENGTH) {
+            throw new IllegalStateException(
+                    "app.auth.phone-hash-secret (env APP_AUTH_PHONE_HASH_SECRET) must be set, at least "
+                            + MIN_SECRET_LENGTH + " characters");
+        }
+    }
 }

@@ -2,7 +2,6 @@ package com.dating.auth.application;
 
 import com.dating.auth.domain.PhoneNumbers;
 import com.dating.common.testing.TestAccountsProperties;
-import com.dating.common.util.Hashing;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
@@ -18,12 +17,12 @@ public class TestAccountPolicy {
     private final TestAccountsProperties properties;
     private final Set<String> testPhoneHashes;
 
-    public TestAccountPolicy(TestAccountsProperties properties) {
+    public TestAccountPolicy(TestAccountsProperties properties, PhoneHasher phoneHasher) {
         this.properties = properties;
         this.testPhoneHashes = properties.testPhones().stream()
                 .map(raw -> PhoneNumbers.normalize(raw)
                         .orElseThrow(() -> new IllegalStateException("app.testing.test-phones: invalid phone " + raw)))
-                .map(Hashing::sha256Hex)
+                .map(phoneHasher::hash)
                 .collect(Collectors.toUnmodifiableSet());
     }
 

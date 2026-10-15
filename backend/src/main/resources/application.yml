@@ -43,7 +43,10 @@ app:
     session-ttl: 30d
     resend-cooldown: 60s
     max-challenges-per-phone-per-hour: 5
+    max-challenges-per-phone-per-day: 10
     max-challenges-per-ip-per-hour: 30
+    # Required, >= 32 chars. Keys the phone hash (account key); changing it detaches every account from its phone.
+    phone-hash-secret: ${APP_AUTH_PHONE_HASH_SECRET:}
   media:
     storage-path: ${APP_MEDIA_STORAGE_PATH:./data/media}
     max-file-size: 5MB

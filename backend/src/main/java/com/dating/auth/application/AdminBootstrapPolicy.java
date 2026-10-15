@@ -1,7 +1,6 @@
 package com.dating.auth.application;
 
 import com.dating.auth.domain.PhoneNumbers;
-import com.dating.common.util.Hashing;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
@@ -18,11 +17,11 @@ public class AdminBootstrapPolicy {
 
     private final Set<String> phoneHashes;
 
-    public AdminBootstrapPolicy(AdminBootstrapProperties properties) {
+    public AdminBootstrapPolicy(AdminBootstrapProperties properties, PhoneHasher phoneHasher) {
         this.phoneHashes = properties.bootstrapPhones().stream()
                 .map(raw -> PhoneNumbers.normalize(raw)
                         .orElseThrow(() -> new IllegalStateException("app.admin.bootstrap-phones: invalid phone " + raw)))
-                .map(Hashing::sha256Hex)
+                .map(phoneHasher::hash)
                 .collect(Collectors.toUnmodifiableSet());
     }
 

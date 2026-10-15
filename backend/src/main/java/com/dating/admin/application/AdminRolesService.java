@@ -4,10 +4,10 @@ import com.dating.accounts.application.AccountService;
 import com.dating.accounts.application.RoleService;
 import com.dating.accounts.domain.Account;
 import com.dating.accounts.domain.AccountStatus;
+import com.dating.auth.application.PhoneHasher;
 import com.dating.auth.domain.PhoneNumbers;
 import com.dating.common.errors.ApiException;
 import com.dating.common.security.Role;
-import com.dating.common.util.Hashing;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,11 +39,14 @@ public class AdminRolesService {
     private final RoleService roleService;
     private final AccountService accountService;
     private final AdminAuditLog auditLog;
+    private final PhoneHasher phoneHasher;
 
-    public AdminRolesService(RoleService roleService, AccountService accountService, AdminAuditLog auditLog) {
+    public AdminRolesService(RoleService roleService, AccountService accountService, AdminAuditLog auditLog,
+                             PhoneHasher phoneHasher) {
         this.roleService = roleService;
         this.accountService = accountService;
         this.auditLog = auditLog;
+        this.phoneHasher = phoneHasher;
     }
 
     @Transactional(readOnly = true)
@@ -67,7 +70,7 @@ public class AdminRolesService {
         String phone = PhoneNumbers.normalize(rawPhone).orElseThrow(() -> ApiException.validation(
                 "INVALID_PHONE", "Некорректный номер телефона",
                 Map.of("phone", "Укажите номер в формате +7 999 123-45-67")));
-        return accountService.findByPhoneHash(Hashing.sha256Hex(phone))
+        return accountService.findByPhoneHash(phoneHasher.hash(phone))
                 .map(this::view)
                 .orElseThrow(() -> ApiException.notFound("ACCOUNT_NOT_FOUND", "Аккаунт с таким номером не найден"));
     }

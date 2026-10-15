@@ -14,6 +14,7 @@ app:
   auth:
     # Local development only: fixed code 123456, returned as devMockCode. Refused together with 'prod'.
     mock-enabled: true
+    phone-hash-secret: ${APP_AUTH_PHONE_HASH_SECRET:dev-only-phone-hash-secret-change-me-0000}
   media:
     url-signing-secret: ${APP_MEDIA_URL_SIGNING_SECRET:dev-only-photo-url-signing-secret-change-me}
   testing:
