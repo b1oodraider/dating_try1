@@ -1,0 +1,169 @@
+databaseChangeLog:
+  # Likes, super likes and passes: one row per (actor, target), the latest reaction wins.
+  # Account ids are internal; the API addresses people by profile id. A PASS hides the profile
+  # from the actor's feed only for app.social.pass-ttl (counted from reacted_at).
+  - changeSet:
+      id: 012-profile-reactions
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE profile_reactions (
+                actor_account_id  UUID NOT NULL REFERENCES accounts (id),
+                target_account_id UUID NOT NULL REFERENCES accounts (id),
+                type              VARCHAR(10) NOT NULL CHECK (type IN ('LIKE', 'SUPERLIKE', 'PASS')),
+                reacted_at        TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                PRIMARY KEY (actor_account_id, target_account_id),
+                CHECK (actor_account_id <> target_account_id)
+              )
+        - sql:
+            sql: CREATE INDEX idx_profile_reactions_target ON profile_reactions (target_account_id, type)
+      rollback:
+        - sql:
+            sql: DROP TABLE profile_reactions
+
+  # Blocks hide both people from each other everywhere (feed, likes, chats).
+  - changeSet:
+      id: 012-account-blocks
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE account_blocks (
+                blocker_account_id UUID NOT NULL REFERENCES accounts (id),
+                blocked_account_id UUID NOT NULL REFERENCES accounts (id),
+                created_at         TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                PRIMARY KEY (blocker_account_id, blocked_account_id),
+                CHECK (blocker_account_id <> blocked_account_id)
+              )
+        - sql:
+            sql: CREATE INDEX idx_account_blocks_blocked ON account_blocks (blocked_account_id)
+      rollback:
+        - sql:
+            sql: DROP TABLE account_blocks
+
+  # A match is a pair with ordered ids (account_low < account_high). At most one ACTIVE match per pair:
+  # the partial unique index makes concurrent mutual likes create exactly one row (INSERT .. ON CONFLICT).
+  # Unmatch / block close the match (closed_at); closed matches are hidden from both sides.
+  - changeSet:
+      id: 012-matches
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE matches (
+                id           UUID PRIMARY KEY,
+                account_low  UUID NOT NULL REFERENCES accounts (id),
+                account_high UUID NOT NULL REFERENCES accounts (id),
+                created_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                closed_at    TIMESTAMP WITH TIME ZONE,
+                closed_by    UUID,
+                close_reason VARCHAR(10) CHECK (close_reason IN ('UNMATCH', 'BLOCK')),
+                CHECK (account_low < account_high),
+                CHECK ((closed_at IS NULL) = (close_reason IS NULL))
+              )
+        - sql:
+            sql: CREATE UNIQUE INDEX uq_matches_active_pair ON matches (account_low, account_high) WHERE closed_at IS NULL
+        - sql:
+            sql: CREATE INDEX idx_matches_high ON matches (account_high)
+      rollback:
+        - sql:
+            sql: DROP TABLE matches
+
+  # Chat messages exist only inside a match. seq is the ordering key (cursor pagination, unread counts);
+  # (match, sender, client_message_id) makes retries idempotent.
+  - changeSet:
+      id: 012-chat
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE chat_messages (
+                id                UUID PRIMARY KEY,
+                seq               BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
+                match_id          UUID NOT NULL REFERENCES matches (id) ON DELETE CASCADE,
+                sender_account_id UUID NOT NULL REFERENCES accounts (id),
+                client_message_id VARCHAR(64) NOT NULL,
+                type              VARCHAR(10) NOT NULL CHECK (type IN ('TEXT', 'STICKER')),
+                text              VARCHAR(2000),
+                sticker_pack_code VARCHAR(50) REFERENCES catalog_items (code),
+                sticker           VARCHAR(50),
+                created_at        TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                CONSTRAINT uq_chat_messages_client_id UNIQUE (match_id, sender_account_id, client_message_id),
+                CHECK ((type = 'TEXT' AND text IS NOT NULL AND sticker_pack_code IS NULL AND sticker IS NULL)
+                    OR (type = 'STICKER' AND text IS NULL AND sticker_pack_code IS NOT NULL AND sticker IS NOT NULL))
+              )
+        - sql:
+            sql: CREATE INDEX idx_chat_messages_match_seq ON chat_messages (match_id, seq DESC)
+        - sql:
+            sql: >
+              CREATE TABLE chat_read_state (
+                match_id             UUID NOT NULL REFERENCES matches (id) ON DELETE CASCADE,
+                account_id           UUID NOT NULL REFERENCES accounts (id),
+                last_read_seq        BIGINT NOT NULL,
+                last_read_message_id UUID NOT NULL,
+                last_read_at         TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                PRIMARY KEY (match_id, account_id)
+              )
+      rollback:
+        - sql:
+            sql: DROP TABLE chat_read_state, chat_messages
+
+  # Reports for moderation (the moderator queue comes with roles). The reported message text is
+  # snapshotted: evidence survives unmatch and the sender's account deletion (message_id becomes NULL).
+  - changeSet:
+      id: 012-reports
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE reports (
+                id                  UUID PRIMARY KEY,
+                reporter_account_id UUID NOT NULL REFERENCES accounts (id),
+                reported_account_id UUID NOT NULL REFERENCES accounts (id),
+                reported_profile_id UUID NOT NULL,
+                message_id          UUID REFERENCES chat_messages (id) ON DELETE SET NULL,
+                message_snapshot    VARCHAR(2000),
+                reason              VARCHAR(30) NOT NULL
+                                    CHECK (reason IN ('SPAM', 'FAKE_PROFILE', 'INAPPROPRIATE_CONTENT', 'HARASSMENT',
+                                                      'SCAM', 'UNDERAGE', 'OTHER')),
+                comment             VARCHAR(1000),
+                status              VARCHAR(20) NOT NULL DEFAULT 'NEW'
+                                    CHECK (status IN ('NEW', 'IN_REVIEW', 'RESOLVED', 'DISMISSED')),
+                created_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+        - sql:
+            sql: CREATE INDEX idx_reports_queue ON reports (status, created_at)
+        - sql:
+            sql: CREATE INDEX idx_reports_reported ON reports (reported_account_id)
+        - sql:
+            sql: CREATE INDEX idx_reports_reporter ON reports (reporter_account_id)
+      rollback:
+        - sql:
+            sql: DROP TABLE reports
+
+  # Hard filter for the feed (called from a JPA Specification, like profile_has_excluded_words):
+  # true if the viewer already liked / super liked the owner, passed them less than pass_ttl_seconds ago,
+  # or either of them blocked the other. A plain SQL function, so PostgreSQL can inline it.
+  - changeSet:
+      id: 012-social-hides-profile
+      author: dating-team
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE FUNCTION social_hides_profile(viewer UUID, owner UUID, pass_ttl_seconds BIGINT)
+              RETURNS BOOLEAN
+              LANGUAGE sql STABLE AS $$
+                SELECT EXISTS (
+                         SELECT 1 FROM profile_reactions r
+                         WHERE r.actor_account_id = viewer AND r.target_account_id = owner
+                           AND (r.type <> 'PASS' OR r.reacted_at > now() - make_interval(secs => pass_ttl_seconds)))
+                    OR EXISTS (
+                         SELECT 1 FROM account_blocks b
+                         WHERE (b.blocker_account_id = viewer AND b.blocked_account_id = owner)
+                            OR (b.blocker_account_id = owner AND b.blocked_account_id = viewer))
+              $$
+      rollback:
+        - sql:
+            sql: DROP FUNCTION social_hides_profile(UUID, UUID, BIGINT)

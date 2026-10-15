@@ -23,6 +23,7 @@ import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.domain.Specification;
@@ -76,6 +77,7 @@ public class DiscoveryService {
         Specification<Profile> spec = Specification.where(isVisible())
                 .and(ownerIsActive(viewerIsTestAccount))
                 .and(notOwnedBy(callerAccountId));
+        spec = spec.and(contributedExclusions(callerAccountId));
         if (query.city() != null) {
             spec = spec.and(cityEquals(query.city()));
         }
@@ -143,6 +145,22 @@ public class DiscoveryService {
             }
             return cb.conjunction();
         };
+    // ---------------------------------------------------------------- filters contributed by other modules
+
+    /** E.g. social: already liked / passed profiles and blocks. Setter injection keeps the constructor stable. */
+    private List<DiscoveryExclusion> exclusions = List.of();
+
+    @Autowired(required = false)
+    void setExclusions(List<DiscoveryExclusion> exclusions) {
+        this.exclusions = List.copyOf(exclusions);
+    }
+
+    private Specification<Profile> contributedExclusions(UUID viewerAccountId) {
+        Specification<Profile> spec = (root, q, cb) -> cb.conjunction();
+        for (DiscoveryExclusion exclusion : exclusions) {
+            spec = spec.and(exclusion.visibleTo(viewerAccountId));
+        }
+        return spec;
     }
 
     private static Specification<Profile> hasAnyGoal(Set<String> goalCodes) {

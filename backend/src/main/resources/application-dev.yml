@@ -23,3 +23,4 @@ app:
   admin:
     # The first dev test phone is also the admin (log in with 123456, open the admin API).
     bootstrap-phones: +7 900 000-00-01
+    seed-auto-reply: true

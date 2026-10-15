@@ -12,6 +12,9 @@ public final class PremiumFeatures {
     /** Saved exclusion words (hard filter by profile text). */
     public static final String EXCLUSION_WORDS = "EXCLUSION_WORDS";
 
+    /** The list of people who liked me (GET /me/likes/received); the count is always free. */
+    public static final String WHO_LIKED_ME = "WHO_LIKED_ME";
+
     private PremiumFeatures() {
     }
 }

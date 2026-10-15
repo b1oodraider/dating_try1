@@ -52,6 +52,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/catalog/images/*").permitAll()
                         // Staff endpoints: authentication here, roles are checked per action (RoleAccess, from the DB).
                         .requestMatchers("/api/v1/admin/**").authenticated()
+                        // SSE stream: authenticated in EventsController (Authorization header or a one-time ticket,
+                        // EventSource cannot send headers); permitting it here also covers the async dispatches.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/events").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()

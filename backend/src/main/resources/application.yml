@@ -92,6 +92,21 @@ app:
     enabled: ${APP_TESTING_ENABLED:false}
     test-phones: ${APP_TESTING_TEST_PHONES:}
     otp-code: ${APP_TESTING_OTP_CODE:}
+    # QA chat bot: seed profiles answer test accounts with a canned phrase after the delay (docs/chats.md).
+    seed-auto-reply: ${APP_TESTING_SEED_AUTO_REPLY:false}
+    seed-auto-reply-delay: 3s
+  social:
+    # A "pass" hides the profile from the feed for this long, then it can be shown again.
+    pass-ttl: 30d
+    reports-per-hour: 20
+  chat:
+    messages-per-minute: 30
+  realtime:
+    # Server-Sent Events (GET /api/v1/events): heartbeat period, one-time ticket lifetime, connection lifetime.
+    heartbeat-interval: 25s
+    ticket-ttl: 60s
+    emitter-timeout: 30m
+    max-connections-per-account: 5
 
 management:
   endpoints:

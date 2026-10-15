@@ -19,3 +19,4 @@ databaseChangeLog:
       file: db/changelog/changesets/010-gacha.yaml
       file: db/changelog/changesets/011-boost.yaml
       file: db/changelog/changesets/009-admin-catalog.yaml
+      file: db/changelog/changesets/012-likes-chats.yaml
