@@ -1,0 +1,62 @@
+databaseChangeLog:
+  # Profile boost (docs/boost.md): a time-limited promotion in discovery bought with one BOOST consumable.
+  # One row per boost; impressions are counted per boost. A boost lives on its owner's clock
+  # (real time for real accounts, shifted economy time for test accounts, see account_clock_offsets).
+  - changeSet:
+      id: 011-boost
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE profile_boosts (
+                id              UUID PRIMARY KEY,
+                account_id      UUID NOT NULL REFERENCES accounts (id),
+                starts_at       TIMESTAMP WITH TIME ZONE NOT NULL,
+                ends_at         TIMESTAMP WITH TIME ZONE NOT NULL,
+                impressions     BIGINT NOT NULL DEFAULT 0 CHECK (impressions >= 0),
+                source          VARCHAR(20) NOT NULL CHECK (source IN ('SPEND', 'TESTING')),
+                idempotency_key VARCHAR(100),
+                created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                CONSTRAINT ck_profile_boosts_period CHECK (ends_at >= starts_at),
+                CONSTRAINT uq_profile_boosts_idempotency UNIQUE (account_id, idempotency_key)
+              )
+        - sql:
+            sql: CREATE INDEX idx_profile_boosts_account_ends ON profile_boosts (account_id, ends_at DESC)
+        # "Now" on the owner's clock: real time plus the test-account offset (0 for real accounts).
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE FUNCTION boost_owner_now(p_account uuid)
+              RETURNS timestamptz
+              LANGUAGE sql
+              STABLE
+              AS $$
+                SELECT now() + make_interval(secs => COALESCE(
+                  (SELECT o.offset_seconds FROM account_clock_offsets o WHERE o.account_id = p_account), 0))
+              $$
+        # Discovery sort key: NULL when the owner has no active boost (sorts last with ASC), otherwise a
+        # per-viewer pseudo-random key. Stable for one viewer (pagination does not shuffle), different
+        # for every viewer (boosted profiles share the top positions fairly).
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE FUNCTION active_boost_order_key(p_account uuid, p_viewer text)
+              RETURNS text
+              LANGUAGE sql
+              STABLE
+              AS $$
+                SELECT md5(b.id::text || ':' || p_viewer)
+                FROM profile_boosts b
+                WHERE b.account_id = p_account
+                  AND b.starts_at <= boost_owner_now(p_account)
+                  AND b.ends_at > boost_owner_now(p_account)
+                ORDER BY b.ends_at DESC
+                LIMIT 1
+              $$
+      rollback:
+        - sql:
+            sql: DROP FUNCTION IF EXISTS active_boost_order_key(uuid, text)
+        - sql:
+            sql: DROP FUNCTION IF EXISTS boost_owner_now(uuid)
+        - sql:
+            sql: DROP TABLE IF EXISTS profile_boosts

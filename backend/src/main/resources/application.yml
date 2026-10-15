@@ -71,6 +71,15 @@ app:
         quantity: 1
         period: WEEKLY
         mode: ADD
+      - item-code: BOOST
+        quantity: 1
+        period: WEEKLY
+        mode: TOP_UP
+  boost:
+    # How long one boost lasts (docs/boost.md).
+    duration: ${APP_BOOST_DURATION:30m}
+    # Show others that a profile is boosted (PublicProfile.boosted). Off on purpose: a hidden boost keeps the feed fair.
+    public-badge: ${APP_BOOST_PUBLIC_BADGE:false}
   testing:
     # Test accounts: phones below become test accounts (isolated from real users in discovery).
     # enabled=true additionally exposes /api/v1/testing and a fixed OTP code (no SMS) for these phones.

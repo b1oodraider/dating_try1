@@ -173,3 +173,33 @@ DELETE /testing/profiles/{accountId}              204
 DELETE /testing/profiles                          200 { deleted: number }   — all seed profiles
   Unknown/deleted ids and non-seed accounts: 404 SEED_PROFILE_NOT_FOUND.
   Bulk loading from a folder: scripts/seed-profiles.mjs (see seed/README.md).
+
+## Boost (auth) — see docs/boost.md
+For `app.boost.duration` (default 30 min) the caller's PUBLISHED profile goes first in other users' discovery,
+ONLY among profiles that already match their filters (city/age/tags/premium filters/exclusion words/excluded goals/
+test-real isolation all still apply). Costs 1 BOOST consumable (premium: 1 per week, TOP_UP).
+BoostStatus = { active: boolean,
+                startsAt: string|null, endsAt: string|null,   // current boost; null when not active
+                impressions: number,                          // current boost; 0 when not active
+                available: number,                            // BOOST balance
+                durationMinutes: number,                      // length of a new boost
+                now: string,                                  // "now" on the owner's clock (shifted for test accounts): use it for the countdown
+                history: [ { id, startsAt, endsAt, impressions } ] }   // last 10 incl. the current one, newest first
+  impression = the profile was included in a discovery page served to ANOTHER user while the boost was active.
+GET  /me/boost   200 BoostStatus
+POST /me/boost   body { idempotencyKey: string (1..100; new per tap, reused on retry) }   200 BoostStatus
+  400 PROFILE_NOT_PUBLISHED ; 409 BOOST_ALREADY_ACTIVE (nothing spent; boosts do not stack) ;
+  409 INSUFFICIENT_BALANCE details { itemCode: 'BOOST', available } ; 400 VALIDATION_ERROR (fieldErrors.idempotencyKey)
+  A retry with the same key returns 200 with the same boost and never spends twice (even after the boost has ended).
+Others do NOT see that a profile is boosted. Only when the server runs with app.boost.public-badge=true does
+PublicProfile additionally carry `boosted: true` while boosted (the field is omitted otherwise).
+
+## Testing: boost (part of the Testing API: test accounts only, app.testing.enabled=true)
+Optional `?accountId=<seed profile id>` targets a seed profile instead of the caller (else 404 SEED_PROFILE_NOT_FOUND).
+TestBoostState = { accountId, status: BoostStatus, boosts: [ { id, startsAt, endsAt, impressions } ] (all, up to 100, newest first) }
+GET    /testing/boost                 200 TestBoostState
+POST   /testing/boost                 body { minutes?: 1..1440 } (body optional)  start WITHOUT spending ; 400 PROFILE_NOT_PUBLISHED ; 409 BOOST_ALREADY_ACTIVE
+DELETE /testing/boost                 end the boost now
+PUT    /testing/boost/impressions     body { impressions >= 0 }  set impressions of the active (else the latest) boost ; 404 BOOST_NOT_FOUND
+Boosts follow the owner's economy clock: POST /testing/clock/advance ends a running boost for everyone;
+DELETE /testing/clock brings it back if it is still within its real 30 minutes.

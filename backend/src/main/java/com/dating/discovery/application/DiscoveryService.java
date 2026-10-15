@@ -20,15 +20,16 @@ import com.dating.profiles.domain.PublicationStatus;
 import com.dating.profiles.domain.VisibilityStatus;
 import com.dating.profiles.persistence.ProfileRepository;
 import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -45,11 +46,12 @@ public class DiscoveryService {
     private final AccountService accountService;
     private final ExcludedGoalsService excludedGoals;
     private final FeatureAccess featureAccess;
+    private final DiscoveryBoosts boosts;
 
     public DiscoveryService(ProfileRepository profileRepository, ProfilePhotoQuery photoQuery,
                             ExclusionWordsService exclusionWords, ProfileDecorationQuery decorationQuery,
                             AccountService accountService, ExcludedGoalsService excludedGoals,
-                            FeatureAccess featureAccess) {
+                            FeatureAccess featureAccess, DiscoveryBoosts boosts) {
         this.profileRepository = profileRepository;
         this.photoQuery = photoQuery;
         this.exclusionWords = exclusionWords;
@@ -57,16 +59,17 @@ public class DiscoveryService {
         this.accountService = accountService;
         this.excludedGoals = excludedGoals;
         this.featureAccess = featureAccess;
+        this.boosts = boosts;
     }
 
     /**
      * All filters, including AND/OR tag logic, run in SQL before pagination, so pages are full
-     * and totals are exact.
+     * and totals are exact. Boosted profiles go first (see {@link #feedOrder}); serving a page counts boost
+     * impressions, hence a read-write transaction.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public DiscoveryPageResponseDto searchProfiles(UUID callerAccountId, DiscoveryQueryDto query) {
-        PageRequest pageRequest = PageRequest.of(query.page(), query.limit(),
-                Sort.by(Sort.Order.desc("updatedAt"), Sort.Order.desc("id")));
+        PageRequest pageRequest = PageRequest.of(query.page(), query.limit()); // order: feedOrder()
 
         // Test accounts and real users never see each other.
         boolean viewerIsTestAccount = accountService.isTestAccount(callerAccountId);
@@ -107,7 +110,10 @@ public class DiscoveryService {
             spec = spec.and(mentionsNone(ExclusionWordsService.toTsQuery(excluded)));
         }
 
-        Page<Profile> page = profileRepository.findAll(spec, pageRequest);
+        Page<Profile> page = profileRepository.findAll(spec.and(feedOrder(callerAccountId)), pageRequest);
+        List<UUID> owners = page.getContent().stream().map(Profile::getAccountId).toList();
+        boosts.recordImpressions(callerAccountId, owners);
+        Set<UUID> boostBadges = boosts.publicBadgesAmong(owners);
         Set<UUID> premiumOwners = featureAccess.premiumAmong(page.getContent().stream().map(Profile::getAccountId).toList());
         Map<UUID, List<PhotoDto>> photos = photoQuery.photosOf(page.getContent().stream().map(Profile::getId).toList());
         Map<UUID, Map<String, DecorationDto>> decorations =
@@ -115,11 +121,28 @@ public class DiscoveryService {
 
         List<PublicProfileDto> items = page.getContent().stream()
                 .map(p -> PublicProfileDto.from(p, photos.getOrDefault(p.getId(), List.of()),
-                        decorations.getOrDefault(p.getAccountId(), Map.of()), premiumOwners.contains(p.getAccountId())))
+                        decorations.getOrDefault(p.getAccountId(), Map.of()), premiumOwners.contains(p.getAccountId()),
+                        boostBadges.contains(p.getAccountId()) ? Boolean.TRUE : null))
                 .toList();
 
         return new DiscoveryPageResponseDto(items, query.page(), query.limit(),
                 page.getTotalElements(), page.getTotalPages());
+    }
+
+    /**
+     * Boosted profiles first (they only reorder profiles that matched the filters), then the newest updates.
+     * Sets ORDER BY only on the page query, not on the count query.
+     */
+    private Specification<Profile> feedOrder(UUID viewerAccountId) {
+        return (root, q, cb) -> {
+            if (!Long.class.equals(q.getResultType())) {
+                List<Order> orders = new ArrayList<>(boosts.leadingOrders(root, cb, viewerAccountId));
+                orders.add(cb.desc(root.get("updatedAt")));
+                orders.add(cb.desc(root.get("id")));
+                q.orderBy(orders);
+            }
+            return cb.conjunction();
+        };
     }
 
     private static Specification<Profile> hasAnyGoal(Set<String> goalCodes) {
