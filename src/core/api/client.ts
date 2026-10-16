@@ -4,16 +4,31 @@ import type {
   ApiErrorBody,
   AuthChallenge,
   AuthToken,
+  Banner,
+  BoostStatus,
   DiscoveryPage,
   DiscoveryQuery,
   ExcludedGoals,
   ExclusionWords,
+  GachaHistoryItem,
+  GachaPullResponse,
+  GachaShardsInfo,
   Goal,
+  Match,
+  Message,
   MyProfile,
   Photo,
   ProfileUpdate,
+  ReactionResult,
+  ReadState,
+  ReceivedLike,
+  ReceivedLikesCount,
+  ReportResponse,
+  Restriction,
+  ShardExchangeResponse,
   Tag,
   TestingState,
+  VerificationRequest,
   Wallet,
 } from '../types';
 
@@ -84,6 +99,10 @@ export function isAbortError(e: unknown): boolean {
 /** User-facing message for any thrown value. */
 export function getErrorMessage(e: unknown, fallback = 'Что-то пошло не так. Попробуйте ещё раз.'): string {
   if (e instanceof ApiError) {
+    if (e.code === 'ACCOUNT_RESTRICTED') {
+      const until = typeof e.details?.until === 'string' ? e.details.until : null;
+      return `${e.message} ${until ? `до ${formatDateTime(until)}` : 'до решения модератора'}.`;
+    }
     if (e.status === 429 && e.retryAfterSeconds) {
       return `${e.message} Повторите через ${e.retryAfterSeconds} с.`;
     }
@@ -91,6 +110,10 @@ export function getErrorMessage(e: unknown, fallback = 'Что-то пошло �
   }
   if (e instanceof Error && e.message) return e.message;
   return fallback;
+}
+
+export function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
 }
 
 function defaultMessageForStatus(status: number): string {
@@ -171,10 +194,6 @@ function setToken(token: string | null): void {
   }
 }
 
-export function hasToken(): boolean {
-  return getToken() !== null;
-}
-
 type UnauthorizedListener = () => void;
 const unauthorizedListeners = new Set<UnauthorizedListener>();
 
@@ -185,6 +204,9 @@ export function onUnauthorized(listener: UnauthorizedListener): () => void {
     unauthorizedListeners.delete(listener);
   };
 }
+
+/** Window event fired when the server refused an action because of a restriction (the banner reloads). */
+export const RESTRICTIONS_CHANGED = 'dating:restrictions-changed';
 
 function handleUnauthorized(): void {
   setToken(null);
@@ -211,7 +233,6 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   if (auth) {
     const token = getToken();
     if (!token) {
-      handleUnauthorized();
       throw new ApiError({ code: 'UNAUTHORIZED', message: 'Требуется авторизация.', status: 401 });
     }
     headers['Authorization'] = `Bearer ${token}`;
@@ -242,6 +263,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     if (res.status === 401 && auth) {
       handleUnauthorized();
     }
+    if (error.code === 'ACCOUNT_RESTRICTED') {
+      window.dispatchEvent(new Event(RESTRICTIONS_CHANGED));
+    }
     throw error;
   }
 
@@ -249,7 +273,26 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     return undefined as T;
   }
   const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
+  if (!text) {
+    return undefined as T;
+  }
+  const contentType = res.headers.get('Content-Type') || '';
+  if (contentType && !contentType.includes('application/json') && (text.startsWith('<') || text.startsWith('<!'))) {
+    throw new ApiError({
+      code: 'INVALID_RESPONSE',
+      message: 'Сервер вернул HTML-страницу вместо ответа API. Проверьте запуск сервера.',
+      status: res.status,
+    });
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch (err) {
+    throw new ApiError({
+      code: 'JSON_PARSE_ERROR',
+      message: 'Ошибка обработки ответа сервера: ' + (err instanceof Error ? err.message : String(err)),
+      status: res.status,
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -323,10 +366,6 @@ export const api = {
   },
 
   // --- ACCOUNT ---
-  getAccount(): Promise<Account> {
-    return request<Account>('/me');
-  },
-
   async deleteAccount(): Promise<void> {
     await request<void>('/me', { method: 'DELETE' });
     setToken(null);
@@ -360,10 +399,6 @@ export const api = {
   },
 
   // --- PHOTOS ---
-  listPhotos(): Promise<Photo[]> {
-    return request<Photo[]>('/me/profile/photos');
-  },
-
   uploadPhoto(file: File): Promise<Photo> {
     const form = new FormData();
     form.append('file', file);
@@ -481,5 +516,194 @@ export const api = {
     resetClock(): Promise<TestingState> {
       return request<TestingState>('/testing/clock', { method: 'DELETE' });
     },
+    seedLikeMe(seedAccountId: string, superlike = false): Promise<ReactionResult> {
+      return request<ReactionResult>(`/testing/social/seed/${encodeURIComponent(seedAccountId)}/like-me`, {
+        method: 'POST',
+        body: { superlike },
+      });
+    },
+    seedMatch(seedAccountId: string): Promise<{ matched: boolean; matchId: string }> {
+      return request<{ matched: boolean; matchId: string }>(
+        `/testing/social/seed/${encodeURIComponent(seedAccountId)}/match`,
+        { method: 'POST' }
+      );
+    },
+    seedSendMessage(matchId: string, text = 'Привет! Как дела?'): Promise<Message> {
+      return request<Message>(`/testing/social/matches/${encodeURIComponent(matchId)}/messages`, {
+        method: 'POST',
+        body: { text, type: 'TEXT' },
+      });
+    },
+    clearPasses(): Promise<{ deleted: number }> {
+      return request<{ deleted: number }>('/testing/social/passes', { method: 'DELETE' });
+    },
+    clearReactions(): Promise<{ deleted: number }> {
+      return request<{ deleted: number }>('/testing/social/reactions', { method: 'DELETE' });
+    },
+  },
+
+  // --- REACTIONS ---
+  likeProfile(profileId: string): Promise<ReactionResult> {
+    return request<ReactionResult>(`/discovery/profiles/${encodeURIComponent(profileId)}/like`, { method: 'POST' });
+  },
+
+  superlikeProfile(profileId: string, idempotencyKey: string): Promise<ReactionResult> {
+    return request<ReactionResult>(`/discovery/profiles/${encodeURIComponent(profileId)}/superlike`, {
+      method: 'POST',
+      body: { idempotencyKey },
+    });
+  },
+
+  passProfile(profileId: string): Promise<ReactionResult> {
+    return request<ReactionResult>(`/discovery/profiles/${encodeURIComponent(profileId)}/pass`, { method: 'POST' });
+  },
+
+  sendProfileViews(views: Array<{ profileId: string; dwellMs: number; openedDetails?: boolean }>): Promise<void> {
+    if (!views.length) return Promise.resolve();
+    return request<void>('/discovery/views', { method: 'POST', body: { views } });
+  },
+
+  // --- MATCHES & CHAT ---
+  listMatches(): Promise<Match[]> {
+    return request<Match[]>('/matches');
+  },
+
+  unmatch(matchId: string): Promise<void> {
+    return request<void>(`/matches/${encodeURIComponent(matchId)}`, { method: 'DELETE' });
+  },
+
+  getMessages(
+    matchId: string,
+    before?: string,
+    limit = 30
+  ): Promise<{ items: Message[]; nextBefore: string | null }> {
+    const params = new URLSearchParams();
+    if (before) params.set('before', before);
+    params.set('limit', String(limit));
+    return request<{ items: Message[]; nextBefore: string | null }>(
+      `/matches/${encodeURIComponent(matchId)}/messages?${params.toString()}`
+    );
+  },
+
+  sendMessage(
+    matchId: string,
+    payload: {
+      clientMessageId: string;
+      type: 'TEXT' | 'STICKER';
+      text?: string;
+      stickerPackCode?: string;
+      sticker?: string;
+    }
+  ): Promise<Message> {
+    return request<Message>(`/matches/${encodeURIComponent(matchId)}/messages`, {
+      method: 'POST',
+      body: payload,
+    });
+  },
+
+  markMessagesRead(matchId: string, lastReadMessageId: string): Promise<ReadState> {
+    return request<ReadState>(`/matches/${encodeURIComponent(matchId)}/read`, {
+      method: 'POST',
+      body: { lastReadMessageId },
+    });
+  },
+
+  // --- RECEIVED LIKES ---
+  getReceivedLikes(
+    page = 0,
+    limit = 20
+  ): Promise<{ items: ReceivedLike[]; page: number; limit: number; totalElements: number; totalPages: number }> {
+    return request<{ items: ReceivedLike[]; page: number; limit: number; totalElements: number; totalPages: number }>(
+      `/me/likes/received?page=${page}&limit=${limit}`
+    );
+  },
+
+  getReceivedLikesCount(): Promise<ReceivedLikesCount> {
+    return request<ReceivedLikesCount>('/me/likes/received/count');
+  },
+
+  // --- BOOST ---
+  getBoost(): Promise<BoostStatus> {
+    return request<BoostStatus>('/me/boost');
+  },
+
+  activateBoost(idempotencyKey: string): Promise<BoostStatus> {
+    return request<BoostStatus>('/me/boost', {
+      method: 'POST',
+      body: { idempotencyKey },
+    });
+  },
+
+  // --- GACHA ---
+  getGachaBanners(): Promise<Banner[]> {
+    return request<Banner[]>('/gacha/banners');
+  },
+
+  pullGacha(code: string, count: number, idempotencyKey: string): Promise<GachaPullResponse> {
+    return request<GachaPullResponse>(`/gacha/banners/${encodeURIComponent(code)}/pull`, {
+      method: 'POST',
+      body: { count, idempotencyKey },
+    });
+  },
+
+  getGachaShards(): Promise<GachaShardsInfo> {
+    return request<GachaShardsInfo>('/gacha/shards');
+  },
+
+  exchangeGachaShards(tickets: number, idempotencyKey: string): Promise<ShardExchangeResponse> {
+    return request<ShardExchangeResponse>('/gacha/shards/exchange', {
+      method: 'POST',
+      body: { tickets, idempotencyKey },
+    });
+  },
+
+  getGachaHistory(limit = 20, before?: number): Promise<{ items: GachaHistoryItem[]; nextBefore: number | null }> {
+    const params = new URLSearchParams();
+    params.set('limit', String(limit));
+    if (before !== undefined) params.set('before', String(before));
+    return request<{ items: GachaHistoryItem[]; nextBefore: number | null }>(`/gacha/history?${params.toString()}`);
+  },
+
+  // --- SELFIE VERIFICATION ---
+  getVerification(): Promise<{ verified: boolean; verifiedAt: string | null; current: VerificationRequest | null }> {
+    return request<{ verified: boolean; verifiedAt: string | null; current: VerificationRequest | null }>(
+      '/me/verification'
+    );
+  },
+
+  requestVerification(): Promise<VerificationRequest> {
+    return request<VerificationRequest>('/me/verification', { method: 'POST' });
+  },
+
+  submitSelfie(id: string, file: File): Promise<VerificationRequest> {
+    const form = new FormData();
+    form.append('file', file);
+    return request<VerificationRequest>(`/me/verification/${encodeURIComponent(id)}/selfie`, {
+      method: 'POST',
+      body: form,
+    });
+  },
+
+  // --- REPORTS & BLOCKS ---
+  blockProfile(profileId: string): Promise<void> {
+    return request<void>(`/accounts/${encodeURIComponent(profileId)}/block`, { method: 'POST' });
+  },
+
+  reportProfile(payload: {
+    profileId: string;
+    messageId?: string;
+    reason: string;
+    comment?: string;
+  }): Promise<ReportResponse> {
+    return request<ReportResponse>('/reports', { method: 'POST', body: payload });
+  },
+
+  getRestrictions(): Promise<Restriction[]> {
+    return request<Restriction[]>('/me/restrictions');
+  },
+
+  // --- REALTIME SSE TICKET ---
+  getEventsTicket(): Promise<{ ticket: string; expiresAt: string }> {
+    return request<{ ticket: string; expiresAt: string }>('/events/ticket', { method: 'POST' });
   },
 };

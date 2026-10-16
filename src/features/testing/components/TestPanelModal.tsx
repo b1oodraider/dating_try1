@@ -4,6 +4,7 @@ import type { AchievementReward, TestingState } from '../../../core/types';
 import { Modal } from '../../../shared/components/Modal';
 import { Button } from '../../../shared/components/Button';
 import { AlertCircle, CheckCircle, Clock, Crown, Package, RotateCcw, Trophy } from 'lucide-react';
+import { useToast } from '../../../shared/components/Toast';
 
 interface TestPanelModalProps {
   isOpen: boolean;
@@ -51,6 +52,7 @@ function parseCount(value: string): number | null {
 }
 
 export const TestPanelModal: React.FC<TestPanelModalProps> = ({ isOpen, onClose, onChanged }) => {
+  const { showToast } = useToast();
   const [state, setState] = useState<TestingState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -293,10 +295,132 @@ export const TestPanelModal: React.FC<TestPanelModalProps> = ({ isOpen, onClose,
                   Установить баланс
                 </Button>
               </div>
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-100">
+                <span className="text-[11px] text-zinc-500 font-medium">Быстрая выдача:</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy !== null}
+                  onClick={() => void run('grant-tickets', () => api.testing.grantItem('GACHA_TICKET', 5))}
+                >
+                  +5 Билетов
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy !== null}
+                  onClick={() => void run('grant-boosts', () => api.testing.grantItem('BOOST', 3))}
+                >
+                  +3 Буста
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy !== null}
+                  onClick={() => void run('grant-superlikes', () => api.testing.grantItem('SUPERLIKE', 5))}
+                >
+                  +5 Суперлайков
+                </Button>
+              </div>
               <p className="text-[11px] text-zinc-400">
                 «Установить баланс» задаёт купленную часть (PERMANENT); еженедельная часть премиума не меняется.
                 Для косметики — 0 или 1.
               </p>
+            </div>
+
+            {/* Social & Match Simulation */}
+            <div className={block}>
+              <div className={blockTitle}>
+                <Package className="w-3.5 h-3.5 text-zinc-500" /> Социальные тесты (лайки и мэтчи)
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy !== null}
+                  onClick={async () => {
+                    setBusy('seed-like');
+                    try {
+                      await api.testing.seedLikeMe('seed-1', false);
+                      onChanged();
+                      showToast('Демо-профиль поставил вам лайк! Проверьте раздел «Симпатии».', 'success');
+                    } catch (e) {
+                      showToast(getErrorMessage(e), 'error');
+                    } finally {
+                      setBusy(null);
+                    }
+                  }}
+                >
+                  Входящий лайк
+                </Button>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy !== null}
+                  onClick={async () => {
+                    setBusy('seed-superlike');
+                    try {
+                      await api.testing.seedLikeMe('seed-2', true);
+                      onChanged();
+                      showToast('Входящий суперлайк создан! Проверьте раздел «Симпатии».', 'success');
+                    } catch (e) {
+                      showToast(getErrorMessage(e), 'error');
+                    } finally {
+                      setBusy(null);
+                    }
+                  }}
+                >
+                  Входящий суперлайк
+                </Button>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy !== null}
+                  onClick={async () => {
+                    setBusy('seed-match');
+                    try {
+                      await api.testing.seedMatch('seed-1');
+                      onChanged();
+                      showToast('Взаимный мэтч создан! Проверьте раздел «Чаты».', 'success');
+                    } catch (e) {
+                      showToast(getErrorMessage(e), 'error');
+                    } finally {
+                      setBusy(null);
+                    }
+                  }}
+                >
+                  Создать взаимный мэтч
+                </Button>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy !== null}
+                  onClick={async () => {
+                    setBusy('clear-social');
+                    try {
+                      await Promise.all([api.testing.clearReactions(), api.testing.clearPasses()]);
+                      onChanged();
+                      showToast('Все ваши лайки и пропуски очищены — лента снова полная.', 'info');
+                    } catch (e) {
+                      showToast(getErrorMessage(e), 'error');
+                    } finally {
+                      setBusy(null);
+                    }
+                  }}
+                >
+                  Сбросить реакции и пропуски
+                </Button>
+              </div>
             </div>
 
             {/* Achievements */}

@@ -1,9 +1,21 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../core/context/AuthContext';
 import { Button } from './Button';
-import { HeartHandshake, User, Compass, Settings, ShieldCheck, LogIn, Gem, FlaskConical, Crown } from 'lucide-react';
+import {
+  HeartHandshake,
+  User,
+  Compass,
+  Settings,
+  ShieldCheck,
+  LogIn,
+  Gem,
+  FlaskConical,
+  Crown,
+  MessageCircle,
+} from 'lucide-react';
+import { api } from '../../core/api/client';
 
-export type AppTab = 'discovery' | 'profile' | 'collection' | 'about';
+export type AppTab = 'discovery' | 'profile' | 'collection' | 'chats' | 'about';
 
 interface NavbarProps {
   currentTab: AppTab;
@@ -12,6 +24,7 @@ interface NavbarProps {
   onOpenSettings: () => void;
   /** Shown only for test accounts (Account.testAccount). */
   onOpenTestPanel: () => void;
+  unreadChatsCount?: number;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -20,6 +33,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAuth,
   onOpenSettings,
   onOpenTestPanel,
+  unreadChatsCount = 0,
 }) => {
   const { account, profile } = useAuth();
 
@@ -58,6 +72,30 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <Compass className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Поиск анкет</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (!account) {
+                onOpenAuth();
+              } else {
+                onTabChange('chats');
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all relative ${
+              currentTab === 'chats'
+                ? 'bg-white text-zinc-900 shadow-xs'
+                : 'text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Чаты</span>
+            {unreadChatsCount > 0 && (
+              <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] flex items-center justify-center font-bold">
+                {unreadChatsCount}
+              </span>
+            )}
           </button>
 
           <button
@@ -116,7 +154,6 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center gap-2">
           {account ? (
             <div className="flex items-center gap-1.5">
-              {/* Premium badge: a pill on wide screens, a crown inside the account button otherwise. */}
               {profile?.premium && (
                 <span
                   className="hidden xl:flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 rounded-xl border border-amber-300"

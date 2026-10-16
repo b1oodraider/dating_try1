@@ -102,6 +102,35 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
               </p>
             </div>
 
+            <div className="pt-2 border-t border-zinc-100">
+              <span className="text-[11px] font-semibold text-zinc-500 block mb-1.5">
+                Тестовые аккаунты для превью (QA / Тест-панель):
+              </span>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { phone: '+7 900 000-00-01', label: 'Тест #1' },
+                  { phone: '+7 900 000-00-02', label: 'Тест #2' },
+                  { phone: '+7 900 000-00-03', label: 'Тест #3' },
+                ].map((item) => (
+                  <button
+                    key={item.phone}
+                    type="button"
+                    onClick={() => setPhone(item.phone)}
+                    className={`px-2 py-1.5 text-[11px] font-medium rounded-lg border transition-all text-center ${
+                      phone === item.phone
+                        ? 'bg-violet-600 text-white border-violet-600 font-semibold shadow-xs'
+                        : 'bg-violet-50 text-violet-700 hover:bg-violet-100 border-violet-200 font-mono'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-zinc-400 mt-1">
+                Для них фиксированный код: <span className="font-mono font-semibold text-zinc-600">123456</span>
+              </p>
+            </div>
+
             <Button
               type="submit"
               variant="primary"
@@ -138,12 +167,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             </div>
 
             {activeChallenge.devMockCode && (
-              <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-amber-900 text-xs leading-relaxed">
-                <span className="font-semibold block mb-0.5">Тестовый режим (Mock OTP):</span>
-                SMS не отправляется, сервер вернул код:{' '}
-                <strong className="font-mono text-zinc-900 bg-amber-100 px-1 py-0.5 rounded">
-                  {activeChallenge.devMockCode}
-                </strong>
+              <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-amber-900 text-xs leading-relaxed flex items-center justify-between gap-2">
+                <div>
+                  <span className="font-semibold block mb-0.5">Тестовый режим (Mock OTP):</span>
+                  Сервер вернул код:{' '}
+                  <strong className="font-mono text-zinc-900 bg-amber-100 px-1 py-0.5 rounded">
+                    {activeChallenge.devMockCode}
+                  </strong>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCode(activeChallenge.devMockCode || '')}
+                  className="px-2.5 py-1 text-xs font-semibold text-amber-900 bg-amber-200/80 hover:bg-amber-300 rounded-lg shrink-0 transition-colors"
+                >
+                  Вставить
+                </button>
               </div>
             )}
 

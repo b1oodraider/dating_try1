@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './core/context/AuthContext';
 import { Navbar, type AppTab } from './shared/components/Navbar';
 import { DiscoveryFeed } from './features/discovery/components/DiscoveryFeed';
@@ -8,8 +8,14 @@ import { AuthModal } from './features/auth/components/AuthModal';
 import { AccountSettingsModal } from './features/account/components/AccountSettingsModal';
 import { CollectionView } from './features/cosmetics/components/CollectionView';
 import { TestPanelModal } from './features/testing/components/TestPanelModal';
+import { ChatView } from './features/chat/components/ChatView';
+import { RestrictionsBanner } from './features/safety/components/RestrictionsBanner';
 import { Button } from './shared/components/Button';
-import { WifiOff } from 'lucide-react';
+import { WifiOff, MessageCircle } from 'lucide-react';
+import { api } from './core/api/client';
+import type { Match } from './core/types';
+import { RealtimeProvider, useRealtime } from './core/realtime/RealtimeContext';
+import { ToastProvider } from './shared/components/Toast';
 
 const AppContent: React.FC = () => {
   const { account, isLoading, loadError, reloadSession, forgetSession, refreshProfile } = useAuth();
@@ -21,11 +27,41 @@ const AppContent: React.FC = () => {
   /** Bumped after test-panel actions so the collection reloads the wallet. */
   const [economyRevision, setEconomyRevision] = useState(0);
 
+  // Chat & Unread state
+  const [activeChatMatchId, setActiveChatMatchId] = useState<string | null>(null);
+  const [unreadChatsCount, setUnreadChatsCount] = useState(0);
+
+  const accountId = account?.id ?? null;
+  const countUnread = useCallback((matches: Match[]) => {
+    setUnreadChatsCount(matches.filter((m) => m.unreadCount > 0).length);
+  }, []);
+
+  const loadUnreadMatches = useCallback(() => {
+    if (!accountId) {
+      setUnreadChatsCount(0);
+      return;
+    }
+    api.listMatches().then(countUnread).catch(() => {
+      // the badge is best effort
+    });
+  }, [accountId, countUnread]);
+
+  useEffect(loadUnreadMatches, [loadUnreadMatches]);
+
+  // The open chat screen reports its own list (onMatchesChanged); elsewhere refresh the badge on chat events.
+  useRealtime((event) => {
+    if (currentTab !== 'chats' && event.name !== 'like_received') loadUnreadMatches();
+  });
+
   const handleEconomyChanged = useCallback(() => {
     setEconomyRevision((r) => r + 1);
-    // Decorations depend on ownership (e.g. a frame balance set to 0 hides it): refresh the own profile.
     refreshProfile().catch((e: unknown) => console.warn('Profile refresh failed', e));
   }, [refreshProfile]);
+
+  const handleOpenChat = useCallback((matchId: string) => {
+    setActiveChatMatchId(matchId);
+    setCurrentTab('chats');
+  }, []);
 
   if (isLoading) {
     return (
@@ -63,7 +99,10 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-stone-100/60 text-zinc-900 flex flex-col font-sans selection:bg-rose-100 selection:text-rose-900">
+    <div className="min-h-screen bg-stone-50 text-zinc-900 flex flex-col font-sans selection:bg-rose-100 selection:text-rose-900">
+      {/* Account Restrictions Banner (if any) */}
+      <RestrictionsBanner />
+
       {/* Top Navigation */}
       <Navbar
         currentTab={currentTab}
@@ -71,12 +110,44 @@ const AppContent: React.FC = () => {
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
         onOpenTestPanel={() => setTestPanelAccountId(account?.id ?? null)}
+        unreadChatsCount={unreadChatsCount}
       />
 
       {/* Main Content View */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-6">
         {currentTab === 'discovery' && (
-          <DiscoveryFeed onRequestAuth={() => setIsAuthModalOpen(true)} revision={economyRevision} />
+          <DiscoveryFeed
+            onRequestAuth={() => setIsAuthModalOpen(true)}
+            revision={economyRevision}
+            onOpenChat={handleOpenChat}
+          />
+        )}
+
+        {currentTab === 'chats' && (
+          account ? (
+            <ChatView
+              initialMatchId={activeChatMatchId}
+              onSelectMatchId={(id) => setActiveChatMatchId(id)}
+              onMatchesChanged={countUnread}
+            />
+          ) : (
+            <div className="max-w-md mx-auto text-center py-16 space-y-4">
+              <div className="w-12 h-12 bg-zinc-200/80 rounded-2xl flex items-center justify-center mx-auto text-zinc-600 font-bold text-lg">
+                <MessageCircle className="w-6 h-6" />
+              </div>
+              <h2 className="text-lg font-bold text-zinc-900">Чаты доступны после входа</h2>
+              <p className="text-xs text-zinc-500">
+                Войдите по номеру телефона, чтобы видеть ваши взаимные симпатии и переписываться.
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsAuthModalOpen(true)}
+                className="px-5 py-2.5 bg-zinc-900 text-white rounded-xl text-xs font-semibold hover:bg-zinc-800 transition-colors shadow-xs cursor-pointer"
+              >
+                Войти по номеру телефона
+              </button>
+            </div>
+          )
         )}
 
         {(currentTab === 'profile' || currentTab === 'collection') && (
@@ -94,7 +165,7 @@ const AppContent: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsAuthModalOpen(true)}
-                className="px-5 py-2.5 bg-zinc-900 text-white rounded-xl text-xs font-semibold hover:bg-zinc-800 transition-colors shadow-xs"
+                className="px-5 py-2.5 bg-zinc-900 text-white rounded-xl text-xs font-semibold hover:bg-zinc-800 transition-colors shadow-xs cursor-pointer"
               >
                 Войти по номеру телефона
               </button>
@@ -143,8 +214,12 @@ const AppContent: React.FC = () => {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <RealtimeProvider>
+          <AppContent />
+        </RealtimeProvider>
+      </AuthProvider>
+    </ToastProvider>
   );
 }

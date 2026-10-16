@@ -163,17 +163,6 @@ node scripts/seed-profiles.mjs --reset
 node scripts/seed-profiles.mjs --api https://staging.example.com/api/v1 --phone "+7 900 000-00-02" --code 123456
 ```
 
-### Против мок-сервера (`npm run dev:mock`, порт 3000)
-
-```powershell
-# 1. Мок (в отдельном окне); другой порт: $env:PORT=3417; npm run dev:mock
-npm run dev:mock
-
-# 2. Загрузить
-node scripts/seed-profiles.mjs --api http://localhost:3000/api/v1
-node scripts/seed-profiles.mjs --api http://localhost:3000/api/v1 --reset
-```
-
 ### Параметры скрипта
 
 | Параметр | По умолчанию | Описание |
@@ -199,7 +188,7 @@ node scripts/seed-profiles.mjs --api http://localhost:3000/api/v1 --reset
 
 Частые сообщения:
 
-- «не тестовый аккаунт» — номер не входит в список тестовых (`APP_TESTING_TEST_PHONES` / `MOCK_TEST_PHONES`).
+- «не тестовый аккаунт» — номер не входит в список тестовых (`APP_TESTING_TEST_PHONES`).
 - «Тестовый API выключен» — сервер запущен без `APP_TESTING_ENABLED=true`.
 - «Код для этого номера недавно уже запрашивали, жду N с» — лимит: один код в минуту на номер; скрипт подождёт сам.
 - Повторный запуск без `--reset` создаёт анкеты ещё раз (дубликаты).

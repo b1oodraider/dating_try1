@@ -17,6 +17,7 @@ import {
   RarityBadge,
   StatusPill,
 } from '../decorations';
+import { GachaView } from '../../gacha/components/GachaView';
 import {
   AlertCircle,
   Crown,
@@ -29,6 +30,7 @@ import {
   Ticket,
   Trophy,
   CheckCircle,
+  Sparkles,
 } from 'lucide-react';
 
 interface CollectionViewProps {
@@ -110,6 +112,7 @@ export const CollectionView: React.FC<CollectionViewProps> = ({ revision }) => {
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingCode, setPendingCode] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [subTab, setSubTab] = useState<'inventory' | 'gacha'>('inventory');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -181,7 +184,36 @@ export const CollectionView: React.FC<CollectionViewProps> = ({ revision }) => {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-12">
-      <div className={`${card} flex flex-col sm:flex-row gap-5`}>
+      {/* Sub-tab switcher */}
+      <div className="flex items-center gap-1 bg-zinc-200/60 p-1 rounded-xl w-fit">
+        <button
+          type="button"
+          onClick={() => setSubTab('inventory')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            subTab === 'inventory' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
+          }`}
+        >
+          <Gem className="w-3.5 h-3.5" />
+          <span>Гардероб и награды</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSubTab('gacha')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            subTab === 'gacha' ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+          <span>Алтарь удачи</span>
+        </button>
+      </div>
+
+      {subTab === 'gacha' ? (
+        <GachaView revision={revision} onWalletUpdated={() => setReloadKey((k) => k + 1)} />
+      ) : (
+        <>
+          <div className={`${card} flex flex-col sm:flex-row gap-5`}>
         {/* Own profile preview: how others see the frame and status */}
         <div className="w-full sm:w-40 shrink-0 space-y-2">
           <div
@@ -361,6 +393,8 @@ export const CollectionView: React.FC<CollectionViewProps> = ({ revision }) => {
           </ul>
         )}
       </section>
+        </>
+      )}
     </div>
   );
 };

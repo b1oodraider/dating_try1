@@ -19,7 +19,9 @@ import {
   CheckCircle,
   AlertCircle,
   FileText,
+  ShieldCheck,
 } from 'lucide-react';
+import { SelfieVerificationModal } from '../../safety/components/SelfieVerificationModal';
 import type { ProfileUpdate, Tag } from '../../../core/types';
 
 // Limits from the API contract (PUT /me/profile).
@@ -58,6 +60,7 @@ export const ProfileEditor: React.FC = () => {
   const [isSavingTags, setIsSavingTags] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [publishMissing, setPublishMissing] = useState<string[]>([]);
+  const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
 
   // Re-sync the form whenever the server copy of these fields changes (other account, reload, save).
   const serverDisplayName = profile?.displayName ?? '';
@@ -314,6 +317,45 @@ export const ProfileEditor: React.FC = () => {
       {/* Completeness Hint */}
       <CompletenessHint profile={profile} />
 
+      {/* Selfie Verification Card */}
+      <div className="p-4 bg-white border border-zinc-200/80 rounded-2xl flex items-center justify-between gap-3 shadow-xs">
+        <div className="flex items-center gap-3">
+          <div
+            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+              profile.verified ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-500'
+            }`}
+          >
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-bold text-zinc-900">
+                {profile.verified ? 'Анкета верифицирована по селфи' : 'Верификация по селфи'}
+              </h3>
+              {profile.verified && (
+                <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                  Подтверждено
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-zinc-500 mt-0.5">
+              {profile.verified
+                ? 'Зелёный значок подлинности отображается в ленте и диалогах'
+                : 'Сделайте быстрое селфи с простым жестом для подтверждения анкеты'}
+            </p>
+          </div>
+        </div>
+
+        <Button
+          type="button"
+          variant={profile.verified ? 'outline' : 'primary'}
+          size="sm"
+          onClick={() => setIsVerificationModalOpen(true)}
+        >
+          {profile.verified ? 'Статус' : 'Пройти'}
+        </Button>
+      </div>
+
       {/* Main Edit Form */}
       <form onSubmit={handleSave} noValidate className="bg-white p-6 rounded-2xl border border-zinc-200/80 shadow-xs space-y-5">
         {formError && (
@@ -550,6 +592,12 @@ export const ProfileEditor: React.FC = () => {
           </Button>
         </div>
       </Modal>
+
+      <SelfieVerificationModal
+        isOpen={isVerificationModalOpen}
+        onClose={() => setIsVerificationModalOpen(false)}
+        onVerifiedChange={refreshProfile}
+      />
     </div>
   );
 };

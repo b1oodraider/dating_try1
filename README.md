@@ -8,7 +8,6 @@
 
 - **Backend** (источник истины): Java 21, Spring Boot 4.1, Gradle 9, Spring Security 7, Jackson 3, Spring Data JPA, Liquibase, PostgreSQL 16.
 - **Web**: React 19 + TypeScript + Tailwind CSS (Vite). В разработке ходит в backend через прокси Vite.
-- **Dev-мок** (`server.ts`): in-memory сервер на Express с тем же контрактом API — только для разработки фронта без Java/PostgreSQL. В production не запускается.
 - **Mobile**: Flutter / Dart (Android и iOS), см. [mobile/README.md](mobile/README.md).
 - **Инфраструктура**: Docker Compose, PostgreSQL во внутренней сети. Kafka, Redis, Kubernetes не используются по архитектурным ограничениям.
 
@@ -32,7 +31,6 @@ dating/
 │       ├── gacha/            # баннеры, шансы, гарантии (pity), крутки, осколки за дубли (docs/gacha.md)
 │       └── productevents/    # продуктовые события без PII
 ├── src/                      # Web-клиент (React + TypeScript)
-├── server.ts                 # dev-мок API (npm run dev:mock)
 ├── mobile/                   # Flutter-клиент
 ├── infra/compose.yaml        # backend + PostgreSQL
 └── docs/                     # контракт API
@@ -90,7 +88,6 @@ cd backend
 ```bash
 npm install
 npm run dev        # http://localhost:3000, /api проксируется на VITE_API_TARGET (по умолчанию http://localhost:8080)
-npm run dev:mock   # то же, но с in-memory мок-сервером вместо Java backend
 npm run lint       # проверка типов
 npm run build
 ```
