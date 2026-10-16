@@ -1,0 +1,54 @@
+databaseChangeLog:
+  # Behavioral data for moderation context now and a ranking model later (docs/trust-safety.md, block D).
+  # Raw data is kept 90 days and deleted with the account; message TEXT is never copied anywhere.
+  - changeSet:
+      id: 017-feed-impressions
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE feed_impressions (
+                id                BIGSERIAL PRIMARY KEY,
+                viewer_account_id UUID NOT NULL REFERENCES accounts (id),
+                target_account_id UUID NOT NULL REFERENCES accounts (id),
+                shown_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT clock_timestamp()
+              )
+        - sql:
+            sql: CREATE INDEX idx_feed_impressions_viewer ON feed_impressions (viewer_account_id, shown_at)
+        - sql:
+            sql: CREATE INDEX idx_feed_impressions_target ON feed_impressions (target_account_id, shown_at)
+      rollback:
+        - sql:
+            sql: DROP TABLE feed_impressions
+
+  - changeSet:
+      id: 017-activity-days
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE account_activity_days (
+                account_id UUID NOT NULL REFERENCES accounts (id),
+                day        DATE NOT NULL,
+                PRIMARY KEY (account_id, day)
+              )
+      rollback:
+        - sql:
+            sql: DROP TABLE account_activity_days
+
+  # Per-account metrics recomputed nightly (and on demand for moderators). JSONB: the set of metrics will evolve
+  # with the model; raw counts are stored next to rates so a model can smooth small samples itself.
+  - changeSet:
+      id: 017-behavior-metrics
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE behavior_metrics (
+                account_id  UUID PRIMARY KEY REFERENCES accounts (id),
+                computed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                metrics     JSONB NOT NULL
+              )
+      rollback:
+        - sql:
+            sql: DROP TABLE behavior_metrics

@@ -1,5 +1,6 @@
 package com.dating.discovery.application;
 
+import com.dating.safety.application.BehaviorService;
 import com.dating.accounts.domain.Account;
 import com.dating.accounts.domain.AccountStatus;
 import com.dating.discovery.api.DiscoveryPageResponseDto;
@@ -48,11 +49,13 @@ public class DiscoveryService {
     private final ExcludedGoalsService excludedGoals;
     private final FeatureAccess featureAccess;
     private final DiscoveryBoosts boosts;
+    private final BehaviorService behavior;
 
     public DiscoveryService(ProfileRepository profileRepository, ProfilePhotoQuery photoQuery,
                             ExclusionWordsService exclusionWords, ProfileDecorationQuery decorationQuery,
                             AccountService accountService, ExcludedGoalsService excludedGoals,
-                            FeatureAccess featureAccess, DiscoveryBoosts boosts) {
+                            FeatureAccess featureAccess, DiscoveryBoosts boosts, BehaviorService behavior) {
+        this.behavior = behavior;
         this.profileRepository = profileRepository;
         this.photoQuery = photoQuery;
         this.exclusionWords = exclusionWords;
@@ -115,6 +118,7 @@ public class DiscoveryService {
         Page<Profile> page = profileRepository.findAll(spec.and(feedOrder(callerAccountId)), pageRequest);
         List<UUID> owners = page.getContent().stream().map(Profile::getAccountId).toList();
         boosts.recordImpressions(callerAccountId, owners);
+        behavior.recordImpressions(callerAccountId, owners);
         Set<UUID> boostBadges = boosts.publicBadgesAmong(owners);
         Set<UUID> premiumOwners = featureAccess.premiumAmong(page.getContent().stream().map(Profile::getAccountId).toList());
         Map<UUID, List<PhotoDto>> photos = photoQuery.photosOf(page.getContent().stream().map(Profile::getId).toList());

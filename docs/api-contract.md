@@ -464,6 +464,16 @@ PUT  /admin/sanction-policy/{reason}            (ADMIN) body { windowDays: 1..36
                                                 { kind, hours?: 1..87600 } } }  200 SanctionPolicy ; 400 VALIDATION_ERROR (unknown reason)
 Restriction changes are audited (ACCOUNT_RESTRICTION: RESTRICT / LIFT; SANCTION_POLICY: UPDATE).
 
+### Behavior metrics (moderators)
+GET /admin/accounts/{accountId}/behavior   200 { accountId, computedAt, metrics } ; 404 ACCOUNT_NOT_FOUND
+  Recomputed on request (and nightly for accounts active in 90 days). metrics (rates are null when there is nothing to divide):
+  likesGiven30d, superlikesGiven30d, passesGiven30d, profilesSeen30d, likeRatio (likes / (likes + passes)), medianSwipeMs,
+  timesShown30d, likesReceived30d, inboundLikeRate, matches90d, dialogs90d, silentMatches90d (no message at all),
+  responseRate (answered when they wrote first), ghostRate (never wrote back when they wrote), initiationRate (wrote first),
+  medianResponseSeconds, messagesSent90d, avgMessageLength, oneWordShare ("answers in one word"), reportsReceived,
+  reportsMade, confirmedViolations, blockedBy, activeDays30d. Only numbers: message text is never copied or returned.
+  Data behind it (reactions, views, feed impressions, active days) is kept 90 days and deleted with the account.
+
 ### Roles and audit (ADMIN)
 AdminAccount = { accountId, phoneMasked, status, testAccount, roles: string[], createdAt }
 GET    /admin/roles                                  200 { available: string[] (ADMIN, CONTENT_EDITOR, MODERATOR), accounts: AdminAccount[] (all accounts holding a role) }

@@ -1,6 +1,5 @@
 package com.dating.safety.application;
 
-import com.dating.accounts.application.AccountDeletedEvent;
 import com.dating.safety.domain.RestrictionKind;
 import com.dating.safety.persistence.BehaviorRepository;
 import com.dating.safety.persistence.BehaviorRepository.ReactionEvent;
@@ -9,8 +8,6 @@ import com.dating.social.application.MatchService;
 import com.dating.social.persistence.SocialRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,7 +27,6 @@ import java.util.UUID;
 public class LikeSpamDetector {
 
     public static final String LIKE_SPAM = "LIKE_SPAM";
-    private static final Duration RETENTION = Duration.ofDays(90);
     private static final Logger log = LoggerFactory.getLogger(LikeSpamDetector.class);
 
     private final BehaviorRepository behavior;
@@ -115,19 +111,4 @@ public class LikeSpamDetector {
         return blind >= Math.ceil(p.minBlindShare() * seen.size());
     }
 
-    @Transactional
-    public void recordViews(UUID viewer, List<BehaviorRepository.View> views) {
-        behavior.recordViews(viewer, views);
-    }
-
-    @Scheduled(initialDelayString = "PT10M", fixedDelayString = "PT6H")
-    @Transactional
-    public void dropOldBehavior() {
-        behavior.deleteOlderThan(Instant.now().minus(RETENTION));
-    }
-
-    @EventListener
-    public void onAccountDeleted(AccountDeletedEvent event) {
-        behavior.deleteAccountData(event.accountId());
-    }
 }

@@ -1186,6 +1186,30 @@ paths:
         '404': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
 
+  /admin/accounts/{accountId}/behavior:
+    get:
+      tags: [admin]
+      summary: Поведенческие метрики аккаунта (пересчитываются при запросе)
+      description: |
+        Роли: MODERATOR или ADMIN. Также пересчитываются ночью для аккаунтов, активных за 90 дней. Только числа —
+        текст сообщений не копируется и не возвращается. Доли = null, если делить не на что.
+      parameters:
+        - { $ref: '#/components/parameters/AccountId' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accountId: { type: string, format: uuid }
+                  computedAt: { type: string, format: date-time }
+                  metrics: { $ref: '#/components/schemas/BehaviorMetrics' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { $ref: '#/components/responses/Error' }
+
   /admin/restrictions/{restrictionId}/lift:
     post:
       tags: [admin]
@@ -3003,6 +3027,34 @@ components:
         moderatorAccountId: { type: [string, 'null'], format: uuid }
         moderatorNote: { type: [string, 'null'] }
         decidedAt: { type: [string, 'null'], format: date-time }
+
+    BehaviorMetrics:
+      type: object
+      properties:
+        likesGiven30d: { type: integer }
+        superlikesGiven30d: { type: integer }
+        passesGiven30d: { type: integer }
+        profilesSeen30d: { type: integer, description: Показы анкет в его ленте }
+        likeRatio: { type: [number, 'null'], description: лайки / (лайки + пропуски) }
+        medianSwipeMs: { type: [number, 'null'], description: Медианная пауза между реакциями }
+        timesShown30d: { type: integer, description: Его показы в чужих лентах }
+        likesReceived30d: { type: integer }
+        inboundLikeRate: { type: [number, 'null'] }
+        matches90d: { type: integer }
+        dialogs90d: { type: integer }
+        silentMatches90d: { type: integer, description: Мэтчи без единого сообщения }
+        responseRate: { type: [number, 'null'], description: Ответил, когда написали первыми }
+        ghostRate: { type: [number, 'null'], description: Так и не ответил, когда ему писали («гостит») }
+        initiationRate: { type: [number, 'null'], description: Написал первым }
+        medianResponseSeconds: { type: [number, 'null'] }
+        messagesSent90d: { type: integer }
+        avgMessageLength: { type: [number, 'null'] }
+        oneWordShare: { type: [number, 'null'], description: Доля сообщений из одного слова («односложно отвечает») }
+        reportsReceived: { type: integer }
+        reportsMade: { type: integer }
+        confirmedViolations: { type: integer }
+        blockedBy: { type: integer }
+        activeDays30d: { type: integer }
 
     RestrictionKind:
       type: string

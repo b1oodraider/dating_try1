@@ -31,3 +31,5 @@ databaseChangeLog:
       file: db/changelog/changesets/015-sanctions.yaml
   - include:
       file: db/changelog/changesets/016-like-spam.yaml
+  - include:
+      file: db/changelog/changesets/017-behavior.yaml

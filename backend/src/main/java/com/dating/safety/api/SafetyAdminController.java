@@ -1,6 +1,7 @@
 package com.dating.safety.api;
 
 import com.dating.common.security.AuthenticatedUser;
+import com.dating.safety.application.BehaviorService;
 import com.dating.safety.application.SafetyAdminService;
 import com.dating.safety.domain.Restriction;
 import com.dating.safety.domain.RestrictionKind;
@@ -58,9 +59,17 @@ public class SafetyAdminController {
     }
 
     private final SafetyAdminService service;
+    private final BehaviorService behaviorService;
 
-    public SafetyAdminController(SafetyAdminService service) {
+    public SafetyAdminController(SafetyAdminService service, BehaviorService behaviorService) {
         this.service = service;
+        this.behaviorService = behaviorService;
+    }
+
+    /** Behavioral metrics of the account, recomputed now (moderators). */
+    @GetMapping("/accounts/{accountId}/behavior")
+    public BehaviorService.Metrics behavior(@AuthenticationPrincipal AuthenticatedUser user, @PathVariable UUID accountId) {
+        return behaviorService.metricsFor(user.accountId(), accountId);
     }
 
     @GetMapping("/accounts/{accountId}/restrictions")

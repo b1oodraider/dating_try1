@@ -1,7 +1,7 @@
 package com.dating.safety.api;
 
 import com.dating.common.security.AuthenticatedUser;
-import com.dating.safety.application.LikeSpamDetector;
+import com.dating.safety.application.BehaviorService;
 import com.dating.safety.persistence.BehaviorRepository;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -39,16 +39,16 @@ public class ProfileViewsController {
     ) {
     }
 
-    private final LikeSpamDetector likeSpamDetector;
+    private final BehaviorService behaviorService;
 
-    public ProfileViewsController(LikeSpamDetector likeSpamDetector) {
-        this.likeSpamDetector = likeSpamDetector;
+    public ProfileViewsController(BehaviorService behaviorService) {
+        this.behaviorService = behaviorService;
     }
 
     @PostMapping("/api/v1/discovery/views")
     public ResponseEntity<Void> record(@AuthenticationPrincipal AuthenticatedUser user,
                                        @Valid @RequestBody ViewsRequest request) {
-        likeSpamDetector.recordViews(user.accountId(), request.views().stream()
+        behaviorService.recordViews(user.accountId(), request.views().stream()
                 .map(v -> new BehaviorRepository.View(v.profileId(), v.dwellMs(), Boolean.TRUE.equals(v.openedDetails())))
                 .toList());
         return ResponseEntity.noContent().build();
