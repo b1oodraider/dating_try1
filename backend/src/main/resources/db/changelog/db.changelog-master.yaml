@@ -27,3 +27,5 @@ databaseChangeLog:
       file: db/changelog/changesets/013-moderation.yaml
   - include:
       file: db/changelog/changesets/014-push-devices.yaml
+  - include:
+      file: db/changelog/changesets/015-sanctions.yaml

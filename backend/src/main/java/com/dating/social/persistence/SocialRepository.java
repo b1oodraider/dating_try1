@@ -94,6 +94,23 @@ public class SocialRepository {
                 .update();
     }
 
+    /**
+     * Removes likes and super likes the account gave (to everybody, or only to the listed people), so they
+     * disappear from the receivers' "who liked me". Passes are kept. Matches are not touched.
+     *
+     * @return removed likes
+     */
+    public int deleteLikesGivenBy(UUID actor, List<UUID> onlyTargets) {
+        if (onlyTargets != null && onlyTargets.isEmpty()) {
+            return 0;
+        }
+        return jdbc.sql("DELETE FROM profile_reactions WHERE actor_account_id = :actor AND type IN ('LIKE', 'SUPERLIKE')"
+                        + (onlyTargets == null ? "" : " AND target_account_id IN (:targets)"))
+                .param("actor", actor)
+                .param("targets", onlyTargets == null ? List.of(actor) : onlyTargets)
+                .update();
+    }
+
     public List<ReceivedLikeRow> receivedLikes(UUID me, Duration passTtl, int limit, long offset) {
         return jdbc.sql("SELECT r.actor_account_id, r.type = 'SUPERLIKE', r.reacted_at " + RECEIVED_LIKES_WHERE + """
                         ORDER BY r.type = 'SUPERLIKE' DESC, r.reacted_at DESC, r.actor_account_id

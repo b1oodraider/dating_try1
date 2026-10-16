@@ -1,5 +1,7 @@
 package com.dating.chat.application;
 
+import com.dating.safety.application.RestrictionGuard;
+import com.dating.safety.domain.RestrictionKind;
 import com.dating.chat.api.MessageDto;
 import com.dating.chat.api.MessagePageDto;
 import com.dating.chat.api.ReadReceiptDto;
@@ -44,10 +46,13 @@ public class ChatService {
     private final ApplicationEventPublisher eventPublisher;
     private final ProductEventPublisher productEvents;
     private final FixedWindowRateLimiter limiter;
+    private final RestrictionGuard restrictionGuard;
 
     public ChatService(ChatRepository repository, MatchService matchService, EconomyService economyService,
                        SseEmitterRegistry realtime, ApplicationEventPublisher eventPublisher,
-                       ProductEventPublisher productEvents, ChatProperties properties) {
+                       ProductEventPublisher productEvents, ChatProperties properties,
+                       RestrictionGuard restrictionGuard) {
+        this.restrictionGuard = restrictionGuard;
         this.repository = repository;
         this.matchService = matchService;
         this.economyService = economyService;
@@ -65,6 +70,7 @@ public class ChatService {
      */
     @Transactional
     public MessageDto send(UUID sender, UUID matchId, SendMessageRequest request) {
+        restrictionGuard.requireAllowed(sender, RestrictionKind.MESSAGES);
         Content content = validate(request);
         MatchInfo match = matchService.requireActive(matchId, sender);
 

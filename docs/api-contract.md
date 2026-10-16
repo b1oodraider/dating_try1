@@ -16,6 +16,8 @@ Errors with `details` (returned by the endpoints listed below):
   409 INSUFFICIENT_BALANCE details: { itemCode, available }  → show "not enough super likes" etc.
                            (super like, gacha pull, shard exchange, boost)
   403 ROLE_REQUIRED        details: { roles: string[] }      → any one of these staff roles would grant access (/admin/**)
+  403 ACCOUNT_RESTRICTED   details: { kind, until }          → a moderation restriction (LIKES on like/super like, MESSAGES on
+                                                              sending); until = ISO time or null (until lifted). See GET /me/restrictions
 
 ## Types
 Tag        = { code, category: string, categoryLabel, label, description, sortOrder }
@@ -53,6 +55,8 @@ POST /auth/otp/verify    body { challengeId: uuid, code: "6 digits" }    (NO pho
 POST /auth/logout        (auth)  204
 
 ## Account
+GET    /me/restrictions   (auth) 200 [ { kind: RestrictionKind, reason, startsAt, endsAt: string|null } ]   my active restrictions
+                          (see "Sanctions" in Admin); show them instead of failing silently.
 GET    /me   (auth) 200 Account
 DELETE /me   (auth) 204 — wipes profile, photos, sessions; token becomes invalid immediately.
 
@@ -406,6 +410,7 @@ audit log (same transaction). Gacha admin endpoints (editors): see "Gacha admin"
 ### Reports moderation (moderators)
 ModerationReport = { id, status: 'NEW'|'IN_REVIEW'|'RESOLVED'|'DISMISSED', reason: ReportReason (as reported),
                      finalReason: ReportReason|null (confirmed violation), decision: 'ACCEPTED'|'RECLASSIFIED'|'REJECTED'|null,
+                     sanctioned: boolean (the policy was applied),
                      comment, messageId, messageSnapshot, reporterAccountId, reportedAccountId, reportedProfileId,
                      reportedDisplayName: string|null (null when the profile is gone),
                      reportedConfirmedViolations: number (ACCEPTED + RECLASSIFIED reports against that account),
@@ -413,12 +418,39 @@ ModerationReport = { id, status: 'NEW'|'IN_REVIEW'|'RESOLVED'|'DISMISSED', reaso
 GET  /admin/reports?status=&page=0&limit=20   oldest first; status absent = open (NEW, IN_REVIEW); limit 1..100 (else 20)
      200 { items: ModerationReport[], page, limit, totalElements } ; 400 VALIDATION_ERROR (unknown status, case-insensitive)
 GET  /admin/reports/{reportId}                200 ModerationReport ; 404 REPORT_NOT_FOUND
-POST /admin/reports/{reportId}/decision       body { decision: 'ACCEPTED'|'RECLASSIFIED'|'REJECTED', reason?: ReportReason, note?: string (<= 1000) }
+POST /admin/reports/{reportId}/decision       body { decision: 'ACCEPTED'|'RECLASSIFIED'|'REJECTED', reason?: ReportReason, note?: string (<= 1000),
+                                                     sanction?: boolean (true), removePhotoIds?: uuid[] (<= 6), clearAboutText?: boolean,
+                                                     clearDailyStatus?: boolean }
      ACCEPTED: violation as reported (finalReason = reason), status RESOLVED.
      RECLASSIFIED: violation of another kind; reason required and different from the reported one, status RESOLVED.
      REJECTED: no violation, status DISMISSED. reason is only allowed with RECLASSIFIED.
      200 ModerationReport ; 400 VALIDATION_ERROR (fieldErrors.reason) ; 404 REPORT_NOT_FOUND ; 409 REPORT_ALREADY_DECIDED
-     A decision records the verdict only (no sanctions are applied). Audited as entityType REPORT, action = decision.
+     A confirmed violation (ACCEPTED / RECLASSIFIED) gets the sanction policy step of its finalReason unless sanction = false
+     (a duplicate report about an already sanctioned violation), and may delete photos of the reported profile (404 PHOTO_NOT_FOUND
+     if not theirs) and its about text / daily status. REJECTED with content removal → 400. Every decision re-evaluates the
+     review hold. Audited as entityType REPORT, action = decision.
+
+### Sanctions
+Restriction = { id, accountId, kind: RestrictionKind, reason (report reason, or LIKE_SPAM | REVIEW_HOLD | MANUAL), source: 'MODERATOR'|'RULE'|'ADMIN',
+                reportId, createdBy, note, startsAt, endsAt (null = until lifted), liftedAt, liftedBy, liftNote }
+RestrictionKind: LIKES (no likes / super likes) | MESSAGES (no chat messages) | HIDDEN (out of the feed and of everybody's
+  "who liked me") | SUSPENDED (login closed; applying it REMOVES ALL LIKES the account gave — they vanish from the receivers'
+  "who liked me" — and closes its matches) | VERIFICATION_REQUIRED (hidden until a moderator lifts it)
+SanctionPolicy = { reason, windowDays, holdOnReports: number|null, steps: [ { restrictions: [ { kind, hours: number|null } ] } ] }
+  The (n+1)-th sanctioned violation of a reason within windowDays gets steps[n] (the last step repeats).
+  holdOnReports: the profile is hidden (REVIEW_HOLD) while that many different people have open reports with this reason.
+  Defaults: UNDERAGE/SCAM → SUSPENDED (hold at 1 / 2 reporters); HARASSMENT → MESSAGES 7 d, then SUSPENDED;
+  FAKE_PROFILE → VERIFICATION_REQUIRED, then SUSPENDED; INAPPROPRIATE_CONTENT → 3rd strike in 90 d: HIDDEN 7 d;
+  SPAM → LIKES + MESSAGES 1 h, doubling up to 7 d (30-day window); OTHER → nothing (use a manual restriction).
+GET  /admin/accounts/{accountId}/restrictions   (moderators) 200 Restriction[] newest first, incl. lifted/expired ; 404 ACCOUNT_NOT_FOUND
+POST /admin/accounts/{accountId}/restrictions   (moderators) body { kind: RestrictionKind, hours?: 1..87600 (absent = until lifted),
+                                                note?: <= 1000 }  201 Restriction (reason MANUAL) ; 409 ACCOUNT_DELETED
+POST /admin/restrictions/{restrictionId}/lift   (ADMIN) body? { note?: <= 1000 }  200 Restriction ;
+                                                404 RESTRICTION_NOT_FOUND ; 409 RESTRICTION_NOT_ACTIVE. Removed likes are NOT restored.
+GET  /admin/sanction-policy                     (moderators) 200 SanctionPolicy[]
+PUT  /admin/sanction-policy/{reason}            (ADMIN) body { windowDays: 1..3650, holdOnReports?: 1..100, steps: 1..20 × { restrictions: 0..5 ×
+                                                { kind, hours?: 1..87600 } } }  200 SanctionPolicy ; 400 VALIDATION_ERROR (unknown reason)
+Restriction changes are audited (ACCOUNT_RESTRICTION: RESTRICT / LIFT; SANCTION_POLICY: UPDATE).
 
 ### Roles and audit (ADMIN)
 AdminAccount = { accountId, phoneMasked, status, testAccount, roles: string[], createdAt }

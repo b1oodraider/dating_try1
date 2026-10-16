@@ -71,6 +71,18 @@ public class ProfileService {
         });
     }
 
+    /** Moderation removes offending texts; the owner can write new ones. */
+    @Transactional
+    public void clearTextsByModeration(UUID accountId, boolean aboutText, boolean dailyStatus) {
+        Profile profile = lockOrCreateProfile(accountId);
+        if (aboutText) {
+            profile.setAboutText(null);
+        }
+        if (dailyStatus) {
+            profile.setDailyStatus(null, null);
+        }
+    }
+
     /**
      * Same as {@link #getOrCreateProfile} but holds a row lock until the transaction ends.
      */

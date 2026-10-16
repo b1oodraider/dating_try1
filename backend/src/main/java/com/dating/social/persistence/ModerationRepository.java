@@ -20,7 +20,7 @@ import java.util.UUID;
 public class ModerationRepository {
 
     private static final String SELECT = """
-            SELECT r.id, r.status, r.reason, r.final_reason, r.decision, r.comment, r.message_id, r.message_snapshot,
+            SELECT r.id, r.status, r.reason, r.final_reason, r.decision, r.sanctioned, r.comment, r.message_id, r.message_snapshot,
                    r.reporter_account_id, r.reported_account_id, r.reported_profile_id, p.display_name,
                    (SELECT count(*) FROM reports c
                      WHERE c.reported_account_id = r.reported_account_id
@@ -90,6 +90,7 @@ public class ModerationRepository {
                 ReportReason.valueOf(rs.getString("reason")),
                 enumOrNull(ReportReason.class, rs.getString("final_reason")),
                 enumOrNull(ReportDecision.class, rs.getString("decision")),
+                rs.getBoolean("sanctioned"),
                 rs.getString("comment"),
                 rs.getObject("message_id", UUID.class),
                 rs.getString("message_snapshot"),

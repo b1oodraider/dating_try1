@@ -1,5 +1,7 @@
 package com.dating.social.application;
 
+import com.dating.safety.application.RestrictionGuard;
+import com.dating.safety.domain.RestrictionKind;
 import com.dating.common.errors.ApiException;
 import com.dating.economy.application.EconomyService;
 import com.dating.productevents.application.ProductEventPublisher;
@@ -35,10 +37,12 @@ public class ReactionService {
     private final EconomyService economyService;
     private final ApplicationEventPublisher eventPublisher;
     private final ProductEventPublisher productEvents;
+    private final RestrictionGuard restrictionGuard;
 
     public ReactionService(SocialRepository repository, SocialTargets targets, MatchService matchService,
                            EconomyService economyService, ApplicationEventPublisher eventPublisher,
-                           ProductEventPublisher productEvents) {
+                           ProductEventPublisher productEvents, RestrictionGuard restrictionGuard) {
+        this.restrictionGuard = restrictionGuard;
         this.repository = repository;
         this.targets = targets;
         this.matchService = matchService;
@@ -49,6 +53,7 @@ public class ReactionService {
 
     @Transactional
     public ReactionResultDto like(UUID me, UUID profileId) {
+        restrictionGuard.requireAllowed(me, RestrictionKind.LIKES);
         SocialTargets.Counterpart target = targets.requireDiscoverable(me, profileId);
         return react(me, target.accountId(), ReactionType.LIKE, null);
     }
@@ -59,6 +64,7 @@ public class ReactionService {
      */
     @Transactional
     public ReactionResultDto superlike(UUID me, UUID profileId, String idempotencyKey) {
+        restrictionGuard.requireAllowed(me, RestrictionKind.LIKES);
         SocialTargets.Counterpart target = targets.requireDiscoverable(me, profileId);
         return react(me, target.accountId(), ReactionType.SUPERLIKE,
                 "superlike:" + target.accountId() + ":" + idempotencyKey);

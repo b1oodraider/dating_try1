@@ -466,6 +466,7 @@ paths:
               schema: { $ref: '#/components/schemas/ReactionResult' }
         '400': { description: 'SELF_ACTION', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'ACCOUNT_RESTRICTED (details.kind = LIKES, details.until)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { description: 'PROFILE_NOT_FOUND (нет, не опубликована, другой тип аккаунта, блокировка)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /discovery/profiles/{profileId}/superlike:
@@ -487,6 +488,7 @@ paths:
               schema: { $ref: '#/components/schemas/ReactionResult' }
         '400': { description: 'VALIDATION_ERROR | SELF_ACTION', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'ACCOUNT_RESTRICTED (details.kind = LIKES, details.until)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { description: 'PROFILE_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '409': { $ref: '#/components/responses/InsufficientBalance' }
 
@@ -641,7 +643,7 @@ paths:
               schema: { $ref: '#/components/schemas/Message' }
         '400': { description: 'VALIDATION_ERROR | NOT_A_STICKER_PACK | UNKNOWN_STICKER', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { description: 'ITEM_NOT_OWNED', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: 'ITEM_NOT_OWNED | ACCOUNT_RESTRICTED (details.kind = MESSAGES, details.until)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { description: 'MATCH_NOT_FOUND | ITEM_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '429': { $ref: '#/components/responses/RateLimited' }
 
@@ -1053,9 +1055,11 @@ paths:
       description: |
         Роли: MODERATOR или ADMIN. ACCEPTED — нарушение подтверждено как в жалобе (status RESOLVED);
         RECLASSIFIED — нарушение другого вида, reason обязателен и отличается от причины в жалобе (RESOLVED);
-        REJECTED — нарушения нет (DISMISSED). reason допустим только с RECLASSIFIED. Решение только фиксируется,
-        санкции не применяются. Пишется в аудит (entityType REPORT).
-        Ошибки: 400 VALIDATION_ERROR (fieldErrors.reason), 404 REPORT_NOT_FOUND, 409 REPORT_ALREADY_DECIDED.
+        REJECTED — нарушения нет (DISMISSED). reason допустим только с RECLASSIFIED. Подтверждённое нарушение получает
+        шаг политики санкций своей finalReason (если sanction не false — например, для дубля уже наказанного нарушения)
+        и может удалить фото анкеты и тексты. Каждое решение пересчитывает срочное скрытие. Пишется в аудит (REPORT).
+        Ошибки: 400 VALIDATION_ERROR (fieldErrors.reason; удаление контента при REJECTED), 404 REPORT_NOT_FOUND,
+        404 PHOTO_NOT_FOUND, 409 REPORT_ALREADY_DECIDED.
       parameters:
         - { name: reportId, in: path, required: true, schema: { type: string, format: uuid } }
       requestBody:
@@ -1069,6 +1073,10 @@ paths:
                 decision: { type: string, enum: [ACCEPTED, RECLASSIFIED, REJECTED] }
                 reason: { $ref: '#/components/schemas/ReportReason' }
                 note: { type: string, maxLength: 1000 }
+                sanction: { type: boolean, default: true, description: Применить политику санкций }
+                removePhotoIds: { type: array, maxItems: 6, items: { type: string, format: uuid } }
+                clearAboutText: { type: boolean, default: false }
+                clearDailyStatus: { type: boolean, default: false }
       responses:
         '200':
           description: OK
@@ -1080,6 +1088,137 @@ paths:
         '403': { $ref: '#/components/responses/RoleRequired' }
         '404': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
+
+  /me/restrictions:
+    get:
+      summary: Мои действующие ограничения
+      description: Показывать пользователю, почему не работают лайки или сообщения и до какого времени.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    kind: { $ref: '#/components/schemas/RestrictionKind' }
+                    reason: { type: string }
+                    startsAt: { type: string, format: date-time }
+                    endsAt: { type: [string, 'null'], format: date-time, description: null — до снятия модерацией }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /admin/accounts/{accountId}/restrictions:
+    parameters:
+      - { $ref: '#/components/parameters/AccountId' }
+    get:
+      tags: [admin]
+      summary: История ограничений аккаунта (новые первыми)
+      description: 'Роли: MODERATOR или ADMIN. 404 ACCOUNT_NOT_FOUND.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Restriction' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { $ref: '#/components/responses/Error' }
+    post:
+      tags: [admin]
+      summary: Ручное ограничение
+      description: 'Роли: MODERATOR или ADMIN. reason = MANUAL. SUSPENDED удаляет все лайки аккаунта и закрывает мэтчи. 409 ACCOUNT_DELETED.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind: { $ref: '#/components/schemas/RestrictionKind' }
+                hours: { type: integer, minimum: 1, maximum: 87600, description: Не задано — до снятия }
+                note: { type: string, maxLength: 1000 }
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Restriction' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+
+  /admin/restrictions/{restrictionId}/lift:
+    post:
+      tags: [admin]
+      summary: Снять ограничение
+      description: 'Роль: ADMIN. Удалённые лайки не возвращаются. 404 RESTRICTION_NOT_FOUND, 409 RESTRICTION_NOT_ACTIVE.'
+      parameters:
+        - { name: restrictionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string, maxLength: 1000 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Restriction' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+
+  /admin/sanction-policy:
+    get:
+      tags: [admin]
+      summary: Политика санкций по причинам жалоб
+      description: 'Роли: MODERATOR или ADMIN.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/SanctionPolicy' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+
+  /admin/sanction-policy/{reason}:
+    put:
+      tags: [admin]
+      summary: Изменить политику для причины
+      description: 'Роль: ADMIN. reason — причина жалобы (без учёта регистра), иначе 400 VALIDATION_ERROR. Пишется в аудит (SANCTION_POLICY).'
+      parameters:
+        - { name: reason, in: path, required: true, schema: { $ref: '#/components/schemas/ReportReason' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [windowDays, steps]
+              properties:
+                windowDays: { type: integer, minimum: 1, maximum: 3650 }
+                holdOnReports: { type: [integer, 'null'], minimum: 1, maximum: 100 }
+                steps: { type: array, minItems: 1, maxItems: 20, items: { $ref: '#/components/schemas/SanctionStep' } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SanctionPolicy' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
 
   /admin/tags:
     get:
@@ -2817,6 +2956,7 @@ components:
           description: Подтверждённое нарушение (null, пока нет решения, и при REJECTED)
           oneOf: [ { $ref: '#/components/schemas/ReportReason' }, { type: 'null' } ]
         decision: { type: [string, 'null'], enum: [ACCEPTED, RECLASSIFIED, REJECTED, null] }
+        sanctioned: { type: boolean, description: Политика санкций применена }
         comment: { type: [string, 'null'] }
         messageId: { type: [string, 'null'], format: uuid }
         messageSnapshot: { type: [string, 'null'] }
@@ -2829,6 +2969,54 @@ components:
         moderatorAccountId: { type: [string, 'null'], format: uuid }
         moderatorNote: { type: [string, 'null'] }
         decidedAt: { type: [string, 'null'], format: date-time }
+
+    RestrictionKind:
+      type: string
+      enum: [LIKES, MESSAGES, HIDDEN, SUSPENDED, VERIFICATION_REQUIRED]
+      description: |
+        LIKES — нельзя лайкать; MESSAGES — нельзя писать; HIDDEN — анкета вне ленты и вне «вас лайкнули» у всех;
+        SUSPENDED — вход закрыт, при выдаче удаляются все лайки аккаунта (пропадают из «вас лайкнули» у получателей)
+        и закрываются мэтчи; VERIFICATION_REQUIRED — скрыт, пока модератор не снимет.
+
+    Restriction:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        kind: { $ref: '#/components/schemas/RestrictionKind' }
+        reason: { type: string, description: 'Причина жалобы или код правила: LIKE_SPAM, REVIEW_HOLD, MANUAL' }
+        source: { type: string, enum: [MODERATOR, RULE, ADMIN] }
+        reportId: { type: [string, 'null'], format: uuid }
+        createdBy: { type: [string, 'null'], format: uuid }
+        note: { type: [string, 'null'] }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: [string, 'null'], format: date-time, description: null — до снятия }
+        liftedAt: { type: [string, 'null'], format: date-time }
+        liftedBy: { type: [string, 'null'], format: uuid }
+        liftNote: { type: [string, 'null'] }
+
+    SanctionStep:
+      type: object
+      required: [restrictions]
+      properties:
+        restrictions:
+          type: array
+          maxItems: 5
+          items:
+            type: object
+            required: [kind]
+            properties:
+              kind: { $ref: '#/components/schemas/RestrictionKind' }
+              hours: { type: [integer, 'null'], minimum: 1, maximum: 87600, description: null — до снятия }
+
+    SanctionPolicy:
+      type: object
+      description: (n+1)-е санкционированное нарушение причины за windowDays получает steps[n]; последний шаг повторяется.
+      properties:
+        reason: { $ref: '#/components/schemas/ReportReason' }
+        windowDays: { type: integer }
+        holdOnReports: { type: [integer, 'null'], description: Скрыть анкету, пока столько разных людей держат открытые жалобы с этой причиной }
+        steps: { type: array, items: { $ref: '#/components/schemas/SanctionStep' } }
 
     ModerationPage:
       type: object

@@ -1,0 +1,96 @@
+databaseChangeLog:
+  # Sanctions: what an account may not do and until when. The source of truth for moderation effects;
+  # accounts.status (SUSPENDED) and profiles.visibility_status (HIDDEN) are derived from active rows.
+  - changeSet:
+      id: 015-account-restrictions
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE account_restrictions (
+                id          UUID PRIMARY KEY,
+                account_id  UUID NOT NULL REFERENCES accounts (id),
+                kind        VARCHAR(30) NOT NULL
+                            CHECK (kind IN ('LIKES', 'MESSAGES', 'HIDDEN', 'SUSPENDED', 'VERIFICATION_REQUIRED')),
+                reason      VARCHAR(40) NOT NULL,
+                source      VARCHAR(20) NOT NULL CHECK (source IN ('MODERATOR', 'RULE', 'ADMIN')),
+                report_id   UUID REFERENCES reports (id) ON DELETE SET NULL,
+                created_by  UUID REFERENCES accounts (id),
+                note        VARCHAR(1000),
+                starts_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                ends_at     TIMESTAMP WITH TIME ZONE,
+                lifted_at   TIMESTAMP WITH TIME ZONE,
+                lifted_by   UUID REFERENCES accounts (id),
+                lift_note   VARCHAR(1000),
+                CHECK (ends_at IS NULL OR ends_at > starts_at)
+              )
+        - sql:
+            sql: CREATE INDEX idx_restrictions_active ON account_restrictions (account_id, kind) WHERE lifted_at IS NULL
+        - sql:
+            sql: CREATE INDEX idx_restrictions_expiry ON account_restrictions (ends_at) WHERE lifted_at IS NULL AND ends_at IS NOT NULL
+      rollback:
+        - sql:
+            sql: DROP TABLE account_restrictions
+
+  # Consequences per (final) report reason. steps[n] applies to the (n+1)-th sanctioned violation of that reason
+  # within window_days; past the end the last step repeats. SUSPENDED always also removes the account's likes
+  # and closes its matches. hold_on_reports: hide the profile while that many
+  # different people have open reports with this reason (null = never).
+  - changeSet:
+      id: 015-sanction-policy
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE sanction_policy (
+                reason          VARCHAR(30) PRIMARY KEY,
+                window_days     INT NOT NULL CHECK (window_days BETWEEN 1 AND 3650),
+                hold_on_reports INT CHECK (hold_on_reports BETWEEN 1 AND 100),
+                steps           JSONB NOT NULL,
+                updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                updated_by      UUID REFERENCES accounts (id)
+              )
+        - sql:
+            sql: >
+              INSERT INTO sanction_policy (reason, window_days, hold_on_reports, steps) VALUES
+              ('UNDERAGE', 3650, 1, '[{"restrictions": [{"kind": "SUSPENDED"}]}]'),
+              ('SCAM', 3650, 2, '[{"restrictions": [{"kind": "SUSPENDED"}]}]'),
+              ('HARASSMENT', 365, NULL, '[{"restrictions": [{"kind": "MESSAGES", "hours": 168}]},
+                {"restrictions": [{"kind": "SUSPENDED"}]}]'),
+              ('FAKE_PROFILE', 365, NULL, '[{"restrictions": [{"kind": "VERIFICATION_REQUIRED"}]},
+                {"restrictions": [{"kind": "SUSPENDED"}]}]'),
+              ('INAPPROPRIATE_CONTENT', 90, NULL, '[{"restrictions": []}, {"restrictions": []},
+                {"restrictions": [{"kind": "HIDDEN", "hours": 168}]}]'),
+              ('SPAM', 30, NULL, '[{"restrictions": [{"kind": "LIKES", "hours": 1}, {"kind": "MESSAGES", "hours": 1}]},
+                {"restrictions": [{"kind": "LIKES", "hours": 2}, {"kind": "MESSAGES", "hours": 2}]},
+                {"restrictions": [{"kind": "LIKES", "hours": 4}, {"kind": "MESSAGES", "hours": 4}]},
+                {"restrictions": [{"kind": "LIKES", "hours": 8}, {"kind": "MESSAGES", "hours": 8}]},
+                {"restrictions": [{"kind": "LIKES", "hours": 16}, {"kind": "MESSAGES", "hours": 16}]},
+                {"restrictions": [{"kind": "LIKES", "hours": 32}, {"kind": "MESSAGES", "hours": 32}]},
+                {"restrictions": [{"kind": "LIKES", "hours": 64}, {"kind": "MESSAGES", "hours": 64}]},
+                {"restrictions": [{"kind": "LIKES", "hours": 128}, {"kind": "MESSAGES", "hours": 128}]},
+                {"restrictions": [{"kind": "LIKES", "hours": 168}, {"kind": "MESSAGES", "hours": 168}]}]'),
+              ('OTHER', 365, NULL, '[{"restrictions": []}]')
+      rollback:
+        - sql:
+            sql: DROP TABLE sanction_policy
+
+  - changeSet:
+      id: 015-report-sanctioned-and-match-close
+      author: dating-team
+      changes:
+        - sql:
+            sql: ALTER TABLE reports ADD COLUMN sanctioned BOOLEAN NOT NULL DEFAULT FALSE
+        - sql:
+            sql: CREATE INDEX idx_reports_escalation ON reports (reported_account_id, final_reason, decided_at) WHERE sanctioned
+        - sql:
+            sql: >
+              ALTER TABLE matches DROP CONSTRAINT matches_close_reason_check,
+                ADD CONSTRAINT matches_close_reason_check CHECK (close_reason IN ('UNMATCH', 'BLOCK', 'MODERATION'))
+      rollback:
+        - sql:
+            sql: >
+              ALTER TABLE matches DROP CONSTRAINT matches_close_reason_check,
+                ADD CONSTRAINT matches_close_reason_check CHECK (close_reason IN ('UNMATCH', 'BLOCK'));
+              DROP INDEX idx_reports_escalation;
+              ALTER TABLE reports DROP COLUMN sanctioned

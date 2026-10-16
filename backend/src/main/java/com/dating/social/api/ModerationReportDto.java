@@ -13,6 +13,7 @@ import java.util.UUID;
  * @param finalReason                  confirmed violation (ACCEPTED: = reason, RECLASSIFIED: differs, else null)
  * @param reportedDisplayName          null when the profile is gone (e.g. the account was deleted)
  * @param reportedConfirmedViolations  reports against the same account that moderators confirmed
+ * @param sanctioned                   the sanction policy was applied for this report
  */
 public record ModerationReportDto(
         UUID id,
@@ -20,6 +21,7 @@ public record ModerationReportDto(
         ReportReason reason,
         ReportReason finalReason,
         ReportDecision decision,
+        boolean sanctioned,
         String comment,
         UUID messageId,
         String messageSnapshot,

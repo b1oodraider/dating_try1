@@ -22,6 +22,7 @@ public class MatchService {
 
     static final String CLOSED_BY_UNMATCH = "UNMATCH";
     static final String CLOSED_BY_BLOCK = "BLOCK";
+    static final String CLOSED_BY_MODERATION = "MODERATION";
 
     private final SocialRepository repository;
     private final ApplicationEventPublisher eventPublisher;
@@ -96,6 +97,14 @@ public class MatchService {
         MatchInfo match = requireActive(matchId, me);
         close(match, me, CLOSED_BY_UNMATCH);
         productEvents.publish("match_unmatched", Map.of());
+    }
+
+    /** Moderation (a ban): closes every active match of the account; the others get match_closed. */
+    @Transactional
+    public void closeAllOf(UUID accountId) {
+        for (MatchInfo match : repository.activeMatchesOf(accountId)) {
+            close(match, accountId, CLOSED_BY_MODERATION);
+        }
     }
 
     void closeActiveBetween(UUID a, UUID b, UUID closedBy, String reason) {

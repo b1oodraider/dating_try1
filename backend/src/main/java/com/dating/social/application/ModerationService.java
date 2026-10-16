@@ -4,6 +4,9 @@ import com.dating.admin.application.AdminAuditLog;
 import com.dating.common.errors.ApiException;
 import com.dating.common.security.Role;
 import com.dating.common.security.RoleAccess;
+import com.dating.media.application.MediaService;
+import com.dating.profiles.application.ProfileService;
+import com.dating.safety.application.SanctionService;
 import com.dating.social.api.ModerationPageDto;
 import com.dating.social.api.ModerationReportDto;
 import com.dating.social.api.ReportDecisionRequest;
@@ -21,7 +24,8 @@ import java.util.UUID;
 
 /**
  * Moderator queue for reports: a report is ACCEPTED (violation as reported), RECLASSIFIED (a violation of
- * another kind) or REJECTED. A decision records the verdict only; sanctions are not applied here.
+ * another kind) or REJECTED. A confirmed violation gets the sanction of its final reason (sanction_policy,
+ * escalating with repeats) and may remove the offending photos / texts.
  */
 @Service
 public class ModerationService {
@@ -33,11 +37,18 @@ public class ModerationService {
     private final ModerationRepository repository;
     private final RoleAccess roleAccess;
     private final AdminAuditLog auditLog;
+    private final SanctionService sanctionService;
+    private final MediaService mediaService;
+    private final ProfileService profileService;
 
-    public ModerationService(ModerationRepository repository, RoleAccess roleAccess, AdminAuditLog auditLog) {
+    public ModerationService(ModerationRepository repository, RoleAccess roleAccess, AdminAuditLog auditLog,
+                             SanctionService sanctionService, MediaService mediaService, ProfileService profileService) {
         this.repository = repository;
         this.roleAccess = roleAccess;
         this.auditLog = auditLog;
+        this.sanctionService = sanctionService;
+        this.mediaService = mediaService;
+        this.profileService = profileService;
     }
 
     /**
@@ -61,8 +72,9 @@ public class ModerationService {
     }
 
     /**
-     * @throws ApiException 404 REPORT_NOT_FOUND, 409 REPORT_ALREADY_DECIDED,
-     *                      400 VALIDATION_ERROR (reason missing/unchanged for RECLASSIFIED, given otherwise)
+     * @throws ApiException 404 REPORT_NOT_FOUND, 409 REPORT_ALREADY_DECIDED, 404 PHOTO_NOT_FOUND (not a photo of
+     *                      the reported profile), 400 VALIDATION_ERROR (reason missing/unchanged for RECLASSIFIED,
+     *                      given otherwise; content removal with REJECTED)
      */
     @Transactional
     public ModerationReportDto decide(UUID actor, UUID reportId, ReportDecisionRequest request) {
@@ -75,7 +87,25 @@ public class ModerationService {
         ReportReason finalReason = finalReason(request, before.reason());
         String status = request.decision() == ReportDecision.REJECTED ? "DISMISSED" : "RESOLVED";
         String note = request.note() == null || request.note().isBlank() ? null : request.note().trim();
+        if (request.decision() == ReportDecision.REJECTED && request.removesContent()) {
+            throw ApiException.validation("VALIDATION_ERROR", "Отклонённая жалоба не удаляет контент",
+                    Map.of("decision", "Контент удаляют только при подтверждённом нарушении"));
+        }
         repository.decide(reportId, request.decision(), status, finalReason, actor, note, Instant.now());
+
+        UUID reported = before.reportedAccountId();
+        if (finalReason != null) {
+            if (request.removePhotoIds() != null) {
+                request.removePhotoIds().forEach(photoId -> mediaService.deletePhoto(reported, photoId));
+            }
+            if (request.clearsAboutText() || request.clearsDailyStatus()) {
+                profileService.clearTextsByModeration(reported, request.clearsAboutText(), request.clearsDailyStatus());
+            }
+            if (request.applySanction()) {
+                sanctionService.applyReportSanction(reported, reportId, finalReason.name(), actor);
+            }
+        }
+        sanctionService.syncReviewHold(reported);
         ModerationReportDto after = find(reportId);
         auditLog.record(actor, request.decision().name(), "REPORT", reportId.toString(), before, after);
         return after;
