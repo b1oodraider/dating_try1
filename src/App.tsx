@@ -13,6 +13,9 @@ import { RestrictionsBanner } from './features/safety/components/RestrictionsBan
 import { Button } from './shared/components/Button';
 import { WifiOff, MessageCircle } from 'lucide-react';
 import { api } from './core/api/client';
+import type { Match } from './core/types';
+import { RealtimeProvider, useRealtime } from './core/realtime/RealtimeContext';
+import { ToastProvider } from './shared/components/Toast';
 
 const AppContent: React.FC = () => {
   const { account, isLoading, loadError, reloadSession, forgetSession, refreshProfile } = useAuth();
@@ -28,25 +31,27 @@ const AppContent: React.FC = () => {
   const [activeChatMatchId, setActiveChatMatchId] = useState<string | null>(null);
   const [unreadChatsCount, setUnreadChatsCount] = useState(0);
 
-  const loadUnreadMatches = useCallback(async () => {
-    if (!account) {
+  const accountId = account?.id ?? null;
+  const countUnread = useCallback((matches: Match[]) => {
+    setUnreadChatsCount(matches.filter((m) => m.unreadCount > 0).length);
+  }, []);
+
+  const loadUnreadMatches = useCallback(() => {
+    if (!accountId) {
       setUnreadChatsCount(0);
       return;
     }
-    try {
-      const matches = await api.listMatches();
-      const count = matches.reduce((sum, m) => sum + (m.unreadCount > 0 ? 1 : 0), 0);
-      setUnreadChatsCount(count);
-    } catch {
-      // ignore
-    }
-  }, [account]);
+    api.listMatches().then(countUnread).catch(() => {
+      // the badge is best effort
+    });
+  }, [accountId, countUnread]);
 
-  useEffect(() => {
-    void loadUnreadMatches();
-    const interval = setInterval(loadUnreadMatches, 10000);
-    return () => clearInterval(interval);
-  }, [loadUnreadMatches]);
+  useEffect(loadUnreadMatches, [loadUnreadMatches]);
+
+  // The open chat screen reports its own list (onMatchesChanged); elsewhere refresh the badge on chat events.
+  useRealtime((event) => {
+    if (currentTab !== 'chats' && event.name !== 'like_received') loadUnreadMatches();
+  });
 
   const handleEconomyChanged = useCallback(() => {
     setEconomyRevision((r) => r + 1);
@@ -94,7 +99,7 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-stone-100/60 text-zinc-900 flex flex-col font-sans selection:bg-rose-100 selection:text-rose-900">
+    <div className="min-h-screen bg-stone-50 text-zinc-900 flex flex-col font-sans selection:bg-rose-100 selection:text-rose-900">
       {/* Account Restrictions Banner (if any) */}
       <RestrictionsBanner />
 
@@ -123,6 +128,7 @@ const AppContent: React.FC = () => {
             <ChatView
               initialMatchId={activeChatMatchId}
               onSelectMatchId={(id) => setActiveChatMatchId(id)}
+              onMatchesChanged={countUnread}
             />
           ) : (
             <div className="max-w-md mx-auto text-center py-16 space-y-4">
@@ -206,13 +212,13 @@ const AppContent: React.FC = () => {
   );
 };
 
-import { ToastProvider } from './shared/components/Toast';
-
 export default function App() {
   return (
     <ToastProvider>
       <AuthProvider>
-        <AppContent />
+        <RealtimeProvider>
+          <AppContent />
+        </RealtimeProvider>
       </AuthProvider>
     </ToastProvider>
   );

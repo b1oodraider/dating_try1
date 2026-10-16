@@ -23,6 +23,8 @@ interface ProfileDetailModalProps {
   onLike?: (profile: PublicProfile) => void;
   onSuperlike?: (profile: PublicProfile) => void;
   onPass?: (profile: PublicProfile) => void;
+  /** After a successful block (the profile is gone from the feed and chats). */
+  onBlocked?: (profile: PublicProfile) => void;
 }
 
 export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
@@ -32,7 +34,9 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
   onLike,
   onSuperlike,
   onPass,
+  onBlocked,
 }) => {
+  const { showToast } = useToast();
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
   const [isReportOpen, setIsReportOpen] = useState(false);
 
@@ -43,7 +47,6 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
 
   if (!profile) return null;
 
-  const { showToast } = useToast();
   const photos = profile.photos ?? [];
   const tags = profile.tags ?? [];
   const currentPhoto = photos[activePhotoIdx] ?? photos[0];
@@ -55,7 +58,7 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
       await api.blockProfile(profile.id);
       showToast(`Пользователь ${profile.displayName} заблокирован`, 'success');
       onClose();
-      onPass?.(profile);
+      onBlocked?.(profile);
     } catch (e) {
       showToast(getErrorMessage(e, 'Не удалось заблокировать'), 'error');
     }

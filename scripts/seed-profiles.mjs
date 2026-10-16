@@ -206,13 +206,13 @@ async function login(client, opts) {
     if (err instanceof ApiError && err.status === 403) {
       throw new Fatal(
         `Номер ${opts.phone} не тестовый аккаунт (${err.code}). Укажите номер из списка тестовых ` +
-          '(APP_TESTING_TEST_PHONES на сервере, MOCK_TEST_PHONES в мок-сервере) через --phone.'
+          '(APP_TESTING_TEST_PHONES на сервере) через --phone.'
       );
     }
     if (err instanceof ApiError && err.status === 404) {
       throw new Fatal(
         'Тестовый API выключен на сервере (GET /testing/state вернул 404). ' +
-          'Запустите backend с APP_TESTING_ENABLED=true (или используйте мок: npm run dev:mock).'
+          'Запустите backend с APP_TESTING_ENABLED=true.'
       );
     }
     if (err instanceof ApiError) throw new Fatal(`Тестовый API недоступен: ${err.message}`);

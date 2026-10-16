@@ -37,8 +37,16 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successNote, setSuccessNote] = useState<string | null>(null);
 
+  const close = () => {
+    setSuccessNote(null);
+    setComment('');
+    setError(null);
+    onClose();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setIsSubmitting(true);
     setError(null);
     try {
@@ -54,12 +62,6 @@ export const ReportModal: React.FC<ReportModalProps> = ({
       } else {
         setSuccessNote('Жалоба отправлена на рассмотрение модераторам.');
       }
-
-      setTimeout(() => {
-        setSuccessNote(null);
-        setComment('');
-        onClose();
-      }, 2500);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -70,7 +72,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={close}
       title={`Пожаловаться на ${profileName}`}
       description="Модераторы проверят профиль на соответствие правилам сообщества"
       maxWidth="md"
@@ -82,6 +84,9 @@ export const ReportModal: React.FC<ReportModalProps> = ({
           </div>
           <h3 className="text-sm font-bold text-zinc-900">Спасибо за сигнал</h3>
           <p className="text-xs text-zinc-600 max-w-sm mx-auto leading-relaxed">{successNote}</p>
+          <Button type="button" variant="outline" size="sm" onClick={close}>
+            Готово
+          </Button>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -136,7 +141,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
           </div>
 
           <div className="flex gap-2 justify-end pt-2">
-            <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={isSubmitting}>
+            <Button type="button" variant="outline" size="sm" onClick={close} disabled={isSubmitting}>
               Отмена
             </Button>
             <Button type="submit" variant="danger" size="sm" isLoading={isSubmitting}>

@@ -496,9 +496,8 @@ export interface ReportResponse {
   note: string | null;
 }
 
+/** GET /me/restrictions item. */
 export interface Restriction {
-  id: string;
-  accountId: string;
   kind: 'LIKES' | 'MESSAGES' | 'HIDDEN' | 'SUSPENDED' | 'VERIFICATION_REQUIRED';
   reason: string;
   startsAt: string;

@@ -19,16 +19,6 @@ const ToastContext = createContext<ToastContextValue>({
 
 export const useToast = () => useContext(ToastContext);
 
-// Global fallback for standalone calls if needed
-let globalShowToast: ((msg: string, type?: ToastType) => void) | null = null;
-export const notify = (message: string, type: ToastType = 'info') => {
-  if (globalShowToast) {
-    globalShowToast(message, type);
-  } else {
-    console.log(`[Toast ${type}] ${message}`);
-  }
-};
-
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
@@ -46,8 +36,6 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     },
     [removeToast]
   );
-
-  globalShowToast = showToast;
 
   return (
     <ToastContext.Provider value={{ showToast }}>

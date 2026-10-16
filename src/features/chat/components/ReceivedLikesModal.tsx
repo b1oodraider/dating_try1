@@ -1,10 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Modal } from '../../../shared/components/Modal';
 import { Button } from '../../../shared/components/Button';
-import { api, getErrorMessage } from '../../../core/api/client';
+import { api, ApiError, getErrorMessage } from '../../../core/api/client';
 import type { ReceivedLike, PublicProfile } from '../../../core/types';
 import { Heart, Star, Crown, Frown, Sparkles, Check, X } from 'lucide-react';
 import { useToast } from '../../../shared/components/Toast';
+
+/** Contract maximum for one page. */
+const PAGE_SIZE = 50;
 
 interface ReceivedLikesModalProps {
   isOpen: boolean;
@@ -21,6 +24,7 @@ export const ReceivedLikesModal: React.FC<ReceivedLikesModalProps> = ({
   const [likes, setLikes] = useState<ReceivedLike[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPremiumRequired, setIsPremiumRequired] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -30,15 +34,14 @@ export const ReceivedLikesModal: React.FC<ReceivedLikesModalProps> = ({
     setError(null);
     setIsPremiumRequired(false);
     try {
-      const data = await api.getReceivedLikes(0, 30);
+      const data = await api.getReceivedLikes(0, PAGE_SIZE);
       setLikes(data.items);
       setTotal(data.totalElements);
     } catch (err: unknown) {
-      const msg = getErrorMessage(err);
-      if (msg.includes('Премиум') || (typeof err === 'object' && err !== null && 'code' in err && (err as { code: string }).code === 'PREMIUM_REQUIRED')) {
+      if (err instanceof ApiError && err.isPremiumRequired) {
         setIsPremiumRequired(true);
       } else {
-        setError(msg);
+        setError(getErrorMessage(err));
       }
     } finally {
       setIsLoading(false);
@@ -50,6 +53,26 @@ export const ReceivedLikesModal: React.FC<ReceivedLikesModalProps> = ({
       void loadLikes();
     }
   }, [isOpen, loadLikes]);
+
+  /**
+   * Answered likes leave the server's list too, so the likes still shown are exactly its first entries: the page
+   * holding entry likes.length overlaps them a little (deduplicated) and skips nothing.
+   */
+  const loadMore = async () => {
+    setIsLoadingMore(true);
+    try {
+      const data = await api.getReceivedLikes(Math.floor(likes.length / PAGE_SIZE), PAGE_SIZE);
+      setLikes((prev) => {
+        const known = new Set(prev.map((l) => l.profile.id));
+        return [...prev, ...data.items.filter((l) => !known.has(l.profile.id))];
+      });
+      setTotal(data.totalElements);
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error');
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   const handleLikeBack = async (profile: PublicProfile) => {
     setProcessingId(profile.id);
@@ -194,6 +217,13 @@ export const ReceivedLikesModal: React.FC<ReceivedLikesModalProps> = ({
                 </div>
               );
             })}
+            {likes.length < total && (
+              <div className="sm:col-span-2 text-center pt-1">
+                <Button type="button" variant="outline" size="sm" onClick={() => void loadMore()} isLoading={isLoadingMore}>
+                  Показать ещё
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>

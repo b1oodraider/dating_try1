@@ -13,11 +13,11 @@ import {
   type DiscoveryFilterState,
 } from '../filterStorage';
 import { lockedFeaturesOf } from '../../premium/premium';
-import { ProfileFeedCard } from './ProfileFeedCard';
 import { ProfileDetailModal } from './ProfileDetailModal';
 import { SwipeDeck } from './SwipeDeck';
 import { MatchModal } from '../../chat/components/MatchModal';
 import { ReceivedLikesModal } from '../../chat/components/ReceivedLikesModal';
+import { useRealtime } from '../../../core/realtime/RealtimeContext';
 import {
   Frown,
   LogIn,
@@ -28,13 +28,18 @@ import {
   Lock,
   Heart,
   Rocket,
-  Sparkles,
-  Layers,
-  LayoutGrid,
 } from 'lucide-react';
 import { Button } from '../../../shared/components/Button';
 
-const PAGE_SIZE = 12;
+const PAGE_SIZE = 20;
+/** Fetch more when this few cards are left. */
+const REFILL_AT = 5;
+/** Views are sent in batches (contract: when cards leave the screen). */
+const VIEWS_BATCH = 10;
+const MAX_DWELL_MS = 3_600_000;
+
+type Reaction = 'like' | 'superlike' | 'pass';
+type ProfileView = { profileId: string; dwellMs: number; openedDetails: boolean };
 
 interface DiscoveryFeedProps {
   onRequestAuth: () => void;
@@ -53,9 +58,13 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
 
   const { showToast } = useToast();
   const [profiles, setProfiles] = useState<PublicProfile[]>([]);
-  const [page, setPage] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
   const [totalElements, setTotalElements] = useState(0);
+  /** The server had nothing beyond the cards already in the deck. */
+  const [exhausted, setExhausted] = useState(false);
+  /** Reactions still in flight: the next refill waits for them, so the server already hides those profiles. */
+  const [pendingReactions, setPendingReactions] = useState(0);
+  /** Profiles reacted to in this session, never shown again even if a response raced the reaction. */
+  const reactedRef = useRef(new Set<string>());
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +72,6 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
 
   const [activeProfileModal, setActiveProfileModal] = useState<PublicProfile | null>(null);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<'swipe' | 'grid'>('swipe');
 
   // Social Features (Matches, Received Likes, Boost)
   const [matchedProfile, setMatchedProfile] = useState<PublicProfile | null>(null);
@@ -72,7 +80,6 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
   const [likesCount, setLikesCount] = useState<ReceivedLikesCount | null>(null);
   const [boostStatus, setBoostStatus] = useState<BoostStatus | null>(null);
   const [isActivatingBoost, setIsActivatingBoost] = useState(false);
-  const [reactionProcessingId, setReactionProcessingId] = useState<string | null>(null);
 
   /** Filters of the "Фильтры" modal, persisted per account (survive reloads and re-login). */
   const [filtersOwner, setFiltersOwner] = useState(accountId);
@@ -123,6 +130,17 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
   useEffect(() => {
     void loadSocialCounters();
   }, [loadSocialCounters, revision]);
+
+  useRealtime((event) => {
+    if (event.name === 'like_received') {
+      setLikesCount((prev) => ({
+        count: event.data.count,
+        superlikeCount: (prev?.superlikeCount ?? 0) + (event.data.superlike ? 1 : 0),
+      }));
+    } else if (event.name === 'ready') {
+      void loadSocialCounters();
+    }
+  });
 
   // Wallet load
   const walletRevisionRef = useRef<number | null>(null);
@@ -175,8 +193,12 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
 
   const controllerRef = useRef<AbortController | null>(null);
 
+  /**
+   * append = false: a fresh deck. append = true: refill. Paging by offset would skip profiles, because every reaction
+   * removes one from the server's result; so a refill asks for page 0 again and keeps only unseen profiles.
+   */
   const fetchPage = useCallback(
-    async (pageToLoad: number, append: boolean) => {
+    async (append: boolean) => {
       controllerRef.current?.abort();
       const controller = new AbortController();
       controllerRef.current = controller;
@@ -188,6 +210,7 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
         setIsLoading(true);
         setError(null);
         setLoadMoreError(null);
+        setExhausted(false);
       }
 
       try {
@@ -201,28 +224,23 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
             minHeight: query.minHeight,
             maxHeight: query.maxHeight,
             goalCodes: query.goalCodes,
-            page: pageToLoad,
+            page: 0,
             limit: PAGE_SIZE,
           },
           controller.signal
         );
         if (controller.signal.aborted) return;
 
+        const fresh = result.items.filter((p) => !reactedRef.current.has(p.id));
         setProfiles((prev) => {
-          if (!append) return result.items;
+          if (!append) return fresh;
           const seen = new Set(prev.map((p) => p.id));
-          return [...prev, ...result.items.filter((p) => !seen.has(p.id))];
+          const added = fresh.filter((p) => !seen.has(p.id));
+          if (added.length === 0) setExhausted(true);
+          return [...prev, ...added];
         });
-        setPage(result.page);
-        setTotalPages(result.totalPages);
+        if (!append && result.totalElements <= fresh.length) setExhausted(true);
         setTotalElements(result.totalElements);
-
-        // Record profile views for like-spam / ranking telemetry
-        if (result.items.length > 0) {
-          void api.sendProfileViews(
-            result.items.slice(0, 5).map((p) => ({ profileId: p.id, dwellMs: 1200 }))
-          ).catch(() => {});
-        }
       } catch (e: unknown) {
         if (controller.signal.aborted || isAbortError(e)) return;
         if (e instanceof ApiError && e.isPremiumRequired) {
@@ -252,63 +270,116 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
       controllerRef.current?.abort();
       setProfiles([]);
       setTotalElements(0);
-      setTotalPages(0);
+      reactedRef.current.clear();
       setIsLoading(false);
       return;
     }
-    void fetchPage(0, false);
+    void fetchPage(false);
     return () => {
       controllerRef.current?.abort();
     };
   }, [accountId, fetchPage, feedNonce]);
 
-  // Reaction Handlers: Like, Superlike, Pass
-  const handleLike = async (target: PublicProfile) => {
-    setReactionProcessingId(target.id);
+  useEffect(() => {
+    if (
+      profiles.length <= REFILL_AT &&
+      !exhausted &&
+      pendingReactions === 0 &&
+      !isLoading &&
+      !isLoadingMore &&
+      !loadMoreError &&
+      !error
+    ) {
+      void fetchPage(true);
+    }
+  }, [profiles.length, exhausted, pendingReactions, isLoading, isLoadingMore, loadMoreError, error, fetchPage]);
+
+  // ---- Views for the like-spam rule: real time on screen of the top card (+ details), sent in batches.
+  const topId = profiles[0]?.id ?? null;
+  const viewRef = useRef<{ profileId: string; startedAt: number; openedDetails: boolean } | null>(null);
+  const viewBuffer = useRef<ProfileView[]>([]);
+
+  const flushViews = useCallback(() => {
+    const views = viewBuffer.current.splice(0);
+    if (views.length > 0) api.sendProfileViews(views).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    viewRef.current = topId ? { profileId: topId, startedAt: Date.now(), openedDetails: false } : null;
+  }, [topId]);
+
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') flushViews();
+    };
+    document.addEventListener('visibilitychange', onHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      flushViews();
+    };
+  }, [flushViews]);
+
+  const recordView = (profileId: string) => {
+    const view = viewRef.current;
+    if (!view || view.profileId !== profileId) return;
+    viewRef.current = null;
+    viewBuffer.current.push({
+      profileId,
+      dwellMs: Math.min(MAX_DWELL_MS, Date.now() - view.startedAt),
+      openedDetails: view.openedDetails,
+    });
+    if (viewBuffer.current.length >= VIEWS_BATCH) flushViews();
+  };
+
+  const openDetails = (profile: PublicProfile) => {
+    if (viewRef.current?.profileId === profile.id) viewRef.current.openedDetails = true;
+    setActiveProfileModal(profile);
+  };
+
+  /** Removes the card from the deck at once; the request runs in the background and a failure puts the card back. */
+  const removeCard = (target: PublicProfile) => {
+    reactedRef.current.add(target.id);
+    setProfiles((prev) => prev.filter((p) => p.id !== target.id));
+    setTotalElements((t) => Math.max(0, t - 1));
+  };
+
+  const react = async (kind: Reaction, target: PublicProfile) => {
+    recordView(target.id);
+    removeCard(target);
+    setPendingReactions((n) => n + 1);
     try {
-      const res = await api.likeProfile(target.id);
-      setProfiles((prev) => prev.filter((p) => p.id !== target.id));
-      setTotalElements((t) => Math.max(0, t - 1));
+      const res =
+        kind === 'like'
+          ? await api.likeProfile(target.id)
+          : kind === 'superlike'
+          ? await api.superlikeProfile(target.id, crypto.randomUUID())
+          : await api.passProfile(target.id);
       if (res.matched) {
         setMatchedProfile(target);
         setMatchId(res.matchId);
       }
     } catch (e) {
-      showToast(getErrorMessage(e, 'Не удалось поставить лайк'), 'error');
-    } finally {
-      setReactionProcessingId(null);
-    }
-  };
-
-  const handleSuperlike = async (target: PublicProfile) => {
-    setReactionProcessingId(target.id);
-    try {
-      const res = await api.superlikeProfile(target.id, crypto.randomUUID());
-      setProfiles((prev) => prev.filter((p) => p.id !== target.id));
-      setTotalElements((t) => Math.max(0, t - 1));
-      if (res.matched) {
-        setMatchedProfile(target);
-        setMatchId(res.matchId);
+      // The profile is gone (hidden, blocked, deleted): nothing to put back.
+      if (!(e instanceof ApiError && e.code === 'PROFILE_NOT_FOUND')) {
+        reactedRef.current.delete(target.id);
+        setProfiles((prev) => [target, ...prev.filter((p) => p.id !== target.id)]);
+        setTotalElements((t) => t + 1);
       }
-    } catch (e) {
-      showToast(getErrorMessage(e, 'Не удалось поставить суперлайк. Проверьте баланс в Кошельке.'), 'error');
+      const fallback =
+        kind === 'like'
+          ? 'Не удалось поставить лайк'
+          : kind === 'superlike'
+          ? 'Не удалось поставить суперлайк. Проверьте баланс в Кошельке.'
+          : 'Не удалось пропустить анкету';
+      showToast(getErrorMessage(e, fallback), 'error');
     } finally {
-      setReactionProcessingId(null);
+      setPendingReactions((n) => n - 1);
     }
   };
 
-  const handlePass = async (target: PublicProfile) => {
-    setReactionProcessingId(target.id);
-    try {
-      await api.passProfile(target.id);
-      setProfiles((prev) => prev.filter((p) => p.id !== target.id));
-      setTotalElements((t) => Math.max(0, t - 1));
-    } catch (e) {
-      showToast(getErrorMessage(e, 'Не удалось пропустить анкету'), 'error');
-    } finally {
-      setReactionProcessingId(null);
-    }
-  };
+  const handleLike = (target: PublicProfile) => void react('like', target);
+  const handleSuperlike = (target: PublicProfile) => void react('superlike', target);
+  const handlePass = (target: PublicProfile) => void react('pass', target);
 
   const handleActivateBoost = async () => {
     setIsActivatingBoost(true);
@@ -335,7 +406,6 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
     (savedListsInfo.excludedGoals > 0 ? 1 : 0) +
     (savedListsInfo.exclusionWords > 0 ? 1 : 0);
   const hasLockedFilters = advancedLocked && countAdvancedFilters(filters) > 0;
-  const hasMore = page + 1 < totalPages;
 
   if (!accountId) {
     return (
@@ -356,18 +426,18 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
   }
 
   return (
-    <div className="space-y-5 max-w-5xl mx-auto pb-12">
+    <div className="space-y-3 sm:space-y-5 max-w-5xl mx-auto pb-6 sm:pb-12">
       {/* Intro and Filters */}
       <div className="space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold text-zinc-900">Поиск анкет</h1>
-            <p className="text-xs text-zinc-500">
+            <p className="hidden sm:block text-xs text-zinc-500">
               Знакомьтесь с людьми, выбирая подходящий формат и ритм общения
             </p>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex items-center gap-2">
             {/* Boost Widget */}
             {boostStatus?.active ? (
               <span className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-300 text-amber-800 rounded-xl text-xs font-semibold shadow-2xs">
@@ -430,40 +500,8 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* View Mode Toggle: Cards Deck (Swipes) vs Grid */}
-            <div className="flex items-center p-0.5 bg-zinc-100 rounded-xl border border-zinc-200 text-xs">
-              <button
-                type="button"
-                onClick={() => setViewMode('swipe')}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-medium transition-all ${
-                  viewMode === 'swipe'
-                    ? 'bg-white text-zinc-900 shadow-2xs font-semibold'
-                    : 'text-zinc-500 hover:text-zinc-800'
-                }`}
-                title="Режим колоды карточек (свайпы как в Tinder / Twinby)"
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span>Свайпы</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('grid')}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-medium transition-all ${
-                  viewMode === 'grid'
-                    ? 'bg-white text-zinc-900 shadow-2xs font-semibold'
-                    : 'text-zinc-500 hover:text-zinc-800'
-                }`}
-                title="Режим сетки (список анкет)"
-              >
-                <LayoutGrid className="w-3.5 h-3.5" />
-                <span>Сетка</span>
-              </button>
-            </div>
-
-            <div className="text-xs text-zinc-400 font-mono">
-              Найдено: <strong className="text-zinc-800">{totalElements}</strong>
-            </div>
+          <div className="text-xs text-zinc-400 font-mono">
+            Найдено: <strong className="text-zinc-800">{totalElements}</strong>
           </div>
         </div>
 
@@ -478,7 +516,7 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
       {/* Cards Deck or Grid */}
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
-          <div className="w-[380px] h-[550px] bg-white rounded-3xl border border-zinc-200 p-6 space-y-4 animate-pulse flex flex-col justify-end shadow-sm">
+          <div className="w-full max-w-[420px] h-[clamp(380px,calc(100dvh-280px),620px)] bg-white rounded-3xl border border-zinc-200 p-6 space-y-4 animate-pulse flex flex-col justify-end shadow-sm">
             <div className="h-6 bg-zinc-200 rounded w-1/2" />
             <div className="h-4 bg-zinc-200 rounded w-1/3" />
             <div className="h-10 bg-zinc-200 rounded-xl w-full" />
@@ -492,12 +530,12 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
           <h3 className="text-base font-semibold text-zinc-900">Не удалось загрузить анкеты</h3>
           <p className="text-xs text-zinc-500 max-w-sm mx-auto">{error}</p>
           <div className="pt-2">
-            <Button variant="outline" size="sm" onClick={() => void fetchPage(0, false)}>
+            <Button variant="outline" size="sm" onClick={() => void fetchPage(false)}>
               Повторить
             </Button>
           </div>
         </div>
-      ) : profiles.length === 0 ? (
+      ) : profiles.length === 0 && reactedRef.current.size === 0 && !isLoadingMore ? (
         <div className="p-12 bg-white rounded-2xl border border-zinc-200/80 text-center space-y-3">
           <div className="w-12 h-12 bg-zinc-100 rounded-full flex items-center justify-center mx-auto text-zinc-400">
             <Frown className="w-6 h-6" />
@@ -514,56 +552,22 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
             </Button>
           </div>
         </div>
-      ) : viewMode === 'swipe' ? (
+      ) : (
         <SwipeDeck
           profiles={profiles}
           onLike={handleLike}
           onSuperlike={handleSuperlike}
           onPass={handlePass}
-          onOpenDetails={(p) => setActiveProfileModal(p)}
-          isProcessing={reactionProcessingId !== null}
-          onReset={() => void fetchPage(0, false)}
+          onOpenDetails={openDetails}
+          onReset={() => void fetchPage(false)}
           onOpenFilters={() => setIsFiltersOpen(true)}
-          hasMore={hasMore}
-          onNeedMore={() => {
-            if (hasMore && !isLoadingMore) void fetchPage(page + 1, true);
-          }}
+          isLoadingMore={isLoadingMore || (pendingReactions > 0 && !exhausted)}
+          loadMoreError={loadMoreError}
+          onRetryLoadMore={() => void fetchPage(true)}
+          keyboardDisabled={
+            !!activeProfileModal || isFiltersOpen || !!matchedProfile || isReceivedLikesOpen
+          }
         />
-      ) : (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {profiles.map((profile) => (
-              <ProfileFeedCard
-                key={profile.id}
-                profile={profile}
-                onOpenDetails={(p) => setActiveProfileModal(p)}
-                onLike={handleLike}
-                onSuperlike={handleSuperlike}
-                onPass={handlePass}
-                isProcessing={reactionProcessingId === profile.id}
-              />
-            ))}
-          </div>
-
-          {(hasMore || loadMoreError) && (
-            <div className="flex flex-col items-center gap-2 pt-2">
-              {loadMoreError && (
-                <p className="text-xs text-rose-600 flex items-center gap-1.5">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                  {loadMoreError}
-                </p>
-              )}
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void fetchPage(page + 1, true)}
-                isLoading={isLoadingMore}
-              >
-                {loadMoreError ? 'Повторить' : 'Показать ещё'}
-              </Button>
-            </div>
-          )}
-        </>
       )}
 
       {/* Discovery Filters Modal */}
@@ -575,7 +579,7 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
           advancedLocked={advancedLocked}
           wordsLocked={wordsLocked}
           onSavedListsInfo={handleSavedListsInfo}
-          onSavedListsChanged={() => void fetchPage(0, false)}
+          onSavedListsChanged={() => void fetchPage(false)}
           onPremiumRequired={handlePremiumRequired}
         />
       )}
@@ -588,6 +592,7 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
         onLike={handleLike}
         onSuperlike={handleSuperlike}
         onPass={handlePass}
+        onBlocked={removeCard}
       />
 
       {/* Mutual Match Modal */}

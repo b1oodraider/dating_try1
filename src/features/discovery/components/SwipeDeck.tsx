@@ -19,19 +19,28 @@ import {
   ChevronLeft,
   ChevronRight,
   MessageCircleHeart,
+  AlertCircle,
 } from 'lucide-react';
 
+/**
+ * Tinder-style deck: the top card is dragged right (like), left (pass) or up (super like), or the buttons / arrow keys
+ * are used. The reaction handlers take the card off the deck at once (the request runs in the background), so the
+ * next card is ready under the finger.
+ */
 interface SwipeDeckProps {
   profiles: PublicProfile[];
-  onLike: (profile: PublicProfile) => Promise<void> | void;
-  onSuperlike: (profile: PublicProfile) => Promise<void> | void;
-  onPass: (profile: PublicProfile) => Promise<void> | void;
+  onLike: (profile: PublicProfile) => void;
+  onSuperlike: (profile: PublicProfile) => void;
+  onPass: (profile: PublicProfile) => void;
   onOpenDetails: (profile: PublicProfile) => void;
-  isProcessing?: boolean;
   onReset?: () => void;
   onOpenFilters?: () => void;
-  hasMore?: boolean;
-  onNeedMore?: () => void;
+  /** More cards are being fetched (shown instead of "all viewed" when the deck ran dry). */
+  isLoadingMore?: boolean;
+  loadMoreError?: string | null;
+  onRetryLoadMore?: () => void;
+  /** A dialog is open over the deck: arrow keys and space must not swipe behind it. */
+  keyboardDisabled?: boolean;
 }
 
 type FlyOutDirection = 'left' | 'right' | 'up';
@@ -42,11 +51,12 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
   onSuperlike,
   onPass,
   onOpenDetails,
-  isProcessing = false,
   onReset,
   onOpenFilters,
-  hasMore = false,
-  onNeedMore,
+  isLoadingMore = false,
+  loadMoreError = null,
+  onRetryLoadMore,
+  keyboardDisabled = false,
 }) => {
   const currentProfile = profiles[0] ?? null;
   const nextProfile = profiles[1] ?? null;
@@ -61,6 +71,8 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
 
   // Flying out animation state
   const [flyOut, setFlyOut] = useState<{ id: string; direction: FlyOutDirection } | null>(null);
+  const flyOutTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(flyOutTimer.current), []);
 
   // Reset photo index when top profile changes
   useEffect(() => {
@@ -69,37 +81,31 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
     setIsDragging(false);
   }, [currentProfile?.id]);
 
-  // If cards are running low (<= 3), trigger pagination
-  useEffect(() => {
-    if (profiles.length <= 3 && hasMore && onNeedMore) {
-      onNeedMore();
-    }
-  }, [profiles.length, hasMore, onNeedMore]);
-
   // Execute fly-out and trigger callback
   const triggerSwipe = useCallback(
     (direction: FlyOutDirection) => {
-      if (!currentProfile || flyOut || isProcessing) return;
+      if (!currentProfile || flyOut) return;
 
       setFlyOut({ id: currentProfile.id, direction });
 
-      setTimeout(() => {
+      flyOutTimer.current = setTimeout(() => {
         if (direction === 'right') {
-          void onLike(currentProfile);
+          onLike(currentProfile);
         } else if (direction === 'left') {
-          void onPass(currentProfile);
-        } else if (direction === 'up') {
-          void onSuperlike(currentProfile);
+          onPass(currentProfile);
+        } else {
+          onSuperlike(currentProfile);
         }
         setFlyOut(null);
         setDragOffset({ x: 0, y: 0 });
       }, 240);
     },
-    [currentProfile, flyOut, isProcessing, onLike, onPass, onSuperlike]
+    [currentProfile, flyOut, onLike, onPass, onSuperlike]
   );
 
   // Keyboard navigation shortcuts
   useEffect(() => {
+    if (keyboardDisabled) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger if user is typing in an input
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
@@ -121,11 +127,11 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [triggerSwipe, currentProfile, onOpenDetails]);
+  }, [triggerSwipe, currentProfile, onOpenDetails, keyboardDisabled]);
 
   // Drag handlers (Pointer events support both touch and mouse)
   const handlePointerDown = (e: React.PointerEvent) => {
-    if (flyOut || isProcessing || !currentProfile) return;
+    if (flyOut || !currentProfile) return;
     dragStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
     setIsDragging(true);
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -147,7 +153,7 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
     dragStartRef.current = null;
 
     // Fast flick or distance past threshold
-    const velocityX = Math.abs(dx) / dt;
+    const velocityX = Math.abs(dx) / Math.max(dt, 1);
     const isHorizontalSwipe = Math.abs(dx) > 100 || (Math.abs(dx) > 40 && velocityX > 0.4);
     const isVerticalSwipe = dy < -90;
 
@@ -171,6 +177,31 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
     e.stopPropagation();
     setPhotoIndex((prev) => (prev < photos.length - 1 ? prev + 1 : 0));
   };
+
+  if (!currentProfile && (isLoadingMore || loadMoreError)) {
+    return (
+      <div className="max-w-md mx-auto py-16 px-4 text-center space-y-4 bg-white rounded-3xl border border-zinc-200 shadow-sm">
+        {loadMoreError ? (
+          <>
+            <AlertCircle className="w-8 h-8 text-rose-500 mx-auto" />
+            <p className="text-xs text-zinc-600">{loadMoreError}</p>
+            <button
+              type="button"
+              onClick={onRetryLoadMore}
+              className="px-4 py-2.5 rounded-xl bg-zinc-900 text-white font-semibold text-xs hover:bg-zinc-800 transition-colors"
+            >
+              Повторить
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="w-8 h-8 border-2 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto" />
+            <p className="text-xs text-zinc-500">Подбираем новые анкеты…</p>
+          </>
+        )}
+      </div>
+    );
+  }
 
   if (!currentProfile) {
     return (
@@ -243,7 +274,7 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
   return (
     <div className="flex flex-col items-center select-none py-2">
       {/* Cards Deck Container */}
-      <div className="relative w-full max-w-[390px] sm:max-w-[420px] h-[550px] sm:h-[600px] flex items-center justify-center">
+      <div className="relative w-full max-w-[420px] h-[clamp(380px,calc(100dvh-280px),620px)] flex items-center justify-center">
         {/* Background Card (the next profile in the deck) */}
         {nextProfile && (
           <div
@@ -477,7 +508,7 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
         {/* Pass / Dislike */}
         <button
           type="button"
-          disabled={isProcessing || !!flyOut}
+          disabled={!!flyOut}
           onClick={() => triggerSwipe('left')}
           title="Отклонить (стрелка влево)"
           className="w-14 h-14 rounded-full bg-white border-2 border-zinc-200 text-rose-500 hover:border-rose-400 hover:bg-rose-50 hover:scale-108 active:scale-95 flex items-center justify-center transition-all duration-150 shadow-md disabled:opacity-50 group cursor-pointer"
@@ -488,7 +519,7 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
         {/* Superlike */}
         <button
           type="button"
-          disabled={isProcessing || !!flyOut}
+          disabled={!!flyOut}
           onClick={() => triggerSwipe('up')}
           title="Суперлайк (стрелка вверх)"
           className="w-12 h-12 rounded-full bg-white border-2 border-sky-200 text-sky-500 hover:border-sky-400 hover:bg-sky-50 hover:scale-108 active:scale-95 flex items-center justify-center transition-all duration-150 shadow-md disabled:opacity-50 group cursor-pointer"
@@ -499,7 +530,7 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
         {/* Like */}
         <button
           type="button"
-          disabled={isProcessing || !!flyOut}
+          disabled={!!flyOut}
           onClick={() => triggerSwipe('right')}
           title="Лайкнуть (стрелка вправо)"
           className="w-14 h-14 rounded-full bg-rose-500 hover:bg-rose-600 text-white hover:scale-108 active:scale-95 flex items-center justify-center transition-all duration-150 shadow-lg shadow-rose-500/25 disabled:opacity-50 group cursor-pointer"

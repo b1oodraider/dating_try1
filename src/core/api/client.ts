@@ -99,6 +99,10 @@ export function isAbortError(e: unknown): boolean {
 /** User-facing message for any thrown value. */
 export function getErrorMessage(e: unknown, fallback = 'Что-то пошло не так. Попробуйте ещё раз.'): string {
   if (e instanceof ApiError) {
+    if (e.code === 'ACCOUNT_RESTRICTED') {
+      const until = typeof e.details?.until === 'string' ? e.details.until : null;
+      return `${e.message} ${until ? `до ${formatDateTime(until)}` : 'до решения модератора'}.`;
+    }
     if (e.status === 429 && e.retryAfterSeconds) {
       return `${e.message} Повторите через ${e.retryAfterSeconds} с.`;
     }
@@ -106,6 +110,10 @@ export function getErrorMessage(e: unknown, fallback = 'Что-то пошло �
   }
   if (e instanceof Error && e.message) return e.message;
   return fallback;
+}
+
+export function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
 }
 
 function defaultMessageForStatus(status: number): string {
@@ -186,10 +194,6 @@ function setToken(token: string | null): void {
   }
 }
 
-export function hasToken(): boolean {
-  return getToken() !== null;
-}
-
 type UnauthorizedListener = () => void;
 const unauthorizedListeners = new Set<UnauthorizedListener>();
 
@@ -200,6 +204,9 @@ export function onUnauthorized(listener: UnauthorizedListener): () => void {
     unauthorizedListeners.delete(listener);
   };
 }
+
+/** Window event fired when the server refused an action because of a restriction (the banner reloads). */
+export const RESTRICTIONS_CHANGED = 'dating:restrictions-changed';
 
 function handleUnauthorized(): void {
   setToken(null);
@@ -226,7 +233,6 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   if (auth) {
     const token = getToken();
     if (!token) {
-      handleUnauthorized();
       throw new ApiError({ code: 'UNAUTHORIZED', message: 'Требуется авторизация.', status: 401 });
     }
     headers['Authorization'] = `Bearer ${token}`;
@@ -256,6 +262,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     const error = await parseError(res);
     if (res.status === 401 && auth) {
       handleUnauthorized();
+    }
+    if (error.code === 'ACCOUNT_RESTRICTED') {
+      window.dispatchEvent(new Event(RESTRICTIONS_CHANGED));
     }
     throw error;
   }
@@ -357,10 +366,6 @@ export const api = {
   },
 
   // --- ACCOUNT ---
-  getAccount(): Promise<Account> {
-    return request<Account>('/me');
-  },
-
   async deleteAccount(): Promise<void> {
     await request<void>('/me', { method: 'DELETE' });
     setToken(null);
@@ -394,10 +399,6 @@ export const api = {
   },
 
   // --- PHOTOS ---
-  listPhotos(): Promise<Photo[]> {
-    return request<Photo[]>('/me/profile/photos');
-  },
-
   uploadPhoto(file: File): Promise<Photo> {
     const form = new FormData();
     form.append('file', file);
@@ -636,10 +637,6 @@ export const api = {
   // --- GACHA ---
   getGachaBanners(): Promise<Banner[]> {
     return request<Banner[]>('/gacha/banners');
-  },
-
-  getGachaBanner(code: string): Promise<Banner> {
-    return request<Banner>(`/gacha/banners/${encodeURIComponent(code)}`);
   },
 
   pullGacha(code: string, count: number, idempotencyKey: string): Promise<GachaPullResponse> {

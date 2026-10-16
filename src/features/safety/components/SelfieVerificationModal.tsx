@@ -51,7 +51,7 @@ export const SelfieVerificationModal: React.FC<SelfieVerificationModalProps> = (
     setError(null);
     try {
       const req = await api.requestVerification();
-      setStatus((prev) => (prev ? { ...prev, current: req } : null));
+      setStatus((prev) => ({ verified: false, verifiedAt: null, ...prev, current: req }));
     } catch (e) {
       setError(getErrorMessage(e, 'Не удалось начать верификацию'));
     } finally {
@@ -67,7 +67,7 @@ export const SelfieVerificationModal: React.FC<SelfieVerificationModalProps> = (
     setError(null);
     try {
       const updated = await api.submitSelfie(status.current.id, file);
-      setStatus((prev) => (prev ? { ...prev, current: updated } : null));
+      setStatus((prev) => ({ verified: false, verifiedAt: null, ...prev, current: updated }));
       onVerifiedChange?.();
     } catch (err) {
       setError(getErrorMessage(err, 'Ошибка при отправке селфи'));

@@ -1,6 +1,0 @@
-{
-  "name": "Dating App MVP",
-  "description": "Сервис знакомств с фокусом на комфортный темп общения и функциональные карточки предпочтений.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
