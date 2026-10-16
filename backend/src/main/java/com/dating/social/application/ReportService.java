@@ -15,8 +15,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Stores reports for moderation. There is no moderator queue yet (it comes with roles); reports are kept
- * with status NEW in the {@code reports} table, ordered for a future queue by (status, created_at).
+ * Stores reports for moderation with status NEW; moderators work them in {@link ModerationService}.
  */
 @Service
 public class ReportService {

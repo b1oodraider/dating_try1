@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Reports for moderation (the moderator queue is not built yet; reports are stored with status NEW).
+ * Reports for moderation (stored with status NEW, see /api/v1/admin/reports).
  */
 @RestController
 public class ReportController {

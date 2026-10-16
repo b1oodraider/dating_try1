@@ -324,7 +324,7 @@ POST /reports   body { profileId: uuid (required), messageId?: uuid, reason: 'SP
   400 VALIDATION_ERROR | SELF_ACTION | MALFORMED_REQUEST (unknown reason) ; 404 PROFILE_NOT_FOUND ;
   404 MESSAGE_NOT_FOUND (messageId must be a message FROM the reported person in a chat I take part in, active or closed) ;
   429 RATE_LIMITED (app.social.reports-per-hour, default 20 per account)
-  Stored with status NEW (message text/sticker snapshot kept); there is no moderator queue endpoint yet.
+  Stored with status NEW (message text/sticker snapshot kept); moderators work them in /admin/reports (see Admin).
 
 ## Matches and chat (auth)
 Unmatched / blocked matches (or ones whose other account is gone) answer 404 MATCH_NOT_FOUND for both people.
@@ -386,8 +386,25 @@ GET /catalog/images/{imageId}   (public, no auth) binary image (JPEG/PNG/WebP), 
 
 ## Admin (auth + staff role; /admin/**)
 Roles are read from the DB on every request (granting/revoking applies to the next request). Missing role: 403 ROLE_REQUIRED
-details.roles. "Editors" below = CONTENT_EDITOR or ADMIN. MODERATOR has no admin endpoints yet. Every write is recorded in the
+details.roles. "Editors" below = CONTENT_EDITOR or ADMIN. Moderators = MODERATOR or ADMIN. Every write is recorded in the
 audit log (same transaction). Gacha admin endpoints (editors): see "Gacha admin" above.
+
+### Reports moderation (moderators)
+ModerationReport = { id, status: 'NEW'|'IN_REVIEW'|'RESOLVED'|'DISMISSED', reason: ReportReason (as reported),
+                     finalReason: ReportReason|null (confirmed violation), decision: 'ACCEPTED'|'RECLASSIFIED'|'REJECTED'|null,
+                     comment, messageId, messageSnapshot, reporterAccountId, reportedAccountId, reportedProfileId,
+                     reportedDisplayName: string|null (null when the profile is gone),
+                     reportedConfirmedViolations: number (ACCEPTED + RECLASSIFIED reports against that account),
+                     createdAt, moderatorAccountId, moderatorNote, decidedAt }
+GET  /admin/reports?status=&page=0&limit=20   oldest first; status absent = open (NEW, IN_REVIEW); limit 1..100 (else 20)
+     200 { items: ModerationReport[], page, limit, totalElements } ; 400 VALIDATION_ERROR (unknown status, case-insensitive)
+GET  /admin/reports/{reportId}                200 ModerationReport ; 404 REPORT_NOT_FOUND
+POST /admin/reports/{reportId}/decision       body { decision: 'ACCEPTED'|'RECLASSIFIED'|'REJECTED', reason?: ReportReason, note?: string (<= 1000) }
+     ACCEPTED: violation as reported (finalReason = reason), status RESOLVED.
+     RECLASSIFIED: violation of another kind; reason required and different from the reported one, status RESOLVED.
+     REJECTED: no violation, status DISMISSED. reason is only allowed with RECLASSIFIED.
+     200 ModerationReport ; 400 VALIDATION_ERROR (fieldErrors.reason) ; 404 REPORT_NOT_FOUND ; 409 REPORT_ALREADY_DECIDED
+     A decision records the verdict only (no sanctions are applied). Audited as entityType REPORT, action = decision.
 
 ### Roles and audit (ADMIN)
 AdminAccount = { accountId, phoneMasked, status, testAccount, roles: string[], createdAt }

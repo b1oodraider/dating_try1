@@ -12,7 +12,7 @@ public enum Role {
     ADMIN,
     /** Communication cards, relationship goals, catalog items and achievement definitions. */
     CONTENT_EDITOR,
-    /** Reserved for profile/report moderation and contest submissions (no admin endpoints yet). */
+    /** Report queue (/admin/reports); later also contest submissions. */
     MODERATOR;
 
     public static Optional<Role> parse(String value) {

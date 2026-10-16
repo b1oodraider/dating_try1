@@ -966,7 +966,7 @@ paths:
       summary: Журнал аудита (новые первыми)
       description: 'Роль: ADMIN.'
       parameters:
-        - { name: entityType, in: query, schema: { type: string, enum: [ACCOUNT_ROLE, TAG, TAG_CATEGORY, GOAL, CATALOG_ITEM, AUTHOR, ACHIEVEMENT, PREMIUM_COMPOSITION, GACHA_BANNER] } }
+        - { name: entityType, in: query, schema: { type: string, enum: [ACCOUNT_ROLE, TAG, TAG_CATEGORY, GOAL, CATALOG_ITEM, AUTHOR, ACHIEVEMENT, PREMIUM_COMPOSITION, GACHA_BANNER, REPORT] } }
         - { name: entityId, in: query, schema: { type: string } }
         - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 }, description: Приводится к 1..200 }
       responses:
@@ -979,6 +979,77 @@ paths:
                 items: { $ref: '#/components/schemas/AuditEntry' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/RoleRequired' }
+
+  /admin/reports:
+    get:
+      tags: [admin]
+      summary: Очередь жалоб (старые первыми)
+      description: 'Роли: MODERATOR или ADMIN.'
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [NEW, IN_REVIEW, RESOLVED, DISMISSED] }, description: Без учёта регистра; не задан — открытые (NEW, IN_REVIEW) }
+        - { name: page, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 }, description: Вне 1..100 — 20 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ModerationPage' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+
+  /admin/reports/{reportId}:
+    get:
+      tags: [admin]
+      summary: Жалоба
+      description: 'Роли: MODERATOR или ADMIN. 404 REPORT_NOT_FOUND.'
+      parameters:
+        - { name: reportId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ModerationReport' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /admin/reports/{reportId}/decision:
+    post:
+      tags: [admin]
+      summary: Решение по жалобе
+      description: |
+        Роли: MODERATOR или ADMIN. ACCEPTED — нарушение подтверждено как в жалобе (status RESOLVED);
+        RECLASSIFIED — нарушение другого вида, reason обязателен и отличается от причины в жалобе (RESOLVED);
+        REJECTED — нарушения нет (DISMISSED). reason допустим только с RECLASSIFIED. Решение только фиксируется,
+        санкции не применяются. Пишется в аудит (entityType REPORT).
+        Ошибки: 400 VALIDATION_ERROR (fieldErrors.reason), 404 REPORT_NOT_FOUND, 409 REPORT_ALREADY_DECIDED.
+      parameters:
+        - { name: reportId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [ACCEPTED, RECLASSIFIED, REJECTED] }
+                reason: { $ref: '#/components/schemas/ReportReason' }
+                note: { type: string, maxLength: 1000 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ModerationReport' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
 
   /admin/tags:
     get:
@@ -2701,6 +2772,41 @@ components:
         before: { description: Снимок до изменения (любой JSON или null) }
         after: { description: Снимок после изменения (любой JSON или null) }
         createdAt: { type: string, format: date-time }
+
+    ReportReason:
+      type: string
+      enum: [SPAM, FAKE_PROFILE, INAPPROPRIATE_CONTENT, HARASSMENT, SCAM, UNDERAGE, OTHER]
+
+    ModerationReport:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [NEW, IN_REVIEW, RESOLVED, DISMISSED] }
+        reason: { $ref: '#/components/schemas/ReportReason' }
+        finalReason:
+          description: Подтверждённое нарушение (null, пока нет решения, и при REJECTED)
+          oneOf: [ { $ref: '#/components/schemas/ReportReason' }, { type: 'null' } ]
+        decision: { type: [string, 'null'], enum: [ACCEPTED, RECLASSIFIED, REJECTED, null] }
+        comment: { type: [string, 'null'] }
+        messageId: { type: [string, 'null'], format: uuid }
+        messageSnapshot: { type: [string, 'null'] }
+        reporterAccountId: { type: string, format: uuid }
+        reportedAccountId: { type: string, format: uuid }
+        reportedProfileId: { type: string, format: uuid }
+        reportedDisplayName: { type: [string, 'null'], description: 'null, если анкеты уже нет' }
+        reportedConfirmedViolations: { type: integer, description: Жалобы на этот аккаунт с решением ACCEPTED или RECLASSIFIED }
+        createdAt: { type: string, format: date-time }
+        moderatorAccountId: { type: [string, 'null'], format: uuid }
+        moderatorNote: { type: [string, 'null'] }
+        decidedAt: { type: [string, 'null'], format: date-time }
+
+    ModerationPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ModerationReport' } }
+        page: { type: integer }
+        limit: { type: integer }
+        totalElements: { type: integer }
 
     AdminTagFields:
       type: object
