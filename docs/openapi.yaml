@@ -1278,6 +1278,210 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/RoleRequired' }
 
+  /me/verification:
+    get:
+      summary: Статус подтверждения селфи
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verified: { type: boolean }
+                  verifiedAt: { type: [string, 'null'], format: date-time }
+                  current: { oneOf: [ { $ref: '#/components/schemas/VerificationRequest' }, { type: 'null' } ] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Начать подтверждение (случайный жест)
+      description: |
+        Возвращает открытый запрос (с тем же жестом) или создаёт новый. Модератор сравнивает селфи с фото анкеты
+        вручную (без автоматического сравнения лиц); селфи удаляется сразу после решения. Одобрение даёт бейдж verified
+        и снимает VERIFICATION_REQUIRED; новое фото в анкете снимает бейдж. 409 ALREADY_VERIFIED | VERIFICATION_PENDING,
+        429 — больше 3 запросов в сутки.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /me/verification/{requestId}/selfie:
+    post:
+      summary: Загрузить селфи с жестом
+      description: 'JPEG/PNG/WebP до 5 МБ, метаданные удаляются. 404 VERIFICATION_NOT_FOUND, 409 VERIFICATION_EXPIRED | VERIFICATION_NOT_AWAITING.'
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: На проверке
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationRequest' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+
+  /admin/verifications:
+    get:
+      tags: [admin]
+      summary: Очередь проверки селфи (старые первыми)
+      description: 'Роли: MODERATOR или ADMIN.'
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [AWAITING_SELFIE, PENDING, APPROVED, REJECTED, EXPIRED], default: PENDING } }
+        - { name: page, in: query, schema: { type: integer, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/VerificationReview' } }
+                  page: { type: integer }
+                  limit: { type: integer }
+                  totalElements: { type: integer }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+
+  /admin/verifications/{requestId}:
+    get:
+      tags: [admin]
+      summary: Запрос проверки
+      description: 'Роли: MODERATOR или ADMIN. 404 VERIFICATION_NOT_FOUND.'
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationReview' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /admin/verifications/{requestId}/selfie:
+    get:
+      tags: [admin]
+      summary: Само селфи (только с заголовком Authorization, не кэшируется)
+      description: 'Роли: MODERATOR или ADMIN. 404 SELFIE_NOT_FOUND — решение уже принято и файл удалён.'
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Изображение
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /admin/verifications/{requestId}/decision:
+    post:
+      tags: [admin]
+      summary: Одобрить или отклонить селфи
+      description: 'Роли: MODERATOR или ADMIN. Отказ требует причину (её видит пользователь). Селфи удаляется. 409 VERIFICATION_NOT_PENDING.'
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approve]
+              properties:
+                approve: { type: boolean }
+                reason: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationReview' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+
+  /admin/accounts/{accountId}/risk:
+    get:
+      tags: [admin]
+      summary: Риск бота / фейка (пересчитывается при запросе)
+      description: |
+        Роли: MODERATOR или ADMIN. Правила с весами, сумма до 100: SIGNUP_BURST, DUPLICATE_PHOTO, DUPLICATE_ABOUT,
+        CONTACTS_IN_PROFILE, SAME_MESSAGE_TO_MANY, CONTACTS_IN_MESSAGES, LIKE_SPAM, BOT_MESSAGES, REPORTED_BY_MANY,
+        REPORTED_AS_FAKE, NEW_ACCOUNT. Скор только сортирует очередь и даёт контекст, сам ничего не наказывает.
+      parameters:
+        - { $ref: '#/components/parameters/AccountId' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Risk' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /admin/risk:
+    get:
+      tags: [admin]
+      summary: Очередь рискованных аккаунтов (ACTIVE, самые рискованные первыми)
+      description: 'Роли: MODERATOR или ADMIN. Автоматическое правило: один и тот же текст со ссылками/контактами в 3+ чатах за сутки → MESSAGES на 24 ч (BOT_MESSAGES).'
+      parameters:
+        - { name: minScore, in: query, schema: { type: integer, default: 30, minimum: 0, maximum: 100 } }
+        - { name: page, in: query, schema: { type: integer, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        accountId: { type: string, format: uuid }
+                        profileId: { type: [string, 'null'], format: uuid }
+                        displayName: { type: [string, 'null'] }
+                        score: { type: integer }
+                        level: { type: string, enum: [LOW, MEDIUM, HIGH] }
+                        signals: { type: array, items: { $ref: '#/components/schemas/RiskSignal' } }
+                        computedAt: { type: string, format: date-time }
+                  page: { type: integer }
+                  limit: { type: integer }
+                  totalElements: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+
   /admin/tags:
     get:
       tags: [admin]
@@ -2575,6 +2779,7 @@ components:
         heightCm: { type: [integer, 'null'] }
         goals: { type: array, items: { $ref: '#/components/schemas/Goal' } }
         premium: { type: boolean }
+        verified: { type: boolean, description: Селфи подтверждено модератором }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
@@ -2593,6 +2798,7 @@ components:
         heightCm: { type: [integer, 'null'] }
         goals: { type: array, items: { $ref: '#/components/schemas/Goal' } }
         premium: { type: boolean, description: Бейдж премиума }
+        verified: { type: boolean, description: Селфи подтверждено модератором }
         boosted: { type: boolean, description: 'Только при app.boost.public-badge=true и активном бусте; иначе поля нет' }
 
     ProfileUpdate:
@@ -3015,6 +3221,7 @@ components:
           oneOf: [ { $ref: '#/components/schemas/ReportReason' }, { type: 'null' } ]
         decision: { type: [string, 'null'], enum: [ACCEPTED, RECLASSIFIED, REJECTED, null] }
         sanctioned: { type: boolean, description: Политика санкций применена }
+        reportedRiskScore: { type: [integer, 'null'], description: Риск бота / фейка 0..100 }
         comment: { type: [string, 'null'] }
         messageId: { type: [string, 'null'], format: uuid }
         messageSnapshot: { type: [string, 'null'] }
@@ -3027,6 +3234,51 @@ components:
         moderatorAccountId: { type: [string, 'null'], format: uuid }
         moderatorNote: { type: [string, 'null'] }
         decidedAt: { type: [string, 'null'], format: date-time }
+
+    VerificationRequest:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [AWAITING_SELFIE, PENDING, APPROVED, REJECTED, EXPIRED] }
+        gesture: { type: string, description: Код жеста }
+        instruction: { type: string, description: Что показать на селфи }
+        expiresAt: { type: string, format: date-time, description: До какого времени загрузить селфи }
+        submittedAt: { type: [string, 'null'], format: date-time }
+        decidedAt: { type: [string, 'null'], format: date-time }
+        rejectReason: { type: [string, 'null'] }
+
+    VerificationReview:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        profileId: { type: [string, 'null'], format: uuid }
+        displayName: { type: [string, 'null'] }
+        status: { type: string }
+        gesture: { type: string }
+        instruction: { type: string }
+        selfieAvailable: { type: boolean }
+        submittedAt: { type: [string, 'null'], format: date-time }
+        decidedAt: { type: [string, 'null'], format: date-time }
+        decidedBy: { type: [string, 'null'], format: uuid }
+        rejectReason: { type: [string, 'null'] }
+        profilePhotos: { type: array, items: { $ref: '#/components/schemas/Photo' } }
+
+    RiskSignal:
+      type: object
+      properties:
+        code: { type: string }
+        weight: { type: integer }
+        detail: { type: string }
+
+    Risk:
+      type: object
+      properties:
+        accountId: { type: string, format: uuid }
+        score: { type: integer, minimum: 0, maximum: 100 }
+        level: { type: string, enum: [LOW, MEDIUM, HIGH] }
+        signals: { type: array, items: { $ref: '#/components/schemas/RiskSignal' } }
+        computedAt: { type: string, format: date-time }
 
     BehaviorMetrics:
       type: object

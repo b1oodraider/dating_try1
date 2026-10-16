@@ -1,0 +1,36 @@
+databaseChangeLog:
+  # Manual selfie verification: the user photographs themselves doing a random gesture, a moderator compares it
+  # with the profile photos by eye (no automated face matching: that would be biometric processing, 572-FZ).
+  # The selfie file is deleted right after the decision.
+  - changeSet:
+      id: 018-verification
+      author: dating-team
+      changes:
+        - sql:
+            sql: ALTER TABLE profiles ADD COLUMN verified_at TIMESTAMP WITH TIME ZONE
+        - sql:
+            sql: >
+              CREATE TABLE verification_requests (
+                id            UUID PRIMARY KEY,
+                account_id    UUID NOT NULL REFERENCES accounts (id),
+                gesture       VARCHAR(40) NOT NULL,
+                status        VARCHAR(20) NOT NULL
+                              CHECK (status IN ('AWAITING_SELFIE', 'PENDING', 'APPROVED', 'REJECTED', 'EXPIRED')),
+                selfie_key    VARCHAR(100),
+                selfie_mime   VARCHAR(30),
+                created_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                expires_at    TIMESTAMP WITH TIME ZONE NOT NULL,
+                submitted_at  TIMESTAMP WITH TIME ZONE,
+                decided_at    TIMESTAMP WITH TIME ZONE,
+                decided_by    UUID REFERENCES accounts (id),
+                reject_reason VARCHAR(500)
+              )
+        - sql:
+            sql: >
+              CREATE UNIQUE INDEX uq_verification_open ON verification_requests (account_id)
+                WHERE status IN ('AWAITING_SELFIE', 'PENDING')
+        - sql:
+            sql: CREATE INDEX idx_verification_queue ON verification_requests (status, submitted_at)
+      rollback:
+        - sql:
+            sql: DROP TABLE verification_requests; ALTER TABLE profiles DROP COLUMN verified_at

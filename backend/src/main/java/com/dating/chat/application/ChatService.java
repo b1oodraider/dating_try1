@@ -1,5 +1,6 @@
 package com.dating.chat.application;
 
+import com.dating.safety.application.BotRules;
 import com.dating.safety.application.RestrictionGuard;
 import com.dating.safety.domain.RestrictionKind;
 import com.dating.chat.api.MessageDto;
@@ -47,12 +48,14 @@ public class ChatService {
     private final ProductEventPublisher productEvents;
     private final FixedWindowRateLimiter limiter;
     private final RestrictionGuard restrictionGuard;
+    private final BotRules botRules;
 
     public ChatService(ChatRepository repository, MatchService matchService, EconomyService economyService,
                        SseEmitterRegistry realtime, ApplicationEventPublisher eventPublisher,
                        ProductEventPublisher productEvents, ChatProperties properties,
-                       RestrictionGuard restrictionGuard) {
+                       RestrictionGuard restrictionGuard, BotRules botRules) {
         this.restrictionGuard = restrictionGuard;
+        this.botRules = botRules;
         this.repository = repository;
         this.matchService = matchService;
         this.economyService = economyService;
@@ -95,6 +98,9 @@ public class ChatService {
             realtime.sendAfterCommit(sender, RealtimeEvents.MESSAGE, MessageDto.of(message, sender));
             realtime.sendAfterCommit(recipient, RealtimeEvents.MESSAGE, MessageDto.of(message, recipient));
             eventPublisher.publishEvent(new MessageSentEvent(matchId, message.id(), sender, recipient));
+            if (content.type() == MessageType.TEXT) {
+                botRules.afterTextMessage(sender, content.text());
+            }
             productEvents.publish("chat_message_sent", Map.of("type", content.type().name()));
         }
         return MessageDto.of(message, sender);

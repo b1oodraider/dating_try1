@@ -18,6 +18,7 @@ import com.dating.common.security.AuthenticatedUser;
 import com.dating.common.security.Role;
 import com.dating.common.security.SessionValidator;
 import com.dating.common.util.Hashing;
+import com.dating.safety.application.RiskService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -51,6 +52,7 @@ public class AuthService implements SessionValidator {
     private final AdminBootstrapPolicy adminBootstrapPolicy;
     private final RoleService roleService;
     private final PhoneHasher phoneHasher;
+    private final RiskService riskService;
     private final FixedWindowRateLimiter ipLimiter;
     private final FixedWindowRateLimiter phoneCooldownLimiter;
 
@@ -62,7 +64,9 @@ public class AuthService implements SessionValidator {
                        TestAccountPolicy testAccountPolicy,
                        AdminBootstrapPolicy adminBootstrapPolicy,
                        RoleService roleService,
-                       PhoneHasher phoneHasher) {
+                       PhoneHasher phoneHasher,
+                       RiskService riskService) {
+        this.riskService = riskService;
         this.challengeRepository = challengeRepository;
         this.sessionRepository = sessionRepository;
         this.accountService = accountService;
@@ -139,7 +143,7 @@ public class AuthService implements SessionValidator {
      * otherwise the attempt counter is rolled back and the code can be brute-forced.
      */
     @Transactional(noRollbackFor = ApiException.class)
-    public AuthSessionResponseDto verifyOtp(UUID challengeId, String code) {
+    public AuthSessionResponseDto verifyOtp(UUID challengeId, String code, String clientIp) {
         AuthChallenge challenge = challengeRepository.findByIdForUpdate(challengeId)
                 .orElseThrow(() -> ApiException.badRequest("INVALID_CHALLENGE", "Запрос подтверждения не найден"));
 
@@ -165,7 +169,13 @@ public class AuthService implements SessionValidator {
         challenge.markConsumed();
 
         String phoneMasked = challenge.getPhoneMasked() != null ? challenge.getPhoneMasked() : "+*** ***-**-**";
-        Account account = accountService.findOrCreateAccount(challenge.getPhoneHash(), phoneMasked);
+        AccountService.FoundOrCreated found = accountService.findOrCreate(challenge.getPhoneHash(), phoneMasked);
+        Account account = found.account();
+        if (found.created()) {
+            // Keyed hash: the address is personal data, only "same address as others" is needed.
+            riskService.onSignup(account.getId(), Hashing.hmacSha256Hex(properties.phoneHashSecret(),
+                    "ip:" + (clientIp == null ? "unknown" : clientIp)));
+        }
         accountService.updateTestAccountFlag(account, testAccountPolicy.isTestPhoneHash(challenge.getPhoneHash()));
         if (adminBootstrapPolicy.isBootstrapAdmin(challenge.getPhoneHash())
                 && roleService.grant(account.getId(), Role.ADMIN, null)) {

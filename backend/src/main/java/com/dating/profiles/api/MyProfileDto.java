@@ -30,6 +30,7 @@ public record MyProfileDto(
         Integer heightCm,
         List<GoalDto> goals,
         boolean premium,
+        boolean verified,
         Instant createdAt,
         Instant updatedAt
 ) {}

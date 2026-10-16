@@ -288,6 +288,7 @@ public class ProfileService {
                 profile.getHeightCm(),
                 goalsOf(profile),
                 !featureAccess.premiumAmong(List.of(profile.getAccountId())).isEmpty(),
+                profile.isVerified(),
                 profile.getCreatedAt(),
                 profile.getUpdatedAt()
         );

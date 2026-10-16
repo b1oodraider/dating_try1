@@ -56,6 +56,10 @@ public class Profile extends AssignedIdEntity {
     @Column(name = "height_cm")
     private Integer heightCm;
 
+    /** Set by the verification module (manual selfie check); JPA never writes it. */
+    @Column(name = "verified_at", insertable = false, updatable = false)
+    private Instant verifiedAt;
+
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "profile_goals",
@@ -179,6 +183,10 @@ public class Profile extends AssignedIdEntity {
 
     public Integer getHeightCm() {
         return heightCm;
+    }
+
+    public boolean isVerified() {
+        return verifiedAt != null;
     }
 
     public void setHeightCm(Integer heightCm) {

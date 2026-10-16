@@ -37,7 +37,19 @@ public class ProfilePhoto extends AssignedIdEntity {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    @Column(name = "content_sha256", length = 64, updatable = false)
+    private String contentSha256;
+
+    @Column(name = "dhash", updatable = false)
+    private Long dhash;
+
     protected ProfilePhoto() {
+    }
+
+    /** Duplicate-photo fingerprints (see PhotoFingerprint); written once with the row. */
+    public void setFingerprint(String contentSha256, Long dhash) {
+        this.contentSha256 = contentSha256;
+        this.dhash = dhash;
     }
 
     public ProfilePhoto(UUID id, UUID profileId, String storageKey, String mimeType, long sizeBytes, int sortOrder, boolean isPrimary) {

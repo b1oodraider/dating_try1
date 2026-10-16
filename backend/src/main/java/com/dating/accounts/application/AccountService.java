@@ -44,6 +44,15 @@ public class AccountService {
 
     @Transactional
     public Account findOrCreateAccount(String phoneHash, String phoneMasked) {
+        return findOrCreate(phoneHash, phoneMasked).account();
+    }
+
+    /** @param created the account did not exist before this call */
+    public record FoundOrCreated(Account account, boolean created) {
+    }
+
+    @Transactional
+    public FoundOrCreated findOrCreate(String phoneHash, String phoneMasked) {
         int inserted = accountRepository.insertIfAbsent(UUID.randomUUID(), phoneHash, phoneMasked);
         Account account = accountRepository.findByPhoneHash(phoneHash)
                 .orElseThrow(() -> new IllegalStateException("Account must exist after insertIfAbsent"));
@@ -51,7 +60,7 @@ public class AccountService {
             productEvents.publish("account_created", Map.of());
             eventPublisher.publishEvent(new AccountCreatedEvent(account.getId()));
         }
-        return account;
+        return new FoundOrCreated(account, inserted > 0);
     }
 
     /**

@@ -29,8 +29,10 @@ public class OtpController {
      * verify their own code and log into somebody else's account.
      */
     @PostMapping("/otp/verify")
-    public ResponseEntity<AuthSessionResponseDto> verifyOtp(@Valid @RequestBody OtpVerifyDto request) {
-        return ResponseEntity.ok(authService.verifyOtp(request.challengeId(), request.code()));
+    public ResponseEntity<AuthSessionResponseDto> verifyOtp(@Valid @RequestBody OtpVerifyDto request,
+                                                            HttpServletRequest httpRequest) {
+        return ResponseEntity.ok(authService.verifyOtp(request.challengeId(), request.code(),
+                httpRequest.getRemoteAddr()));
     }
 
     @PostMapping("/logout")

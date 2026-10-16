@@ -25,6 +25,7 @@ public class ModerationRepository {
                    (SELECT count(*) FROM reports c
                      WHERE c.reported_account_id = r.reported_account_id
                        AND c.decision IN ('ACCEPTED', 'RECLASSIFIED')) AS confirmed,
+                   (SELECT k.score FROM account_risk k WHERE k.account_id = r.reported_account_id) AS risk,
                    r.created_at, r.moderator_account_id, r.moderator_note, r.decided_at
               FROM reports r
               LEFT JOIN profiles p ON p.id = r.reported_profile_id
@@ -99,6 +100,7 @@ public class ModerationRepository {
                 rs.getObject("reported_profile_id", UUID.class),
                 rs.getString("display_name"),
                 rs.getLong("confirmed"),
+                rs.getObject("risk", Integer.class),
                 instant(rs, "created_at"),
                 rs.getObject("moderator_account_id", UUID.class),
                 rs.getString("moderator_note"),

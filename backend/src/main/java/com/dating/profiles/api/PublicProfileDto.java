@@ -30,6 +30,7 @@ public record PublicProfileDto(
         Integer heightCm,
         List<GoalDto> goals,
         boolean premium,
+        boolean verified,
         @JsonInclude(JsonInclude.Include.NON_NULL) Boolean boosted
 ) {
     public static PublicProfileDto from(Profile profile, List<PhotoDto> photos, Map<String, DecorationDto> decorations,
@@ -57,6 +58,7 @@ public record PublicProfileDto(
                 profile.getHeightCm(),
                 ProfileService.goalsOf(profile),
                 premium,
+                profile.isVerified(),
                 boosted
         );
     }

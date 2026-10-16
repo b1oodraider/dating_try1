@@ -2,6 +2,7 @@ package com.dating.safety.api;
 
 import com.dating.common.security.AuthenticatedUser;
 import com.dating.safety.application.BehaviorService;
+import com.dating.safety.application.RiskService;
 import com.dating.safety.application.SafetyAdminService;
 import com.dating.safety.domain.Restriction;
 import com.dating.safety.domain.RestrictionKind;
@@ -60,10 +61,27 @@ public class SafetyAdminController {
 
     private final SafetyAdminService service;
     private final BehaviorService behaviorService;
+    private final RiskService riskService;
 
-    public SafetyAdminController(SafetyAdminService service, BehaviorService behaviorService) {
+    public SafetyAdminController(SafetyAdminService service, BehaviorService behaviorService, RiskService riskService) {
         this.service = service;
         this.behaviorService = behaviorService;
+        this.riskService = riskService;
+    }
+
+    /** Bot / fake risk of the account with the signals behind it, recomputed now (moderators). */
+    @GetMapping("/accounts/{accountId}/risk")
+    public RiskService.Risk risk(@AuthenticationPrincipal AuthenticatedUser user, @PathVariable UUID accountId) {
+        return riskService.riskFor(user.accountId(), accountId);
+    }
+
+    /** Active accounts at or above minScore (default 30), riskiest first (moderators). */
+    @GetMapping("/risk")
+    public RiskService.QueuePage riskQueue(@AuthenticationPrincipal AuthenticatedUser user,
+                                           @RequestParam(required = false) Integer minScore,
+                                           @RequestParam(defaultValue = "0") int page,
+                                           @RequestParam(defaultValue = "20") int limit) {
+        return riskService.queue(user.accountId(), minScore, page, limit);
     }
 
     /** Behavioral metrics of the account, recomputed now (moderators). */

@@ -99,6 +99,8 @@ public class MediaService {
                 photoRepository.findMaxSortOrder(profile.getId()) + 1,
                 currentCount == 0
         );
+        PhotoFingerprint fingerprint = PhotoFingerprint.of(cleaned);
+        photo.setFingerprint(fingerprint.sha256(), fingerprint.dhash());
         photoRepository.save(photo);
         productEvents.publish("profile_photo_added", Map.of("photoCount", currentCount + 1));
         eventPublisher.publishEvent(new ProfilePhotoAddedEvent(accountId, photo.getId(), currentCount + 1));

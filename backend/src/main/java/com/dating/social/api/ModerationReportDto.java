@@ -14,6 +14,7 @@ import java.util.UUID;
  * @param reportedDisplayName          null when the profile is gone (e.g. the account was deleted)
  * @param reportedConfirmedViolations  reports against the same account that moderators confirmed
  * @param sanctioned                   the sanction policy was applied for this report
+ * @param reportedRiskScore            bot / fake risk 0..100 of the reported account (null = not computed yet)
  */
 public record ModerationReportDto(
         UUID id,
@@ -30,6 +31,7 @@ public record ModerationReportDto(
         UUID reportedProfileId,
         String reportedDisplayName,
         long reportedConfirmedViolations,
+        Integer reportedRiskScore,
         Instant createdAt,
         UUID moderatorAccountId,
         String moderatorNote,

@@ -1,0 +1,53 @@
+databaseChangeLog:
+  # Bot / fake signals (docs/trust-safety.md, block C). Rules with weights; the sum is a risk score that only
+  # orders the moderators' queue. Automatic action exists for one explicit rule only (mass identical messages
+  # with contacts), see BotRules.
+  - changeSet:
+      id: 019-account-signups
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE account_signups (
+                account_id UUID PRIMARY KEY REFERENCES accounts (id),
+                ip_hash    VARCHAR(64) NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+        - sql:
+            sql: CREATE INDEX idx_account_signups_ip ON account_signups (ip_hash, created_at)
+      rollback:
+        - sql:
+            sql: DROP TABLE account_signups
+
+  # Exact (sha256 of the stored bytes) and perceptual (64-bit difference hash) fingerprints of profile photos,
+  # to find the same picture on several accounts. dhash is null when the format cannot be decoded (WebP).
+  - changeSet:
+      id: 019-photo-fingerprints
+      author: dating-team
+      changes:
+        - sql:
+            sql: ALTER TABLE profile_photos ADD COLUMN content_sha256 VARCHAR(64), ADD COLUMN dhash BIGINT
+        - sql:
+            sql: CREATE INDEX idx_profile_photos_sha ON profile_photos (content_sha256) WHERE deleted_at IS NULL
+      rollback:
+        - sql:
+            sql: ALTER TABLE profile_photos DROP COLUMN dhash, DROP COLUMN content_sha256
+
+  - changeSet:
+      id: 019-account-risk
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE account_risk (
+                account_id  UUID PRIMARY KEY REFERENCES accounts (id),
+                score       INT NOT NULL CHECK (score BETWEEN 0 AND 100),
+                level       VARCHAR(10) NOT NULL CHECK (level IN ('LOW', 'MEDIUM', 'HIGH')),
+                signals     JSONB NOT NULL,
+                computed_at TIMESTAMP WITH TIME ZONE NOT NULL
+              )
+        - sql:
+            sql: CREATE INDEX idx_account_risk_score ON account_risk (score DESC)
+      rollback:
+        - sql:
+            sql: DROP TABLE account_risk

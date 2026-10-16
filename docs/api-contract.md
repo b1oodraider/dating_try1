@@ -33,9 +33,10 @@ MyProfile  = { id, displayName: string|null, age: number|null, city: string|null
                completenessPercent: number (0..100),
                missingForPublish: string[]   // subset of 'displayName','age','city','photos'; empty => can publish
                decorations: Decorations,     // how others see my profile
+               verified: boolean,            // selfie checked by a moderator; a new photo resets it
                createdAt, updatedAt }
 PublicProfile = { id, displayName, age, city, aboutText: string|null, dailyStatusText: string|null, tags: Tag[], photos: Photo[],
-                  decorations: Decorations }
+                  decorations: Decorations, verified: boolean (selfie checked by a moderator, see Selfie verification) }
              (no accountId, no statuses)
 Decorations = { [slot: 'PHOTO_FRAME'|'PROFILE_STATUS'|...]: Decoration }   // only public slots; may be {}
 Decoration  = { code, title, rarity: 'COMMON'|'RARE'|'EPIC'|'LEGENDARY'|null, attributes: object }
@@ -322,6 +323,18 @@ source RULE) for 1 h, doubling with each repeat within 30 days up to 7 d. The li
 vanish from the receivers' "who liked me"); likes behind an existing match stay. The like that triggered it still
 answers 200 (and is removed); the next one gets 403 ACCOUNT_RESTRICTED. Passing is never restricted.
 
+## Selfie verification (auth) — against fake profiles; badge `verified` on PublicProfile and MyProfile
+VerificationRequest = { id, status: 'AWAITING_SELFIE'|'PENDING'|'APPROVED'|'REJECTED'|'EXPIRED', gesture (code), instruction (text to show),
+                        expiresAt (upload deadline, 30 min), submittedAt, decidedAt, rejectReason }
+GET  /me/verification                       200 { verified: boolean, verifiedAt, current: VerificationRequest|null (latest) }
+POST /me/verification                       200 VerificationRequest — the open request (same gesture) or a new one with a random gesture
+                                            409 ALREADY_VERIFIED | VERIFICATION_PENDING ; 429 RATE_LIMITED (3 requests a day)
+POST /me/verification/{id}/selfie           multipart `file` (JPEG/PNG/WebP, <= 5 MB, metadata stripped) — a selfie showing the gesture
+                                            200 VerificationRequest (PENDING) ; 404 VERIFICATION_NOT_FOUND ; 409 VERIFICATION_EXPIRED |
+                                            VERIFICATION_NOT_AWAITING ; 400 EMPTY_FILE ; 413 FILE_TOO_LARGE ; 415 UNSUPPORTED_MEDIA_TYPE
+  A moderator compares the selfie with the profile photos BY EYE (no automated face matching); the selfie is deleted right after
+  the decision. Approval sets the badge and lifts VERIFICATION_REQUIRED. Adding a photo later removes the badge (re-verify).
+
 ## Received likes (auth) — "who liked me"
 Likes I have not answered yet (no like back, no active pass of mine, no block); super likes first, then newest.
 ReceivedLike = { profile: PublicProfile, superlike: boolean, likedAt }
@@ -422,7 +435,7 @@ audit log (same transaction). Gacha admin endpoints (editors): see "Gacha admin"
 ### Reports moderation (moderators)
 ModerationReport = { id, status: 'NEW'|'IN_REVIEW'|'RESOLVED'|'DISMISSED', reason: ReportReason (as reported),
                      finalReason: ReportReason|null (confirmed violation), decision: 'ACCEPTED'|'RECLASSIFIED'|'REJECTED'|null,
-                     sanctioned: boolean (the policy was applied),
+                     sanctioned: boolean (the policy was applied), reportedRiskScore: number|null (bot / fake risk),
                      comment, messageId, messageSnapshot, reporterAccountId, reportedAccountId, reportedProfileId,
                      reportedDisplayName: string|null (null when the profile is gone),
                      reportedConfirmedViolations: number (ACCEPTED + RECLASSIFIED reports against that account),
@@ -473,6 +486,30 @@ GET /admin/accounts/{accountId}/behavior   200 { accountId, computedAt, metrics 
   medianResponseSeconds, messagesSent90d, avgMessageLength, oneWordShare ("answers in one word"), reportsReceived,
   reportsMade, confirmedViolations, blockedBy, activeDays30d. Only numbers: message text is never copied or returned.
   Data behind it (reactions, views, feed impressions, active days) is kept 90 days and deleted with the account.
+
+### Selfie verification (moderators)
+ReviewItem = { id, accountId, profileId, displayName, status, gesture, instruction, selfieAvailable, submittedAt, decidedAt,
+               decidedBy, rejectReason, profilePhotos: Photo[] (to compare with) }
+GET  /admin/verifications?status=PENDING&page=0&limit=20   oldest first; 200 { items: ReviewItem[], page, limit, totalElements }
+GET  /admin/verifications/{id}                              200 ReviewItem ; 404 VERIFICATION_NOT_FOUND
+GET  /admin/verifications/{id}/selfie                       the image (Authorization header required, Cache-Control: no-store);
+                                                            404 SELFIE_NOT_FOUND after the decision
+POST /admin/verifications/{id}/decision   body { approve: boolean, reason?: <= 500 (required to reject; the user sees it) }
+                                          200 ReviewItem ; 409 VERIFICATION_NOT_PENDING ; 400 VALIDATION_ERROR. Audited (VERIFICATION).
+
+### Bot / fake risk (moderators)
+Risk = { accountId, score: 0..100, level: 'LOW' (< 30) | 'MEDIUM' (< 60) | 'HIGH', signals: [ { code, weight, detail } ], computedAt }
+Signals (rules, weights summed and capped at 100): SIGNUP_BURST (3+ accounts from one address within a day, 25/35),
+DUPLICATE_PHOTO (same picture on another account: exact or perceptual hash, 30), DUPLICATE_ABOUT (same "about me", 20),
+CONTACTS_IN_PROFILE (links / messengers / @handles / phones, 15), SAME_MESSAGE_TO_MANY (same text in 3+ chats a week, 25),
+CONTACTS_IN_MESSAGES (in 2+ chats a week, 20), LIKE_SPAM (10 per restriction, max 20), BOT_MESSAGES (25),
+REPORTED_BY_MANY (2+ / 5+ reporters in 30 days, 15/30), REPORTED_AS_FAKE (FAKE_PROFILE/SCAM/SPAM, 10), NEW_ACCOUNT (< 3 days, 5).
+The score only orders the queue and gives context — it never sanctions by itself. ModerationReport.reportedRiskScore shows it.
+GET /admin/accounts/{accountId}/risk        recomputed now; 200 Risk ; 404 ACCOUNT_NOT_FOUND
+GET /admin/risk?minScore=30&page=0&limit=20 ACTIVE accounts at/above the score, riskiest first;
+                                            200 { items: [ { accountId, profileId, displayName, score, level, signals, computedAt } ], page, limit, totalElements }
+Automatic rule (the only one that acts): the same text WITH links/contacts sent to 3+ different chats within a day →
+MESSAGES restriction for 24 h (reason BOT_MESSAGES, source RULE). Signup addresses are stored only as a keyed hash.
 
 ### Roles and audit (ADMIN)
 AdminAccount = { accountId, phoneMasked, status, testAccount, roles: string[], createdAt }
