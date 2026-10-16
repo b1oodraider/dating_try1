@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Dating API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     REST API закрытого MVP сервиса комфортных знакомств (модульный монолит).
     Краткая человекочитаемая версия контракта — docs/api-contract.md.
@@ -13,6 +13,12 @@ servers:
 
 security:
   - bearerAuth: []
+
+tags:
+  - name: admin
+    description: Staff API (/admin/**). Роли проверяются по БД на каждый запрос; нет роли — 403 ROLE_REQUIRED (details.roles).
+  - name: testing
+    description: Testing API. Есть только при app.testing.enabled=true; только тестовые аккаунты (иначе 403 TEST_ACCOUNT_REQUIRED).
 
 paths:
   /auth/otp/request:
@@ -67,7 +73,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
-        '403': { $ref: '#/components/responses/Error' }
+        '403':
+          description: ACCOUNT_SUSPENDED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /auth/logout:
     post:
@@ -117,7 +127,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/MyProfile' }
         '400':
-          description: VALIDATION_ERROR | UNKNOWN_TAG (fieldErrors)
+          description: VALIDATION_ERROR | UNKNOWN_TAG | UNKNOWN_GOAL (fieldErrors)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -233,6 +243,9 @@ paths:
         - { name: maxAge, in: query, schema: { type: integer } }
         - { name: tagCodes, in: query, schema: { type: string }, description: Коды карточек через запятую (до 10) }
         - { name: tagLogic, in: query, schema: { type: string, enum: [AND, OR], default: OR } }
+        - { name: minHeight, in: query, schema: { type: integer }, description: 'Премиум ADVANCED_FILTERS; анкеты без роста не подходят' }
+        - { name: maxHeight, in: query, schema: { type: integer }, description: Премиум ADVANCED_FILTERS }
+        - { name: goalCodes, in: query, schema: { type: string }, description: 'Премиум ADVANCED_FILTERS; коды целей через запятую, достаточно одной' }
         - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
       responses:
@@ -243,6 +256,7 @@ paths:
               schema: { $ref: '#/components/schemas/DiscoveryPage' }
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/PremiumRequired' }
 
   /me/exclusion-words:
     get:
@@ -282,6 +296,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/PremiumRequired' }
 
   /tags:
     get:
@@ -296,11 +311,1818 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/Tag' }
 
+  /goals:
+    get:
+      summary: Справочник целей знакомства
+      security: []
+      responses:
+        '200':
+          description: Активные цели по sortOrder
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Goal' }
+
+  /me/excluded-goals:
+    get:
+      summary: Сохранённые исключённые цели (жёсткий фильтр ленты)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExcludedGoals' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      summary: Заменить исключённые цели
+      description: Премиум ADVANCED_FILTERS.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [goalCodes]
+              properties:
+                goalCodes: { type: array, items: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExcludedGoals' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/PremiumRequired' }
+
+  /me/wallet:
+    get:
+      summary: Кошелёк (премиум, расходники, косметика)
+      description: Открытие кошелька также идемпотентно начисляет положенные премиум-выдачи за период.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Wallet' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/cosmetics/equipped/{slot}:
+    parameters:
+      - { name: slot, in: path, required: true, schema: { type: string, enum: [PHOTO_FRAME, PROFILE_STATUS, CHAT_WALLPAPER] } }
+    put:
+      summary: Надеть косметику в слот
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [itemCode]
+              properties:
+                itemCode: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Wallet' }
+        '400': { description: 'UNKNOWN_SLOT | WRONG_SLOT', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'ITEM_NOT_OWNED', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: 'ITEM_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      summary: Снять косметику со слота
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Wallet' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/achievements:
+    get:
+      summary: Мои достижения
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Achievement' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /catalog:
+    get:
+      summary: Активные предметы каталога
+      description: Лимитированные предметы выводятся и вне окна; availableNow считается по экономическому времени вызывающего. Порядок — kind, category, code.
+      parameters:
+        - { name: kind, in: query, schema: { type: string, enum: [CONSUMABLE, COSMETIC] } }
+        - { name: category, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CatalogItem' }
+        '400': { description: 'VALIDATION_ERROR (неизвестный kind)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /catalog/images/{imageId}:
+    get:
+      summary: Картинка предмета каталога
+      description: Публичная, неизменяемая по id (Cache-Control public, max-age 1 год, immutable). Ссылку содержит attributes.imageUrl.
+      security: []
+      parameters:
+        - { name: imageId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Изображение
+          content:
+            image/jpeg: {}
+            image/png: {}
+            image/webp: {}
+        '404': { description: 'IMAGE_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /discovery/profiles/{profileId}/like:
+    parameters:
+      - { $ref: '#/components/parameters/ProfileId' }
+    post:
+      summary: Лайк анкеты из ленты
+      description: |
+        Повтор идемпотентен (matched false); лайк после суперлайка ничего не меняет; уже сматченная пара — matched true + matchId.
+        Мэтч создаёт только новый лайк при встречном лайке. Цели — событие like_received, при мэтче обоим — match.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReactionResult' }
+        '400': { description: 'SELF_ACTION', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'PROFILE_NOT_FOUND (нет, не опубликована, другой тип аккаунта, блокировка)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /discovery/profiles/{profileId}/superlike:
+    parameters:
+      - { $ref: '#/components/parameters/ProfileId' }
+    post:
+      summary: Суперлайк (тратит 1 SUPERLIKE)
+      description: Повтор с тем же idempotencyKey или повторный суперлайк той же анкеты не списывает повторно.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdempotencyKeyRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReactionResult' }
+        '400': { description: 'VALIDATION_ERROR | SELF_ACTION', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'PROFILE_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { $ref: '#/components/responses/InsufficientBalance' }
+
+  /discovery/profiles/{profileId}/pass:
+    parameters:
+      - { $ref: '#/components/parameters/ProfileId' }
+    post:
+      summary: Пропустить анкету
+      description: Скрывает анкету из ленты на app.social.pass-ttl (30 дней). Всегда matched false.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReactionResult' }
+        '400': { description: 'SELF_ACTION', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'PROFILE_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'ALREADY_LIKED', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /me/likes/received:
+    get:
+      summary: Кто меня лайкнул
+      description: Неотвеченные лайки (без встречного лайка, активного пропуска, блокировки); сначала суперлайки, затем новые. Премиум WHO_LIKED_ME, если функция есть в Wallet.premiumFeatures.
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 0 }, description: '< 0 → 0' }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 50 }, description: '<= 0 → 20, больше 50 → 50' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReceivedLikesPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/PremiumRequired' }
+
+  /me/likes/received/count:
+    get:
+      summary: Количество неотвеченных лайков (без премиума)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer, format: int64 }
+                  superlikeCount: { type: integer, format: int64 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /accounts/{profileId}/block:
+    parameters:
+      - { $ref: '#/components/parameters/ProfileId' }
+    post:
+      summary: Заблокировать человека (в пути — id анкеты)
+      description: Идемпотентно. Скрывает обоих друг от друга везде и молча закрывает активный мэтч (обоим match_closed).
+      responses:
+        '204': { description: OK }
+        '400': { description: 'SELF_ACTION', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'PROFILE_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /reports:
+    post:
+      summary: Жалоба на анкету или сообщение
+      description: Сохраняется со статусом NEW (очереди модератора пока нет). Лимит app.social.reports-per-hour (20) на аккаунт.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [profileId, reason]
+              properties:
+                profileId: { type: string, format: uuid }
+                messageId: { type: string, format: uuid, description: Сообщение этого человека в моём чате (активном или закрытом) }
+                reason: { type: string, enum: [SPAM, FAKE_PROFILE, INAPPROPRIATE_CONTENT, HARASSMENT, SCAM, UNDERAGE, OTHER] }
+                comment: { type: string, maxLength: 1000, description: Пустой = без комментария }
+      responses:
+        '201':
+          description: Жалоба принята
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  createdAt: { type: string, format: date-time }
+        '400': { description: 'VALIDATION_ERROR | SELF_ACTION | MALFORMED_REQUEST', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'PROFILE_NOT_FOUND | MESSAGE_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /matches:
+    get:
+      summary: Мои активные мэтчи (экран чатов)
+      description: Сначала с самой свежей активностью (последнее сообщение, иначе время мэтча).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Match' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /matches/{matchId}:
+    parameters:
+      - { $ref: '#/components/parameters/MatchId' }
+    delete:
+      summary: Размэтч
+      description: Скрывает чат для обоих и запрещает новые сообщения; лайки сохраняются. Обоим — match_closed.
+      responses:
+        '204': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/MatchNotFound' }
+
+  /matches/{matchId}/messages:
+    parameters:
+      - { $ref: '#/components/parameters/MatchId' }
+    get:
+      summary: Сообщения чата (новые первыми, курсор before)
+      parameters:
+        - { name: before, in: query, schema: { type: string, format: uuid }, description: id самого старого уже загруженного сообщения }
+        - { name: limit, in: query, schema: { type: integer, default: 30, maximum: 100 }, description: '<= 0 или нет → 30, больше 100 → 100' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessagePage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'MATCH_NOT_FOUND | MESSAGE_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    post:
+      summary: Отправить сообщение (TEXT или STICKER)
+      description: |
+        Идемпотентно по clientMessageId: повтор возвращает исходное сообщение, не считается в лимите и не шлёт событий.
+        TEXT — 1..2000 символов после trim, без полей стикера; STICKER — stickerPackCode + sticker из купленного набора, без текста.
+        Лимит app.chat.messages-per-minute (30) на аккаунт. Обоим участникам — событие message.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendMessageRequest' }
+      responses:
+        '200':
+          description: Сообщение (как его видит отправитель)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '400': { description: 'VALIDATION_ERROR | NOT_A_STICKER_PACK | UNKNOWN_STICKER', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'ITEM_NOT_OWNED', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: 'MATCH_NOT_FOUND | ITEM_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /matches/{matchId}/read:
+    parameters:
+      - { $ref: '#/components/parameters/MatchId' }
+    post:
+      summary: Отметить прочитанным до сообщения
+      description: Указатель двигается только вперёд; если сдвинулся, собеседнику — событие read.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lastReadMessageId]
+              properties:
+                lastReadMessageId: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReadState' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'MATCH_NOT_FOUND | MESSAGE_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /events/ticket:
+    post:
+      summary: Одноразовый билет для подключения к /events из браузера
+      description: Действует app.realtime.ticket-ttl (60 с), одно использование.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ticket: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /events:
+    get:
+      summary: Поток событий реального времени (SSE)
+      description: |
+        Авторизация — заголовок Authorization: Bearer ИЛИ ?ticket= из POST /events/ticket (EventSource не умеет заголовки).
+        Сессионный токен в URL не принимается. Заголовки ответа: Cache-Control no-cache, X-Accel-Buffering no.
+        Каждое событие — `event: <имя>` и `data: <JSON>`. Доставка best effort, без повтора: после ready перезапросить мэтчи и сообщения.
+        Соединение закрывается через app.realtime.emitter-timeout (30 мин); не больше app.realtime.max-connections-per-account (5)
+        на аккаунт — старейшее закрывается. События отправляются только после коммита транзакции.
+
+        События:
+        - ready — { heartbeatSeconds } сразу после подключения
+        - heartbeat — { at } каждые app.realtime.heartbeat-interval (25 с)
+        - message — Message (как видит получатель; свои сообщения приходят и на другие мои подключения с mine = true)
+        - match — Match (новый мэтч, как видит получатель)
+        - match_closed — { matchId } (размэтч, блокировка, удаление аккаунта собеседника)
+        - like_received — { superlike, count } (без личности; count = /me/likes/received/count .count)
+        - read — ReadReceipt (собеседник прочитал чат до сообщения)
+      security: []
+      parameters:
+        - { name: ticket, in: query, schema: { type: string, maxLength: 128 } }
+      responses:
+        '200':
+          description: Поток Server-Sent Events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: 'Формат SSE; data каждого события — JSON (схемы: SseReady, SseHeartbeat, Message, Match, SseMatchClosed, SseLikeReceived, ReadReceipt)'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/boost:
+    get:
+      summary: Статус буста
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BoostStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Включить буст (тратит 1 BOOST)
+      description: Повтор с тем же idempotencyKey возвращает тот же буст и не списывает повторно. Бусты не суммируются.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdempotencyKeyRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BoostStatus' }
+        '400': { description: 'PROFILE_NOT_PUBLISHED | VALIDATION_ERROR', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { description: 'BOOST_ALREADY_ACTIVE | INSUFFICIENT_BALANCE (details.itemCode = BOOST)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /gacha/banners:
+    get:
+      summary: Открытые сейчас баннеры (без pool), по sortOrder
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Banner' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /gacha/banners/{code}:
+    parameters:
+      - { $ref: '#/components/parameters/BannerCode' }
+    get:
+      summary: Баннер с пулом
+      description: Закончившиеся баннеры возвращаются с open false.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Banner' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'BANNER_NOT_FOUND (неизвестный, выключен или ещё не начался)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /gacha/banners/{code}/pull:
+    parameters:
+      - { $ref: '#/components/parameters/BannerCode' }
+    post:
+      summary: Крутка (1 или multiPullSize)
+      description: Повтор с тем же idempotencyKey возвращает те же результаты с replayed true и ничего не списывает.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [count, idempotencyKey]
+              properties:
+                count: { type: integer, minimum: 1, maximum: 100, description: '1 или multiPullSize баннера, иначе 400 INVALID_PULL_COUNT' }
+                idempotencyKey: { type: string, minLength: 1, maxLength: 100 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PullResponse' }
+        '400': { description: 'INVALID_PULL_COUNT | VALIDATION_ERROR', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'BANNER_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'BANNER_NOT_ACTIVE | INSUFFICIENT_BALANCE (details) | IDEMPOTENCY_KEY_REUSED', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /gacha/history:
+    get:
+      summary: История круток (новые первыми)
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: before, in: query, schema: { type: integer, format: int64 }, description: nextBefore из предыдущей страницы }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/GachaHistoryItem' } }
+                  nextBefore: { type: [integer, 'null'], format: int64 }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /gacha/shards:
+    get:
+      summary: Осколки и курс обмена
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  balance: { $ref: '#/components/schemas/Balance' }
+                  ticketItemCode: { type: string }
+                  shardsPerTicket: { type: integer, example: 30 }
+                  maxTicketsPerExchange: { type: integer, example: 100 }
+                  duplicateShards:
+                    type: object
+                    additionalProperties: { type: integer }
+                    example: { COMMON: 1, RARE: 5, EPIC: 20, LEGENDARY: 60 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /gacha/shards/exchange:
+    post:
+      summary: Обмен осколков на билеты
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tickets, idempotencyKey]
+              properties:
+                tickets: { type: integer, minimum: 1, description: 'до maxTicketsPerExchange' }
+                idempotencyKey: { type: string, minLength: 1, maxLength: 100 }
+      responses:
+        '200':
+          description: OK (applied false — ключ уже использован, ничего не изменилось)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  applied: { type: boolean }
+                  tickets: { type: integer }
+                  shardsSpent: { type: integer, format: int64 }
+                  shardBalance: { $ref: '#/components/schemas/Balance' }
+                  ticketBalance: { $ref: '#/components/schemas/Balance' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/InsufficientBalance' }
+
+  # ------------------------------------------------------------------ admin
+
+  /admin/roles:
+    get:
+      tags: [admin]
+      summary: Роли и аккаунты с ролями
+      description: 'Роль: ADMIN.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available: { type: array, items: { type: string }, example: [ADMIN, CONTENT_EDITOR, MODERATOR] }
+                  accounts: { type: array, items: { $ref: '#/components/schemas/AdminAccount' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+
+  /admin/accounts/by-phone:
+    get:
+      tags: [admin]
+      summary: Найти аккаунт по телефону
+      description: 'Роль: ADMIN. Телефон нормализуется и хэшируется как при входе.'
+      parameters:
+        - { name: phone, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAccount' }
+        '400': { description: 'INVALID_PHONE (fieldErrors.phone) | MALFORMED_REQUEST', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'ACCOUNT_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/accounts/{accountId}:
+    parameters:
+      - { $ref: '#/components/parameters/AccountId' }
+    get:
+      tags: [admin]
+      summary: Аккаунт по id
+      description: 'Роль: ADMIN.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAccount' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'ACCOUNT_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/accounts/{accountId}/roles/{role}:
+    parameters:
+      - { $ref: '#/components/parameters/AccountId' }
+      - { name: role, in: path, required: true, schema: { type: string, enum: [ADMIN, CONTENT_EDITOR, MODERATOR] }, description: Без учёта регистра }
+    put:
+      tags: [admin]
+      summary: Выдать роль (идемпотентно)
+      description: 'Роль: ADMIN. Пишется в аудит (ACCOUNT_ROLE, GRANT).'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAccount' }
+        '400': { description: 'UNKNOWN_ROLE', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'ACCOUNT_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'ACCOUNT_NOT_ACTIVE', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [admin]
+      summary: Снять роль (идемпотентно)
+      description: 'Роль: ADMIN. Последний активный ADMIN не может потерять роль.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAccount' }
+        '400': { description: 'UNKNOWN_ROLE', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'ACCOUNT_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'LAST_ADMIN', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/audit:
+    get:
+      tags: [admin]
+      summary: Журнал аудита (новые первыми)
+      description: 'Роль: ADMIN.'
+      parameters:
+        - { name: entityType, in: query, schema: { type: string, enum: [ACCOUNT_ROLE, TAG, TAG_CATEGORY, GOAL, CATALOG_ITEM, AUTHOR, ACHIEVEMENT, PREMIUM_COMPOSITION, GACHA_BANNER] } }
+        - { name: entityId, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 }, description: Приводится к 1..200 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AuditEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+
+  /admin/tags:
+    get:
+      tags: [admin]
+      summary: Все карточки, включая скрытые
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AdminTag' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+    post:
+      tags: [admin]
+      summary: Создать карточку
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [code]
+                  properties:
+                    code: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,39}$' }
+                - { $ref: '#/components/schemas/AdminTagFields' }
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminTag' }
+        '400': { description: 'VALIDATION_ERROR | UNKNOWN_CATEGORY', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '409': { description: 'TAG_EXISTS', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/tags/{code}:
+    parameters:
+      - { $ref: '#/components/parameters/Code' }
+    put:
+      tags: [admin]
+      summary: Изменить карточку (полная замена полей)
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminTagFields' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminTag' }
+        '400': { description: 'VALIDATION_ERROR | UNKNOWN_CATEGORY', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'TAG_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [admin]
+      summary: Удалить карточку (используемая скрывается)
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeleteResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'TAG_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/tag-categories:
+    get:
+      tags: [admin]
+      summary: Категории карточек
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AdminCategory' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+    post:
+      tags: [admin]
+      summary: Создать категорию
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, label]
+              properties:
+                code: { type: string, pattern: '^[a-z][a-z0-9_]{1,29}$' }
+                label: { type: string, minLength: 1, maxLength: 50 }
+                sortOrder: { type: integer, minimum: 0, maximum: 100000, default: 0 }
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminCategory' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '409': { description: 'CATEGORY_EXISTS', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/tag-categories/{code}:
+    parameters:
+      - { $ref: '#/components/parameters/Code' }
+    put:
+      tags: [admin]
+      summary: Изменить категорию
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label]
+              properties:
+                label: { type: string, minLength: 1, maxLength: 50 }
+                sortOrder: { type: integer, minimum: 0, maximum: 100000, default: 0 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminCategory' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'CATEGORY_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [admin]
+      summary: Удалить пустую категорию
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      responses:
+        '204': { description: Удалено }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'CATEGORY_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'CATEGORY_IN_USE', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/goals:
+    get:
+      tags: [admin]
+      summary: Все цели знакомства
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AdminGoal' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+    post:
+      tags: [admin]
+      summary: Создать цель
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [code]
+                  properties:
+                    code: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,39}$' }
+                - { $ref: '#/components/schemas/AdminGoalFields' }
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminGoal' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '409': { description: 'GOAL_EXISTS', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/goals/{code}:
+    parameters:
+      - { $ref: '#/components/parameters/Code' }
+    put:
+      tags: [admin]
+      summary: Изменить цель
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminGoalFields' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminGoal' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'GOAL_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [admin]
+      summary: Удалить цель (используемая скрывается)
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeleteResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'GOAL_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/catalog/items:
+    get:
+      tags: [admin]
+      summary: Все предметы каталога, включая неактивные
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      parameters:
+        - { name: kind, in: query, schema: { type: string, enum: [CONSUMABLE, COSMETIC] } }
+        - { name: category, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/CatalogEntry' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+    post:
+      tags: [admin]
+      summary: Создать предмет
+      description: |
+        Роли: CONTENT_EDITOR или ADMIN. code, kind, category и equipSlot после создания не меняются.
+        Атрибуты проверяются по категории (см. docs/api-contract.md); только ошибки attributes.* — 400 INVALID_ATTRIBUTES.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCatalogItemRequest' }
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogEntry' }
+        '400': { description: 'VALIDATION_ERROR | INVALID_ATTRIBUTES', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '409': { description: 'ITEM_EXISTS', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/catalog/items/{code}:
+    parameters:
+      - { $ref: '#/components/parameters/Code' }
+    get:
+      tags: [admin]
+      summary: Предмет каталога
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'ITEM_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    put:
+      tags: [admin]
+      summary: Изменить предмет (полная замена редактируемых полей)
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCatalogItemRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogEntry' }
+        '400': { description: 'VALIDATION_ERROR | INVALID_ATTRIBUTES', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'ITEM_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/catalog/items/{code}/image:
+    parameters:
+      - { $ref: '#/components/parameters/Code' }
+    post:
+      tags: [admin]
+      summary: Загрузить картинку предмета (ставит attributes.imageUrl)
+      description: 'Роли: CONTENT_EDITOR или ADMIN. JPEG/PNG/WebP по содержимому, до 5 МБ, метаданные удаляются.'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogEntry' }
+        '400': { description: 'EMPTY_FILE | MALFORMED_REQUEST', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'ITEM_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '413': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+
+  /admin/authors:
+    get:
+      tags: [admin]
+      summary: Авторы предметов
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Author' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+    post:
+      tags: [admin]
+      summary: Создать автора
+      description: 'Роль: ADMIN.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthorRequest' }
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Author' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+
+  /admin/authors/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      tags: [admin]
+      summary: Изменить автора (полная замена; без revenueSharePercent — остаётся текущая)
+      description: 'Роль: ADMIN.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthorRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Author' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'AUTHOR_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [admin]
+      summary: Удалить автора без предметов
+      description: 'Роль: ADMIN.'
+      responses:
+        '204': { description: Удалено }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'AUTHOR_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'AUTHOR_IN_USE', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/achievements:
+    get:
+      tags: [admin]
+      summary: Определения достижений
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AchievementDefinition' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+
+  /admin/achievements/{code}:
+    parameters:
+      - { $ref: '#/components/parameters/Code' }
+    put:
+      tags: [admin]
+      summary: Изменить достижение (полная замена; коды фиксированы)
+      description: 'Роли: CONTENT_EDITOR или ADMIN. ITEM — активный предмет, quantity 1..1000 (косметика ровно 1); PREMIUM_DAYS — days 1..3650.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, rewards, active]
+              properties:
+                title: { type: string, minLength: 1, maxLength: 100 }
+                description: { type: string, maxLength: 300, description: Пустое = null }
+                rewards: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/Reward' } }
+                active: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AchievementDefinition' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'ACHIEVEMENT_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/premium:
+    get:
+      tags: [admin]
+      summary: Состав премиума
+      description: 'Роль: ADMIN.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PremiumView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+    put:
+      tags: [admin]
+      summary: Переопределить состав премиума (null/нет списка — без изменений)
+      description: 'Роль: ADMIN.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                features:
+                  type: array
+                  maxItems: 50
+                  uniqueItems: true
+                  items: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,49}$' }
+                allowances:
+                  type: array
+                  maxItems: 20
+                  description: Не больше одной выдачи на пару предмет+период
+                  items:
+                    type: object
+                    required: [itemCode, quantity, period, mode]
+                    properties:
+                      itemCode: { type: string, description: Активный расходник }
+                      quantity: { type: integer, format: int64, minimum: 1, maximum: 1000 }
+                      period: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
+                      mode: { type: string, enum: [TOP_UP, ADD] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PremiumView' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+    delete:
+      tags: [admin]
+      summary: Вернуть состав премиума к конфигу (app.economy.*)
+      description: 'Роль: ADMIN.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PremiumView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+
+  /admin/gacha/banners:
+    get:
+      tags: [admin]
+      summary: Все баннеры, включая неактивные
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AdminBanner' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+    post:
+      tags: [admin]
+      summary: Создать баннер
+      description: 'Роли: CONTENT_EDITOR или ADMIN. Аудит GACHA_BANNER.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminBannerRequest' }
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminBanner' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'ITEM_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'BANNER_ALREADY_EXISTS', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/gacha/banners/{code}:
+    parameters:
+      - { $ref: '#/components/parameters/BannerCode' }
+    get:
+      tags: [admin]
+      summary: Баннер (админ)
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminBanner' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'BANNER_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    put:
+      tags: [admin]
+      summary: Изменить баннер (полная замена, code из пути)
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminBannerRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminBanner' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'BANNER_NOT_FOUND | ITEM_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [admin]
+      summary: Удалить баннер без круток
+      description: 'Роли: CONTENT_EDITOR или ADMIN. С крутками — 409 BANNER_HAS_PULLS (выключите вместо удаления).'
+      responses:
+        '204': { description: Удалено }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'BANNER_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'BANNER_HAS_PULLS', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/gacha/banners/{code}/pool/{entryId}:
+    parameters:
+      - { $ref: '#/components/parameters/BannerCode' }
+      - { name: entryId, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,50}$' } }
+    put:
+      tags: [admin]
+      summary: Создать или заменить позицию пула
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminPoolEntryRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminBanner' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'BANNER_NOT_FOUND | ITEM_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [admin]
+      summary: Удалить позицию пула
+      description: 'Роли: CONTENT_EDITOR или ADMIN.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminBanner' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { description: 'BANNER_NOT_FOUND | POOL_ENTRY_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  # ------------------------------------------------------------------ testing
+
+  /testing/state:
+    get:
+      tags: [testing]
+      summary: Состояние тестового аккаунта
+      responses:
+        '200': { $ref: '#/components/responses/TestingState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+
+  /testing/achievements/{code}/complete:
+    parameters:
+      - { $ref: '#/components/parameters/Code' }
+    post:
+      tags: [testing]
+      summary: Выполнить достижение и выдать награды (один раз)
+      responses:
+        '200': { $ref: '#/components/responses/TestingState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /testing/achievements/{code}:
+    parameters:
+      - { $ref: '#/components/parameters/Code' }
+    delete:
+      tags: [testing]
+      summary: Сбросить выполнение (выданные награды остаются)
+      responses:
+        '200': { $ref: '#/components/responses/TestingState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /testing/wallet/items/{itemCode}:
+    parameters:
+      - { name: itemCode, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [testing]
+      summary: Добавить расходник / выдать косметику (PERMANENT)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity]
+              properties:
+                quantity: { type: integer, format: int64, minimum: 1, maximum: 100000 }
+      responses:
+        '200': { $ref: '#/components/responses/TestingState' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { $ref: '#/components/responses/Error' }
+    put:
+      tags: [testing]
+      summary: Установить купленный (PERMANENT) баланс точно
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity]
+              properties:
+                quantity: { type: integer, format: int64, minimum: 0, maximum: 100000, description: Косметика — 0 или 1 }
+      responses:
+        '200': { $ref: '#/components/responses/TestingState' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /testing/premium:
+    post:
+      tags: [testing]
+      summary: Добавить дни премиума
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DaysRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/TestingState' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+    delete:
+      tags: [testing]
+      summary: Закончить премиум сейчас
+      responses:
+        '200': { $ref: '#/components/responses/TestingState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+
+  /testing/clock/advance:
+    post:
+      tags: [testing]
+      summary: Сдвинуть экономическое время аккаунта вперёд
+      description: 7 дней = «следующая неделя премиума»; заканчивает идущий буст.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DaysRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/TestingState' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+
+  /testing/clock:
+    delete:
+      tags: [testing]
+      summary: Вернуть реальное время
+      responses:
+        '200': { $ref: '#/components/responses/TestingState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+
+  /testing/profiles:
+    get:
+      tags: [testing]
+      summary: Сид-профили (старые первыми)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/SeedProfile' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+    post:
+      tags: [testing]
+      summary: Создать сид-профиль (DRAFT; тестовый аккаунт без телефона)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [profile]
+              properties:
+                profile: { $ref: '#/components/schemas/ProfileUpdate' }
+                premiumDays: { type: integer, minimum: 0, maximum: 3650 }
+                cosmetics: { type: array, maxItems: 10, items: { type: string }, description: Надеваемые надеваются }
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeedProfile' }
+        '400': { description: 'VALIDATION_ERROR | UNKNOWN_TAG | UNKNOWN_GOAL', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { description: 'ITEM_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [testing]
+      summary: Удалить все сид-профили
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeletedCount' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+
+  /testing/profiles/{accountId}:
+    parameters:
+      - { $ref: '#/components/parameters/AccountId' }
+    put:
+      tags: [testing]
+      summary: Изменить сид-профиль
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfileUpdate' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeedProfile' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { $ref: '#/components/responses/SeedNotFound' }
+    delete:
+      tags: [testing]
+      summary: Удалить сид-профиль
+      responses:
+        '204': { description: Удалено }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { $ref: '#/components/responses/SeedNotFound' }
+
+  /testing/profiles/{accountId}/photos:
+    parameters:
+      - { $ref: '#/components/parameters/AccountId' }
+    post:
+      tags: [testing]
+      summary: Загрузить фото сид-профиля (правила как у /me/profile/photos)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Photo' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { $ref: '#/components/responses/SeedNotFound' }
+        '413': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+
+  /testing/profiles/{accountId}/publish:
+    parameters:
+      - { $ref: '#/components/parameters/AccountId' }
+    post:
+      tags: [testing]
+      summary: Опубликовать сид-профиль
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeedProfile' }
+        '400': { description: 'PROFILE_INCOMPLETE', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { $ref: '#/components/responses/SeedNotFound' }
+
+  /testing/gacha/state:
+    get:
+      tags: [testing]
+      summary: Состояние гачи для тестов
+      responses:
+        '200': { $ref: '#/components/responses/GachaTestingState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+
+  /testing/gacha/banners/{code}/forced:
+    parameters:
+      - { $ref: '#/components/parameters/BannerCode' }
+    put:
+      tags: [testing]
+      summary: Следующие крутки баннера вернут эти позиции по порядку (pityTrigger FORCED)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entryIds]
+              properties:
+                entryIds: { type: array, maxItems: 100, items: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/GachaTestingState' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { description: 'POOL_ENTRY_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /testing/gacha/forced:
+    delete:
+      tags: [testing]
+      summary: Очистить все принудительные очереди
+      responses:
+        '200': { $ref: '#/components/responses/GachaTestingState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+
+  /testing/gacha/pity/{pityGroup}:
+    parameters:
+      - { name: pityGroup, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [testing]
+      summary: Установить счётчики гаранта
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pullsSinceEpic: { type: integer, minimum: 0, maximum: 10000 }
+                pullsSinceLegendary: { type: integer, minimum: 0, maximum: 10000 }
+      responses:
+        '200': { $ref: '#/components/responses/GachaTestingState' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+
+  /testing/gacha/pity:
+    delete:
+      tags: [testing]
+      summary: Сбросить все счётчики гаранта
+      responses:
+        '200': { $ref: '#/components/responses/GachaTestingState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+
+  /testing/gacha/history:
+    delete:
+      tags: [testing]
+      summary: Удалить историю круток (кошелёк и счётчики остаются)
+      responses:
+        '200': { $ref: '#/components/responses/GachaTestingState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+
+  /testing/boost:
+    parameters:
+      - { name: accountId, in: query, schema: { type: string, format: uuid }, description: 'Сид-профиль вместо вызывающего (иначе 404 SEED_PROFILE_NOT_FOUND)' }
+    get:
+      tags: [testing]
+      summary: Состояние бустов
+      responses:
+        '200': { $ref: '#/components/responses/TestBoostState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { $ref: '#/components/responses/SeedNotFound' }
+    post:
+      tags: [testing]
+      summary: Запустить буст без списания
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                minutes: { type: integer, minimum: 1, maximum: 1440 }
+      responses:
+        '200': { $ref: '#/components/responses/TestBoostState' }
+        '400': { description: 'PROFILE_NOT_PUBLISHED | VALIDATION_ERROR', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { $ref: '#/components/responses/SeedNotFound' }
+        '409': { description: 'BOOST_ALREADY_ACTIVE', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [testing]
+      summary: Закончить буст сейчас
+      responses:
+        '200': { $ref: '#/components/responses/TestBoostState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { $ref: '#/components/responses/SeedNotFound' }
+
+  /testing/boost/impressions:
+    parameters:
+      - { name: accountId, in: query, schema: { type: string, format: uuid } }
+    put:
+      tags: [testing]
+      summary: Установить показы активного (иначе последнего) буста
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [impressions]
+              properties:
+                impressions: { type: integer, format: int64, minimum: 0, maximum: 1000000000 }
+      responses:
+        '200': { $ref: '#/components/responses/TestBoostState' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { description: 'BOOST_NOT_FOUND | SEED_PROFILE_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /testing/social/seed/{seedAccountId}/like-me:
+    parameters:
+      - { $ref: '#/components/parameters/SeedAccountId' }
+    post:
+      tags: [testing]
+      summary: Сид-профиль лайкает меня (без проверок ленты и списаний)
+      description: Если я уже лайкнул этот профиль — мэтч.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                superlike: { type: boolean, default: false }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReactionResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { $ref: '#/components/responses/SeedNotFound' }
+
+  /testing/social/seed/{seedAccountId}/match:
+    parameters:
+      - { $ref: '#/components/parameters/SeedAccountId' }
+    post:
+      tags: [testing]
+      summary: Мгновенный мэтч с сид-профилем
+      description: Оба лайкают друг друга; активный мэтч есть после вызова (новый, даже если прежний был закрыт).
+      responses:
+        '200':
+          description: OK (matched true)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReactionResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { $ref: '#/components/responses/SeedNotFound' }
+
+  /testing/social/matches/{matchId}/messages:
+    parameters:
+      - { $ref: '#/components/parameters/MatchId' }
+    post:
+      tags: [testing]
+      summary: Сид-профиль из моего мэтча пишет мне
+      description: Тело как у POST /matches/{matchId}/messages, но clientMessageId необязателен (генерируется), type по умолчанию TEXT. Ошибки чата те же.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                clientMessageId: { type: string, maxLength: 64 }
+                type: { type: string, enum: [TEXT, STICKER], default: TEXT }
+                text: { type: string, maxLength: 4000 }
+                stickerPackCode: { type: string, maxLength: 50 }
+                sticker: { type: string, maxLength: 50 }
+      responses:
+        '200':
+          description: Сообщение как его вижу я (mine false)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+        '404': { description: 'MATCH_NOT_FOUND | SEED_PROFILE_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /testing/social/passes:
+    delete:
+      tags: [testing]
+      summary: Забыть мои пропуски (анкеты вернутся в ленту)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeletedCount' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+
+  /testing/social/reactions:
+    delete:
+      tags: [testing]
+      summary: Забыть все мои лайки, суперлайки и пропуски (мэтчи остаются)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeletedCount' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+
+  /testing/roles/{role}:
+    parameters:
+      - { name: role, in: path, required: true, schema: { type: string, enum: [ADMIN, CONTENT_EDITOR, MODERATOR] } }
+    post:
+      tags: [testing]
+      summary: Выдать себе роль персонала (аудит TESTING_GRANT)
+      responses:
+        '200':
+          description: Аккаунт, как GET /me
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '400': { description: 'UNKNOWN_ROLE', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+    delete:
+      tags: [testing]
+      summary: Снять с себя роль (аудит TESTING_REVOKE, без защиты последнего ADMIN)
+      responses:
+        '200':
+          description: Аккаунт, как GET /me
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '400': { description: 'UNKNOWN_ROLE', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/TestAccountRequired' }
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
+
+  parameters:
+    ProfileId: { name: profileId, in: path, required: true, schema: { type: string, format: uuid }, description: PublicProfile.id (не id аккаунта) }
+    MatchId: { name: matchId, in: path, required: true, schema: { type: string, format: uuid } }
+    BannerCode: { name: code, in: path, required: true, schema: { type: string } }
+    Code: { name: code, in: path, required: true, schema: { type: string } }
+    AccountId: { name: accountId, in: path, required: true, schema: { type: string, format: uuid } }
+    SeedAccountId: { name: seedAccountId, in: path, required: true, schema: { type: string, format: uuid }, description: SeedProfile.accountId }
 
   responses:
     Error:
@@ -323,6 +2145,52 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
 
+    PremiumRequired:
+      description: PREMIUM_REQUIRED, details.feature — код премиум-функции (показать пейвол)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InsufficientBalance:
+      description: INSUFFICIENT_BALANCE, details { itemCode, available }; ничего не списано
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RoleRequired:
+      description: ROLE_REQUIRED, details.roles — любая из этих ролей дала бы доступ
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TestAccountRequired:
+      description: TEST_ACCOUNT_REQUIRED — доступно только тестовым аккаунтам
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    MatchNotFound:
+      description: MATCH_NOT_FOUND (не мой, размэтчен, заблокирован)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    SeedNotFound:
+      description: SEED_PROFILE_NOT_FOUND
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TestingState:
+      description: Состояние тестового аккаунта
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TestingState' }
+    GachaTestingState:
+      description: Состояние гачи для тестов
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/GachaTestingState' }
+    TestBoostState:
+      description: Состояние бустов для тестов
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TestBoostState' }
+
   schemas:
     Error:
       type: object
@@ -334,6 +2202,10 @@ components:
         fieldErrors:
           type: object
           additionalProperties: { type: string }
+        details:
+          type: object
+          description: 'Машиночитаемые подробности: PREMIUM_REQUIRED {feature}, INSUFFICIENT_BALANCE {itemCode, available}, ROLE_REQUIRED {roles}'
+          additionalProperties: true
 
     AuthChallenge:
       type: object
@@ -357,12 +2229,17 @@ components:
         phoneMasked: { type: string }
         status: { type: string, enum: [ACTIVE, SUSPENDED, DELETION_PENDING, DELETED] }
         createdAt: { type: string, format: date-time }
+        testAccount: { type: boolean, description: QA-аккаунт; клиент показывает тестовую панель }
+        roles:
+          type: array
+          description: Роли персонала (отсортированы); пусто у обычных пользователей
+          items: { type: string, enum: [ADMIN, CONTENT_EDITOR, MODERATOR] }
 
     Tag:
       type: object
       properties:
         code: { type: string }
-        category: { type: string, enum: [pace, format, calls, boundaries, social] }
+        category: { type: string, description: 'Код категории (исходно pace, format, calls, boundaries, social; редактируется через /admin/tag-categories)' }
         categoryLabel: { type: string }
         label: { type: string }
         description: { type: string }
@@ -372,7 +2249,7 @@ components:
       type: object
       properties:
         id: { type: string, format: uuid }
-        url: { type: string, description: Относительная подписанная ссылка, действует ~1 час }
+        url: { type: string, description: 'Относительная подписанная ссылка, действует ~1 час' }
         mimeType: { type: string }
         sizeBytes: { type: integer, format: int64 }
         sortOrder: { type: integer }
@@ -396,6 +2273,10 @@ components:
         missingForPublish:
           type: array
           items: { type: string, enum: [displayName, age, city, photos] }
+        decorations: { $ref: '#/components/schemas/Decorations' }
+        heightCm: { type: [integer, 'null'] }
+        goals: { type: array, items: { $ref: '#/components/schemas/Goal' } }
+        premium: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
@@ -410,6 +2291,11 @@ components:
         dailyStatusText: { type: [string, 'null'] }
         tags: { type: array, items: { $ref: '#/components/schemas/Tag' } }
         photos: { type: array, items: { $ref: '#/components/schemas/Photo' } }
+        decorations: { $ref: '#/components/schemas/Decorations' }
+        heightCm: { type: [integer, 'null'] }
+        goals: { type: array, items: { $ref: '#/components/schemas/Goal' } }
+        premium: { type: boolean, description: Бейдж премиума }
+        boosted: { type: boolean, description: 'Только при app.boost.public-badge=true и активном бусте; иначе поля нет' }
 
     ProfileUpdate:
       type: object
@@ -420,12 +2306,16 @@ components:
         aboutText: { type: string, maxLength: 1000, description: Пустая строка очищает }
         tagCodes: { type: array, maxItems: 10, items: { type: string } }
         dailyStatusText: { type: string, maxLength: 200, description: Пустая строка очищает; иначе действует 24 часа }
+        heightCm: { type: integer, minimum: 120, maximum: 230 }
+        goalCodes: { type: array, maxItems: 3, items: { type: string }, description: 'Известные коды (иначе 400 UNKNOWN_GOAL); [] очищает' }
+        clearHeight: { type: boolean, description: 'true удаляет рост; вместе с heightCm — 400 fieldErrors.heightCm' }
 
     ExclusionWords:
       type: object
       properties:
         words: { type: array, items: { type: string } }
         maxWords: { type: integer, example: 20 }
+        active: { type: boolean, description: 'false — премиум закончился, список сохранён, но не применяется' }
 
     DiscoveryPage:
       type: object
@@ -435,3 +2325,637 @@ components:
         limit: { type: integer }
         totalElements: { type: integer, format: int64 }
         totalPages: { type: integer }
+
+    Goal:
+      type: object
+      properties:
+        code: { type: string, example: SERIOUS_RELATIONSHIP }
+        label: { type: string }
+        sortOrder: { type: integer }
+
+    ExcludedGoals:
+      type: object
+      properties:
+        goalCodes: { type: array, items: { type: string } }
+        active: { type: boolean, description: 'false — премиум закончился, фильтр сохранён, но не применяется' }
+
+    Decoration:
+      type: object
+      description: Рисовать по attributes; неизвестные ключи и слоты игнорировать
+      properties:
+        code: { type: string }
+        title: { type: string }
+        rarity: { type: [string, 'null'], enum: [COMMON, RARE, EPIC, LEGENDARY, null] }
+        attributes: { type: object, additionalProperties: true }
+
+    Decorations:
+      type: object
+      description: Надетая публичная косметика по слотам (PHOTO_FRAME, PROFILE_STATUS, …); может быть {}
+      additionalProperties: { $ref: '#/components/schemas/Decoration' }
+
+    Wallet:
+      type: object
+      properties:
+        premium:
+          type: object
+          properties:
+            active: { type: boolean }
+            until: { type: [string, 'null'], format: date-time }
+        premiumFeatures: { type: array, items: { type: string }, description: 'Коды функций, требующих премиум' }
+        items: { type: array, items: { $ref: '#/components/schemas/WalletItem' }, description: 'Только quantity > 0; расходники первыми' }
+        equipped:
+          type: object
+          description: Слот → код надетого предмета (включая приватный CHAT_WALLPAPER)
+          additionalProperties: { type: string }
+
+    WalletItem:
+      type: object
+      properties:
+        code: { type: string }
+        kind: { type: string, enum: [CONSUMABLE, COSMETIC] }
+        category: { type: string, description: 'SUPERLIKE, GACHA_TICKET, BOOST, STICKER_PACK, CHAT_WALLPAPER, PROFILE_STATUS, PHOTO_FRAME, …' }
+        title: { type: string }
+        rarity: { type: [string, 'null'] }
+        equipSlot: { type: [string, 'null'] }
+        attributes: { type: object, additionalProperties: true }
+        quantity: { type: integer, format: int64 }
+        periodicQuantity: { type: integer, format: int64, description: 'Часть quantity из премиум-выдачи, тратится первой' }
+
+    Reward:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [ITEM, PREMIUM_DAYS] }
+        itemCode: { type: [string, 'null'] }
+        quantity: { type: [integer, 'null'], format: int64 }
+        days: { type: [integer, 'null'] }
+
+    Achievement:
+      type: object
+      properties:
+        code: { type: string }
+        title: { type: string }
+        description: { type: [string, 'null'] }
+        completed: { type: boolean }
+        completedAt: { type: [string, 'null'], format: date-time }
+        rewards: { type: array, items: { $ref: '#/components/schemas/Reward' } }
+
+    CatalogItem:
+      type: object
+      properties:
+        code: { type: string }
+        kind: { type: string, enum: [CONSUMABLE, COSMETIC] }
+        category: { type: string }
+        equipSlot: { type: [string, 'null'] }
+        rarity: { type: [string, 'null'] }
+        title: { type: string }
+        attributes: { type: object, additionalProperties: true, description: 'imageUrl (необязательно) — относительная публичная ссылка /api/v1/catalog/images/{id}' }
+        availableFrom: { type: [string, 'null'], format: date-time }
+        availableUntil: { type: [string, 'null'], format: date-time, description: Не включительно }
+        availableNow: { type: boolean }
+        author:
+          type: [object, 'null']
+          properties:
+            id: { type: string, format: uuid }
+            displayName: { type: string }
+
+    IdempotencyKeyRequest:
+      type: object
+      required: [idempotencyKey]
+      properties:
+        idempotencyKey: { type: string, minLength: 1, maxLength: 100, description: 'Новый на каждое нажатие, тот же при повторе' }
+
+    ReactionResult:
+      type: object
+      properties:
+        matched: { type: boolean }
+        matchId: { type: string, format: uuid, description: Только при matched true }
+
+    ReceivedLikesPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              profile: { $ref: '#/components/schemas/PublicProfile' }
+              superlike: { type: boolean }
+              likedAt: { type: string, format: date-time }
+        page: { type: integer }
+        limit: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+
+    Message:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        matchId: { type: string, format: uuid }
+        mine: { type: boolean }
+        type: { type: string, enum: [TEXT, STICKER] }
+        text: { type: [string, 'null'] }
+        stickerPackCode: { type: [string, 'null'] }
+        sticker: { type: [string, 'null'], description: Код из attributes.stickers набора }
+        clientMessageId: { type: [string, 'null'], description: Только в моих сообщениях }
+        createdAt: { type: string, format: date-time }
+
+    MessagePage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Message' }, description: Новые первыми }
+        nextBefore: { type: [string, 'null'], format: uuid, description: Передать как before; null — старше нет }
+
+    SendMessageRequest:
+      type: object
+      required: [clientMessageId, type]
+      properties:
+        clientMessageId: { type: string, minLength: 1, maxLength: 64 }
+        type: { type: string, enum: [TEXT, STICKER] }
+        text: { type: string, maxLength: 4000, description: 'TEXT: 1..2000 символов после trim' }
+        stickerPackCode: { type: string, maxLength: 50 }
+        sticker: { type: string, maxLength: 50 }
+
+    Match:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        profile: { $ref: '#/components/schemas/PublicProfile' }
+        lastMessage:
+          oneOf:
+            - { $ref: '#/components/schemas/Message' }
+            - { type: 'null' }
+        unreadCount: { type: integer, format: int64 }
+        myLastReadMessageId: { type: [string, 'null'], format: uuid }
+        otherLastReadMessageId: { type: [string, 'null'], format: uuid }
+        otherLastReadAt: { type: [string, 'null'], format: date-time }
+
+    ReadState:
+      type: object
+      properties:
+        matchId: { type: string, format: uuid }
+        lastReadMessageId: { type: string, format: uuid }
+        lastReadAt: { type: string, format: date-time }
+        unreadCount: { type: integer, format: int64 }
+
+    ReadReceipt:
+      type: object
+      description: data события read
+      properties:
+        matchId: { type: string, format: uuid }
+        lastReadMessageId: { type: string, format: uuid }
+        lastReadAt: { type: string, format: date-time }
+
+    SseReady:
+      type: object
+      description: data события ready
+      properties:
+        heartbeatSeconds: { type: integer }
+
+    SseHeartbeat:
+      type: object
+      description: data события heartbeat
+      properties:
+        at: { type: string, format: date-time }
+
+    SseMatchClosed:
+      type: object
+      description: data события match_closed
+      properties:
+        matchId: { type: string, format: uuid }
+
+    SseLikeReceived:
+      type: object
+      description: data события like_received
+      properties:
+        superlike: { type: boolean }
+        count: { type: integer, format: int64 }
+
+    BoostRecord:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        impressions: { type: integer, format: int64 }
+
+    BoostStatus:
+      type: object
+      properties:
+        active: { type: boolean }
+        startsAt: { type: [string, 'null'], format: date-time }
+        endsAt: { type: [string, 'null'], format: date-time }
+        impressions: { type: integer, format: int64 }
+        available: { type: integer, format: int64, description: Баланс BOOST }
+        durationMinutes: { type: integer, format: int64 }
+        now: { type: string, format: date-time, description: «Сейчас» по часам владельца (для тестовых аккаунтов сдвинуто) }
+        history: { type: array, items: { $ref: '#/components/schemas/BoostRecord' }, description: 'Последние 10, новые первыми' }
+
+    Balance:
+      type: object
+      properties:
+        itemCode: { type: string }
+        quantity: { type: integer, format: int64 }
+
+    GachaReward:
+      type: object
+      properties:
+        type: { type: string, enum: [ITEM, PREMIUM_DAYS] }
+        item:
+          type: [object, 'null']
+          properties:
+            code: { type: string }
+            kind: { type: string, enum: [CONSUMABLE, COSMETIC] }
+            category: { type: string }
+            title: { type: string }
+            rarity: { type: [string, 'null'] }
+            equipSlot: { type: [string, 'null'] }
+            attributes: { type: object, additionalProperties: true }
+        quantity: { type: [integer, 'null'], format: int64 }
+        days: { type: [integer, 'null'] }
+
+    PityRules:
+      type: object
+      properties:
+        epicOrBetterWithin: { type: [integer, 'null'] }
+        legendaryWithin: { type: [integer, 'null'] }
+        softPityStartsAt: { type: [integer, 'null'] }
+        softPityLegendaryWeightStep: { type: integer, format: int64 }
+
+    PityProgress:
+      type: object
+      properties:
+        pityGroup: { type: string }
+        pullsSinceEpic: { type: integer }
+        pullsSinceLegendary: { type: integer }
+        epicGuaranteedIn: { type: [integer, 'null'], description: 1 — следующая крутка гарантирована }
+        legendaryGuaranteedIn: { type: [integer, 'null'] }
+        totalPulls: { type: integer, format: int64 }
+
+    Rarity:
+      type: string
+      enum: [COMMON, RARE, EPIC, LEGENDARY]
+
+    PoolEntry:
+      type: object
+      properties:
+        entryId: { type: string }
+        rarity: { $ref: '#/components/schemas/Rarity' }
+        reward: { $ref: '#/components/schemas/GachaReward' }
+        weight: { type: integer, format: int64 }
+        percent: { type: number, description: 4 знака после запятой }
+        featured: { type: boolean }
+
+    BannerRates:
+      type: object
+      properties:
+        totalWeight: { type: integer, format: int64 }
+        rarities:
+          type: array
+          items:
+            type: object
+            properties:
+              rarity: { $ref: '#/components/schemas/Rarity' }
+              weight: { type: integer, format: int64 }
+              percent: { type: number }
+
+    Banner:
+      type: object
+      properties:
+        code: { type: string }
+        title: { type: string }
+        description: { type: [string, 'null'] }
+        type: { type: string, enum: [PERMANENT, LIMITED] }
+        startsAt: { type: [string, 'null'], format: date-time }
+        endsAt: { type: [string, 'null'], format: date-time }
+        open: { type: boolean }
+        attributes: { type: object, additionalProperties: true }
+        cost:
+          type: object
+          properties:
+            itemCode: { type: string }
+            perPull: { type: integer }
+            multiPullSize: { type: integer }
+            multiPullCost: { type: integer, format: int64 }
+        pityRules: { $ref: '#/components/schemas/PityRules' }
+        myPity: { $ref: '#/components/schemas/PityProgress' }
+        rates: { $ref: '#/components/schemas/BannerRates' }
+        featured: { type: array, items: { $ref: '#/components/schemas/PoolEntry' } }
+        pool: { type: array, items: { $ref: '#/components/schemas/PoolEntry' }, description: 'Только в GET /gacha/banners/{code}' }
+
+    PullResult:
+      type: object
+      properties:
+        index: { type: integer }
+        entryId: { type: string }
+        rarity: { $ref: '#/components/schemas/Rarity' }
+        reward: { $ref: '#/components/schemas/GachaReward' }
+        isNew: { type: boolean }
+        outcome: { type: string, enum: [NEW, DUPLICATE_SHARDS] }
+        shardsGranted: { type: integer }
+        pityTrigger: { type: [string, 'null'], enum: [EPIC_PITY, LEGENDARY_PITY, FORCED, null] }
+
+    PullResponse:
+      type: object
+      properties:
+        requestId: { type: string, format: uuid }
+        bannerCode: { type: string }
+        count: { type: integer }
+        replayed: { type: boolean }
+        results: { type: array, items: { $ref: '#/components/schemas/PullResult' } }
+        shardsGranted: { type: integer }
+        pity: { $ref: '#/components/schemas/PityProgress' }
+        costBalance: { $ref: '#/components/schemas/Balance' }
+        shardBalance: { $ref: '#/components/schemas/Balance' }
+
+    GachaHistoryItem:
+      allOf:
+        - { $ref: '#/components/schemas/PullResult' }
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            requestId: { type: string, format: uuid }
+            bannerCode: { type: string }
+            bannerTitle: { type: string }
+            createdAt: { type: string, format: date-time }
+
+    AdminAccount:
+      type: object
+      properties:
+        accountId: { type: string, format: uuid }
+        phoneMasked: { type: string }
+        status: { type: string, enum: [ACTIVE, SUSPENDED, DELETION_PENDING, DELETED] }
+        testAccount: { type: boolean }
+        roles: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        actorAccountId: { type: string, format: uuid }
+        action: { type: string, description: 'CREATE, UPDATE, DELETE, DEACTIVATE, GRANT, REVOKE, TESTING_GRANT, TESTING_REVOKE, IMAGE_UPLOAD, RESET, …' }
+        entityType: { type: string }
+        entityId: { type: string }
+        before: { description: Снимок до изменения (любой JSON или null) }
+        after: { description: Снимок после изменения (любой JSON или null) }
+        createdAt: { type: string, format: date-time }
+
+    AdminTagFields:
+      type: object
+      required: [category, label, description]
+      properties:
+        category: { type: string, description: Существующий код категории (иначе 400 UNKNOWN_CATEGORY) }
+        label: { type: string, minLength: 1, maxLength: 60 }
+        description: { type: string, minLength: 1, maxLength: 255 }
+        sortOrder: { type: integer, minimum: 0, maximum: 100000, default: 0 }
+        active: { type: boolean, default: true }
+
+    AdminTag:
+      type: object
+      properties:
+        code: { type: string }
+        category: { type: string }
+        categoryLabel: { type: string }
+        label: { type: string }
+        description: { type: string }
+        sortOrder: { type: integer }
+        active: { type: boolean }
+        usageCount: { type: integer, format: int64 }
+
+    AdminCategory:
+      type: object
+      properties:
+        code: { type: string }
+        label: { type: string }
+        sortOrder: { type: integer }
+        tagCount: { type: integer, format: int64 }
+
+    AdminGoalFields:
+      type: object
+      required: [label]
+      properties:
+        label: { type: string, minLength: 1, maxLength: 60 }
+        sortOrder: { type: integer, minimum: 0, maximum: 100000, default: 0 }
+        active: { type: boolean, default: true }
+
+    AdminGoal:
+      type: object
+      properties:
+        code: { type: string }
+        label: { type: string }
+        sortOrder: { type: integer }
+        active: { type: boolean }
+        usageCount: { type: integer, format: int64 }
+
+    DeleteResult:
+      type: object
+      properties:
+        result: { type: string, enum: [DELETED, DEACTIVATED], description: 'DEACTIVATED — используется, скрыто (вернуть PUT active=true)' }
+
+    CatalogEntry:
+      type: object
+      properties:
+        code: { type: string }
+        kind: { type: string, enum: [CONSUMABLE, COSMETIC] }
+        category: { type: string }
+        equipSlot: { type: [string, 'null'] }
+        title: { type: string }
+        rarity: { type: [string, 'null'] }
+        attributes: { type: object, additionalProperties: true }
+        active: { type: boolean }
+        availableFrom: { type: [string, 'null'], format: date-time }
+        availableUntil: { type: [string, 'null'], format: date-time }
+        authorId: { type: [string, 'null'], format: uuid }
+        authorName: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    CreateCatalogItemRequest:
+      type: object
+      required: [code, kind, category, title]
+      properties:
+        code: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,49}$' }
+        kind: { type: string, enum: [CONSUMABLE, COSMETIC] }
+        category: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,29}$' }
+        equipSlot: { type: string, enum: [PHOTO_FRAME, PROFILE_STATUS, CHAT_WALLPAPER], description: 'По умолчанию слот с именем категории, если есть; у расходников и STICKER_PACK слота нет' }
+        title: { type: string, minLength: 1, maxLength: 80 }
+        rarity: { $ref: '#/components/schemas/Rarity' }
+        attributes: { type: object, additionalProperties: true, default: {} }
+        active: { type: boolean, default: true }
+        availableFrom: { type: string, format: date-time }
+        availableUntil: { type: string, format: date-time, description: Позже availableFrom }
+        authorId: { type: string, format: uuid }
+
+    UpdateCatalogItemRequest:
+      type: object
+      required: [title, attributes, active]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 80 }
+        rarity: { $ref: '#/components/schemas/Rarity' }
+        attributes: { type: object, additionalProperties: true }
+        active: { type: boolean }
+        availableFrom: { type: string, format: date-time }
+        availableUntil: { type: string, format: date-time }
+        authorId: { type: string, format: uuid }
+
+    Author:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        accountId: { type: [string, 'null'], format: uuid }
+        revenueSharePercent: { type: integer, minimum: 0, maximum: 100 }
+        contactNote: { type: [string, 'null'], description: Приватная заметка для персонала }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        itemCount: { type: integer, format: int64 }
+
+    AuthorRequest:
+      type: object
+      required: [displayName]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 80 }
+        accountId: { type: string, format: uuid, description: Существующий аккаунт (иначе 400 VALIDATION_ERROR fieldErrors.accountId) }
+        revenueSharePercent: { type: integer, minimum: 0, maximum: 100, description: По умолчанию app.authors.default-revenue-share-percent (30) }
+        contactNote: { type: string, maxLength: 500 }
+
+    AchievementDefinition:
+      type: object
+      properties:
+        code: { type: string }
+        title: { type: string }
+        description: { type: [string, 'null'] }
+        rewards: { type: array, items: { $ref: '#/components/schemas/Reward' } }
+        active: { type: boolean }
+        completionCount: { type: integer, format: int64 }
+
+    Composition:
+      type: object
+      properties:
+        features: { type: array, items: { type: string } }
+        allowances:
+          type: array
+          items:
+            type: object
+            properties:
+              itemCode: { type: string }
+              quantity: { type: integer, format: int64 }
+              period: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
+              mode: { type: string, enum: [TOP_UP, ADD] }
+        featuresOverridden: { type: boolean, description: false — значение из конфига }
+        allowancesOverridden: { type: boolean }
+
+    PremiumView:
+      type: object
+      properties:
+        current: { $ref: '#/components/schemas/Composition' }
+        defaults: { $ref: '#/components/schemas/Composition' }
+
+    AdminBanner:
+      type: object
+      properties:
+        code: { type: string }
+        title: { type: string }
+        description: { type: [string, 'null'] }
+        type: { type: string, enum: [PERMANENT, LIMITED] }
+        startsAt: { type: [string, 'null'], format: date-time }
+        endsAt: { type: [string, 'null'], format: date-time }
+        active: { type: boolean }
+        costItemCode: { type: string }
+        costPerPull: { type: integer }
+        multiPullSize: { type: integer }
+        pityGroup: { type: string }
+        pityRules: { $ref: '#/components/schemas/PityRules' }
+        sortOrder: { type: integer }
+        attributes: { type: object, additionalProperties: true }
+        rates: { $ref: '#/components/schemas/BannerRates' }
+        pool: { type: array, items: { $ref: '#/components/schemas/PoolEntry' } }
+        pulls: { type: integer, format: int64 }
+
+    AdminBannerRequest:
+      type: object
+      required: [title, type]
+      properties:
+        code: { type: string, pattern: '^[A-Z0-9_]{2,50}$', description: Только при создании; в PUT берётся из пути }
+        title: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 500 }
+        type: { type: string, enum: [PERMANENT, LIMITED] }
+        startsAt: { type: string, format: date-time, description: Обязательно для LIMITED }
+        endsAt: { type: string, format: date-time, description: Обязательно для LIMITED }
+        active: { type: boolean, default: true }
+        costItemCode: { type: string, default: GACHA_TICKET, description: Только расходники }
+        costPerPull: { type: integer, minimum: 1, maximum: 1000, default: 1 }
+        multiPullSize: { type: integer, minimum: 2, maximum: 100, default: 10 }
+        pityGroup: { type: string, description: По умолчанию = code }
+        epicPity: { type: integer, minimum: 0, maximum: 1000, default: 10, description: 0 — выключено }
+        legendaryPity: { type: integer, minimum: 0, maximum: 10000, default: 80, description: 0 — выключено }
+        softPityStart: { type: integer, minimum: 0, description: По умолчанию выключено }
+        softPityWeightStep: { type: integer, format: int64, minimum: 0, default: 0 }
+        sortOrder: { type: integer, default: 0 }
+        attributes: { type: object, additionalProperties: true, default: {} }
+
+    AdminPoolEntryRequest:
+      type: object
+      required: [rewardType, weight]
+      properties:
+        rewardType: { type: string, enum: [ITEM, PREMIUM_DAYS] }
+        itemCode: { type: string }
+        quantity: { type: integer, format: int64, minimum: 1, maximum: 100000, default: 1, description: Косметика — ровно 1 }
+        days: { type: integer, minimum: 1, maximum: 3650 }
+        rarity: { $ref: '#/components/schemas/Rarity' }
+        weight: { type: integer, format: int64, minimum: 1, maximum: 1000000000 }
+        featured: { type: boolean }
+        sortOrder: { type: integer }
+
+    DaysRequest:
+      type: object
+      required: [days]
+      properties:
+        days: { type: integer, minimum: 1, maximum: 3650 }
+
+    DeletedCount:
+      type: object
+      properties:
+        deleted: { type: integer }
+
+    TestingState:
+      type: object
+      properties:
+        accountId: { type: string, format: uuid }
+        clockOffsetDays: { type: number }
+        economyNow: { type: string, format: date-time }
+        wallet: { $ref: '#/components/schemas/Wallet' }
+        achievements: { type: array, items: { $ref: '#/components/schemas/Achievement' } }
+
+    SeedProfile:
+      type: object
+      properties:
+        accountId: { type: string, format: uuid }
+        profile: { $ref: '#/components/schemas/MyProfile' }
+
+    GachaTestingState:
+      type: object
+      properties:
+        forcedQueue:
+          type: object
+          description: Код баннера → очередь entryId
+          additionalProperties: { type: array, items: { type: string } }
+        pity:
+          type: object
+          description: pityGroup → счётчики
+          additionalProperties:
+            type: object
+            properties:
+              pullsSinceEpic: { type: integer }
+              pullsSinceLegendary: { type: integer }
+              totalPulls: { type: integer, format: int64 }
+        pulls: { type: integer, format: int64 }
+
+    TestBoostState:
+      type: object
+      properties:
+        accountId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/BoostStatus' }
+        boosts: { type: array, items: { $ref: '#/components/schemas/BoostRecord' }, description: 'Все, до 100, новые первыми' }
