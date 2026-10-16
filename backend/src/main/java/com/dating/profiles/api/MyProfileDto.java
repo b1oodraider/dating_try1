@@ -1,5 +1,6 @@
 package com.dating.profiles.api;
 
+import com.dating.profiles.application.ProfileTips;
 import com.dating.profiles.domain.PublicationStatus;
 
 import java.time.Instant;
@@ -25,6 +26,7 @@ public record MyProfileDto(
         List<TagResponseDto> tags,
         List<PhotoDto> photos,
         int completenessPercent,
+        List<ProfileTips.Tip> tips,
         List<String> missingForPublish,
         Map<String, DecorationDto> decorations,
         Integer heightCm,

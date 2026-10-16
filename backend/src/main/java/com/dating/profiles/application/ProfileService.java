@@ -271,6 +271,7 @@ public class ProfileService {
                 .map(TagResponseDto::from)
                 .sorted(Comparator.comparingInt(TagResponseDto::sortOrder))
                 .toList();
+        List<ProfileTips.Tip> tips = ProfileTips.of(profile, photos.size());
         return new MyProfileDto(
                 profile.getId(),
                 profile.getDisplayName(),
@@ -282,7 +283,8 @@ public class ProfileService {
                 profile.getDailyStatusExpiresAt(),
                 tags,
                 photos,
-                calculateCompleteness(profile, photos.size()),
+                ProfileTips.percent(tips),
+                tips,
                 List.copyOf(missingForPublish(profile, photos.size()).keySet()),
                 decorationQuery.publicDecorations(profile.getAccountId()),
                 profile.getHeightCm(),
@@ -312,17 +314,6 @@ public class ProfileService {
             missing.put("photos", "Добавьте хотя бы одну фотографию");
         }
         return missing;
-    }
-
-    public static int calculateCompleteness(Profile profile, long photoCount) {
-        int score = 0;
-        if (!isBlank(profile.getDisplayName())) score += 20;
-        if (profile.getAge() != null) score += 15;
-        if (!isBlank(profile.getCity())) score += 15;
-        if (profile.getAboutText() != null && profile.getAboutText().trim().length() >= 10) score += 15;
-        if (profile.getTags().size() >= 3) score += 15;
-        if (photoCount >= 1) score += 20;
-        return score;
     }
 
     private static boolean isBlank(String value) {

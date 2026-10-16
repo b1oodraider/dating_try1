@@ -2806,6 +2806,21 @@ components:
         tags: { type: array, items: { $ref: '#/components/schemas/Tag' } }
         photos: { type: array, items: { $ref: '#/components/schemas/Photo' } }
         completenessPercent: { type: integer, minimum: 0, maximum: 100 }
+        tips:
+          type: array
+          description: |
+            Советы по анкете: невыполненные первыми, самые ценные первыми; веса в сумме 100, completenessPercent — сумма
+            весов выполненных. NAME 10, AGE 10, CITY 10, FIRST_PHOTO 15 (обязательны для публикации), MORE_PHOTOS 10,
+            ABOUT 15 (от 50 символов), CARDS 10 (карточки в 2+ категориях), GOALS 8, VERIFIED 8, HEIGHT 4.
+            Только подсказка владельцу, на выдачу не влияет.
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              text: { type: string }
+              weight: { type: integer }
+              done: { type: boolean }
+              requiredToPublish: { type: boolean }
         missingForPublish:
           type: array
           items: { type: string, enum: [displayName, age, city, photos] }

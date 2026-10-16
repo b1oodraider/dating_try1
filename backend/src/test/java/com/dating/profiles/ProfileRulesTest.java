@@ -1,6 +1,7 @@
 package com.dating.profiles;
 
 import com.dating.profiles.application.ProfileService;
+import com.dating.profiles.application.ProfileTips;
 import com.dating.profiles.domain.CommunicationTag;
 import com.dating.profiles.domain.Profile;
 import org.junit.jupiter.api.Test;
@@ -21,7 +22,7 @@ class ProfileRulesTest {
 
         assertNull(profile.getDisplayName());
         assertNull(profile.getAge());
-        assertEquals(0, ProfileService.calculateCompleteness(profile, 0));
+        assertEquals(0, ProfileTips.percent(ProfileTips.of(profile, 0)));
         assertEquals(List.of("displayName", "age", "city", "photos"),
                 List.copyOf(ProfileService.missingForPublish(profile, 0).keySet()));
     }
@@ -39,12 +40,17 @@ class ProfileRulesTest {
         profile.setDisplayName("Анна");
         profile.setAge(26);
         profile.setCity("Москва");
-        profile.setAboutText("Люблю долгие прогулки и плёночную фотографию");
+        profile.setAboutText("Люблю долгие прогулки, плёночную фотографию и хороший кофе");
         profile.replaceTags(Set.of(tag("A"), tag("B"), tag("C")));
 
         assertTrue(ProfileService.missingForPublish(profile, 1).isEmpty());
-        assertEquals(100, ProfileService.calculateCompleteness(profile, 1));
-        assertEquals(80, ProfileService.calculateCompleteness(profile, 0), "photo is worth 20%");
+        // name, age, city, a photo, a long enough about text; cards from one category only, no goals/height/selfie
+        List<ProfileTips.Tip> tips = ProfileTips.of(profile, 1);
+        assertEquals(60, ProfileTips.percent(tips));
+        assertEquals(List.of("MORE_PHOTOS", "CARDS", "GOALS", "VERIFIED", "HEIGHT"),
+                tips.stream().filter(t -> !t.done()).map(ProfileTips.Tip::code).toList(), "most valuable first");
+        assertEquals(100, ProfileTips.of(profile, 0).stream().mapToInt(ProfileTips.Tip::weight).sum());
+        assertEquals(45, ProfileTips.percent(ProfileTips.of(profile, 0)), "the first photo is worth 15");
     }
 
     @Test

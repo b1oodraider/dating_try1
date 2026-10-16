@@ -31,7 +31,11 @@ MyProfile  = { id, displayName: string|null, age: number|null, city: string|null
                publicationStatus: 'DRAFT'|'PUBLISHED'|'HIDDEN',
                dailyStatusText: string|null, dailyStatusExpiresAt: string|null,   // already null when expired
                tags: Tag[], photos: Photo[] (sorted by sortOrder),
-               completenessPercent: number (0..100),
+               completenessPercent: number (0..100) = sum of the weights of done tips,
+               tips: [ { code, text, weight, done, requiredToPublish } ]   // not done first, most valuable first; weights add up
+                     // to 100: NAME 10, AGE 10, CITY 10, FIRST_PHOTO 15 (these 4 are required to publish), MORE_PHOTOS 10 (3+),
+                     // ABOUT 15 (50+ chars), CARDS 10 (cards in 2+ categories), GOALS 8, VERIFIED 8 (selfie), HEIGHT 4.
+                     // A hint for the owner only: the feed never ranks by it.
                missingForPublish: string[]   // subset of 'displayName','age','city','photos'; empty => can publish
                decorations: Decorations,     // how others see my profile
                verified: boolean,            // selfie checked by a moderator; a new photo resets it
