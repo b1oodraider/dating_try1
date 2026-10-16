@@ -1,7 +1,7 @@
 package com.dating.social.domain;
 
 /**
- * Why a profile (or one of its messages) was reported. Stored as text; keep in sync with migration 012.
+ * Why a profile (or one of its messages) was reported. Stored as text; keep in sync with migrations 012 and 021.
  */
 public enum ReportReason {
     SPAM,
@@ -10,5 +10,7 @@ public enum ReportReason {
     HARASSMENT,
     SCAM,
     UNDERAGE,
-    OTHER
+    OTHER,
+    /** Silence is not a violation: closed by the system at once, never reaches a moderator. */
+    NOT_RESPONDING
 }

@@ -24,9 +24,10 @@ public class ModerationController {
     @GetMapping
     public ModerationPageDto queue(@AuthenticationPrincipal AuthenticatedUser user,
                                    @RequestParam(required = false) String status,
+                                   @RequestParam(required = false) String sort,
                                    @RequestParam(defaultValue = "0") int page,
                                    @RequestParam(defaultValue = "20") int limit) {
-        return moderationService.queue(user.accountId(), status, page, limit);
+        return moderationService.queue(user.accountId(), status, sort, page, limit);
     }
 
     @GetMapping("/{reportId}")

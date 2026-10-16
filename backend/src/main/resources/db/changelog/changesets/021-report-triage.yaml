@@ -1,0 +1,21 @@
+databaseChangeLog:
+  # Report triage (docs/trust-safety.md, block E). NOT_RESPONDING is a reason users may pick, but silence is not
+  # a violation: such reports are closed by the system at once (auto_dismissed) and never reach a moderator.
+  - changeSet:
+      id: 021-report-triage
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE reports
+                DROP CONSTRAINT reports_reason_check,
+                ADD CONSTRAINT reports_reason_check CHECK (reason IN ('SPAM', 'FAKE_PROFILE', 'INAPPROPRIATE_CONTENT',
+                    'HARASSMENT', 'SCAM', 'UNDERAGE', 'OTHER', 'NOT_RESPONDING')),
+                ADD COLUMN auto_dismissed BOOLEAN NOT NULL DEFAULT FALSE
+      rollback:
+        - sql:
+            sql: >
+              ALTER TABLE reports DROP COLUMN auto_dismissed,
+                DROP CONSTRAINT reports_reason_check,
+                ADD CONSTRAINT reports_reason_check CHECK (reason IN ('SPAM', 'FAKE_PROFILE', 'INAPPROPRIATE_CONTENT',
+                    'HARASSMENT', 'SCAM', 'UNDERAGE', 'OTHER'))

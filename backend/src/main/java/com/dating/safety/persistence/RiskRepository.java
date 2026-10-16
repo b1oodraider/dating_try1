@@ -18,7 +18,7 @@ import java.util.UUID;
 public class RiskRepository {
 
     /** Links, messenger names, @handles, phone numbers. Same pattern as {@link #CONTACTS_JAVA}. */
-    static final String CONTACTS_SQL =
+    public static final String CONTACTS_SQL =
             "(https?://|www\\.|t\\.me/|telegram|телеграм|whats ?app|ватсап|вотсап|instagram|инстаграм|"
                     + "@[a-z0-9_]{4,}|\\+?[0-9][0-9 ()-]{9,}[0-9])";
     public static final java.util.regex.Pattern CONTACTS_JAVA = java.util.regex.Pattern.compile(CONTACTS_SQL,
@@ -118,7 +118,8 @@ public class RiskRepository {
     /** Different people who reported the account within the period (any reason, or only the given ones). */
     public int reporters(UUID accountId, Instant since, List<String> reasons) {
         return jdbc.sql("SELECT count(DISTINCT reporter_account_id) FROM reports WHERE reported_account_id = :account"
-                        + " AND created_at > :since" + (reasons == null ? "" : " AND reason IN (:reasons)"))
+                        + " AND created_at > :since AND NOT auto_dismissed"
+                        + (reasons == null ? "" : " AND reason IN (:reasons)"))
                 .param("account", accountId).param("since", odt(since))
                 .param("reasons", reasons == null ? List.of("") : reasons)
                 .query(Integer.class).single();

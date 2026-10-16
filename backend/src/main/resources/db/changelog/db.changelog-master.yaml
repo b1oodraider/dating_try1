@@ -39,3 +39,5 @@ databaseChangeLog:
       file: db/changelog/changesets/019-risk.yaml
   - include:
       file: db/changelog/changesets/020-compatibility.yaml
+  - include:
+      file: db/changelog/changesets/021-report-triage.yaml

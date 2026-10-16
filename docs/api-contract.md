@@ -358,8 +358,11 @@ POST /accounts/{profileId}/block   (path takes the PROFILE id) 204 ; 404 PROFILE
   Idempotent. Works on any existing profile of an active account of the same kind (also hidden ones). Hides both people
   from each other everywhere (feed, received likes, matches) and closes their active match silently (both get `match_closed`).
 POST /reports   body { profileId: uuid (required), messageId?: uuid, reason: 'SPAM'|'FAKE_PROFILE'|'INAPPROPRIATE_CONTENT'|'HARASSMENT'|
-                       'SCAM'|'UNDERAGE'|'OTHER' (required), comment?: string (<= 1000; blank = none) }
-  201 { id, createdAt }
+                       'SCAM'|'UNDERAGE'|'OTHER'|'NOT_RESPONDING' (required), comment?: string (<= 1000; blank = none) }
+  201 { id, createdAt, status: 'NEW'|'DISMISSED', note: string|null }
+  Silence is not a violation: NOT_RESPONDING — and OTHER whose comment only complains about silence while the person
+  never wrote to the reporter — is closed at once (status DISMISSED, note = a hint to show, e.g. that the match can be
+  undone). It never reaches moderators and does not count against the reported person.
   400 VALIDATION_ERROR | SELF_ACTION | MALFORMED_REQUEST (unknown reason) ; 404 PROFILE_NOT_FOUND ;
   404 MESSAGE_NOT_FOUND (messageId must be a message FROM the reported person in a chat I take part in, active or closed) ;
   429 RATE_LIMITED (app.social.reports-per-hour, default 20 per account)
@@ -446,11 +449,17 @@ audit log (same transaction). Gacha admin endpoints (editors): see "Gacha admin"
 ModerationReport = { id, status: 'NEW'|'IN_REVIEW'|'RESOLVED'|'DISMISSED', reason: ReportReason (as reported),
                      finalReason: ReportReason|null (confirmed violation), decision: 'ACCEPTED'|'RECLASSIFIED'|'REJECTED'|null,
                      sanctioned: boolean (the policy was applied), reportedRiskScore: number|null (bot / fake risk),
+                     autoDismissed: boolean (closed by the system), priority: number, priorityReasons: string[],
                      comment, messageId, messageSnapshot, reporterAccountId, reportedAccountId, reportedProfileId,
                      reportedDisplayName: string|null (null when the profile is gone),
                      reportedConfirmedViolations: number (ACCEPTED + RECLASSIFIED reports against that account),
                      createdAt, moderatorAccountId, moderatorNote, decidedAt }
-GET  /admin/reports?status=&page=0&limit=20   oldest first; status absent = open (NEW, IN_REVIEW); limit 1..100 (else 20)
+GET  /admin/reports?status=&sort=priority&page=0&limit=20   status absent = open (NEW, IN_REVIEW); limit 1..100 (else 20)
+     sort=priority (default): most urgent first, then oldest; sort=oldest: arrival order. Priority = category (UNDERAGE 100,
+     SCAM 80, HARASSMENT 70, FAKE_PROFILE 50, INAPPROPRIATE_CONTENT 40, SPAM 30, OTHER 20) + 10 per extra person with an open
+     report on the account (max 40) + risk score / 4 (max 25) + 10 per confirmed violation (max 30) + 10 for contacts/links
+     in the reported message + 60 if the message or comment reads as a threat; priorityReasons spells it out.
+     RECLASSIFIED to NOT_RESPONDING → 400 (silence cannot be a confirmed violation).
      200 { items: ModerationReport[], page, limit, totalElements } ; 400 VALIDATION_ERROR (unknown status, case-insensitive)
 GET  /admin/reports/{reportId}                200 ModerationReport ; 404 REPORT_NOT_FOUND
 POST /admin/reports/{reportId}/decision       body { decision: 'ACCEPTED'|'RECLASSIFIED'|'REJECTED', reason?: ReportReason, note?: string (<= 1000),

@@ -53,15 +53,21 @@ public class ModerationService {
 
     /**
      * @param status null = open reports (NEW, IN_REVIEW)
+     * @param sort   priority (default: most urgent first) or oldest
      * @throws ApiException 400 VALIDATION_ERROR for an unknown status
      */
     @Transactional(readOnly = true)
-    public ModerationPageDto queue(UUID actor, String status, int page, int limit) {
+    public ModerationPageDto queue(UUID actor, String status, String sort, int page, int limit) {
         requireModerator(actor);
+        boolean byPriority = sort == null || sort.equalsIgnoreCase("priority");
+        if (!byPriority && !sort.equalsIgnoreCase("oldest")) {
+            throw ApiException.validation("VALIDATION_ERROR", "Неизвестная сортировка",
+                    Map.of("sort", "priority или oldest"));
+        }
         List<String> statuses = status == null ? OPEN : List.of(parseStatus(status));
         int safeLimit = limit <= 0 || limit > MAX_LIMIT ? 20 : limit;
         int safePage = Math.max(page, 0);
-        return new ModerationPageDto(repository.page(statuses, safeLimit, safePage * safeLimit),
+        return new ModerationPageDto(repository.page(statuses, byPriority, safeLimit, safePage * safeLimit),
                 safePage, safeLimit, repository.count(statuses));
     }
 
@@ -118,6 +124,10 @@ public class ModerationService {
                 yield reported;
             }
             case RECLASSIFIED -> {
+                if (request.reason() == ReportReason.NOT_RESPONDING) {
+                    throw ApiException.validation("VALIDATION_ERROR", "Молчание — не нарушение",
+                            Map.of("reason", "NOT_RESPONDING нельзя подтвердить как нарушение"));
+                }
                 if (request.reason() == null || request.reason() == reported) {
                     throw ApiException.validation("VALIDATION_ERROR", "Укажите другую причину нарушения",
                             Map.of("reason", "Должна отличаться от причины в жалобе"));

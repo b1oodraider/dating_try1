@@ -14,6 +14,8 @@ import java.util.UUID;
  * @param reportedDisplayName          null when the profile is gone (e.g. the account was deleted)
  * @param reportedConfirmedViolations  reports against the same account that moderators confirmed
  * @param sanctioned                   the sanction policy was applied for this report
+ * @param autoDismissed                closed by the system without a moderator (NOT_RESPONDING)
+ * @param priority                     queue order, higher = more urgent (see priorityReasons)
  * @param reportedRiskScore            bot / fake risk 0..100 of the reported account (null = not computed yet)
  */
 public record ModerationReportDto(
@@ -23,6 +25,9 @@ public record ModerationReportDto(
         ReportReason finalReason,
         ReportDecision decision,
         boolean sanctioned,
+        boolean autoDismissed,
+        int priority,
+        java.util.List<String> priorityReasons,
         String comment,
         UUID messageId,
         String messageSnapshot,
