@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Modal } from '../../../shared/components/Modal';
 import { Button } from '../../../shared/components/Button';
 import { useAuth } from '../../../core/context/AuthContext';
+import { getErrorMessage } from '../../../core/api/client';
 import { Smartphone, KeyRound, ShieldCheck, ArrowRight, ArrowLeft } from 'lucide-react';
 
 interface AuthModalProps {
@@ -12,7 +13,7 @@ interface AuthModalProps {
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const { activeChallenge, requestOtp, verifyOtp, cancelChallenge } = useAuth();
 
-  const [phone, setPhone] = useState('+7 (999) 123-45-67');
+  const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -23,13 +24,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     setIsLoading(true);
     try {
       await requestOtp(phone);
-      setCode('123456'); // Pre-fill mock code in dev mode for convenience
+      setCode('');
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Ошибка отправки кода');
-      }
+      setError(getErrorMessage(err, 'Не удалось отправить код. Попробуйте ещё раз.'));
     } finally {
       setIsLoading(false);
     }
@@ -41,21 +38,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     setIsLoading(true);
     try {
       await verifyOtp(code);
+      setCode('');
       onClose();
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Неверный код подтверждения');
-      }
+      setError(getErrorMessage(err, 'Не удалось подтвердить код. Попробуйте ещё раз.'));
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleClose = () => {
+  const handleBack = () => {
     cancelChallenge();
+    setCode('');
     setError(null);
+  };
+
+  const handleClose = () => {
+    handleBack();
     onClose();
   };
 
@@ -89,6 +88,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 <input
                   type="tel"
                   required
+                  autoComplete="tel"
+                  inputMode="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="+7 (999) 000-00-00"
@@ -101,10 +102,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
               </p>
             </div>
 
-            {/* Dev Mock Notice as specified in docs/requirements.md */}
-            <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-amber-900 text-xs leading-relaxed">
-              <span className="font-semibold block mb-0.5">Тестовый режим (Mock OTP):</span>
-              До подключения SMS-шлюза код подтверждения для любого номера: <strong className="font-mono text-zinc-900 bg-amber-100 px-1 py-0.5 rounded">123456</strong>.
+            <div className="pt-2 border-t border-zinc-100">
+              <span className="text-[11px] font-semibold text-zinc-500 block mb-1.5">
+                Тестовые аккаунты для превью (QA / Тест-панель):
+              </span>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { phone: '+7 900 000-00-01', label: 'Тест #1' },
+                  { phone: '+7 900 000-00-02', label: 'Тест #2' },
+                  { phone: '+7 900 000-00-03', label: 'Тест #3' },
+                ].map((item) => (
+                  <button
+                    key={item.phone}
+                    type="button"
+                    onClick={() => setPhone(item.phone)}
+                    className={`px-2 py-1.5 text-[11px] font-medium rounded-lg border transition-all text-center ${
+                      phone === item.phone
+                        ? 'bg-violet-600 text-white border-violet-600 font-semibold shadow-xs'
+                        : 'bg-violet-50 text-violet-700 hover:bg-violet-100 border-violet-200 font-mono'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-zinc-400 mt-1">
+                Для них фиксированный код: <span className="font-mono font-semibold text-zinc-600">123456</span>
+              </p>
             </div>
 
             <Button
@@ -126,26 +150,47 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 <KeyRound className="w-4 h-4 text-zinc-400 absolute left-3 top-3" />
                 <input
                   type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="\d{6}"
+                  title="Введите 6 цифр из SMS"
+                  minLength={6}
                   maxLength={6}
                   required
+                  autoFocus
                   value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  placeholder="123456"
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="••••••"
                   className="w-full pl-9 pr-3 py-2.5 text-center text-lg tracking-widest font-mono font-semibold bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all"
                 />
               </div>
             </div>
 
-            <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl text-stone-600 text-xs">
-              Тестовый код: <span className="font-mono font-bold text-zinc-900">123456</span>
-            </div>
+            {activeChallenge.devMockCode && (
+              <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-amber-900 text-xs leading-relaxed flex items-center justify-between gap-2">
+                <div>
+                  <span className="font-semibold block mb-0.5">Тестовый режим (Mock OTP):</span>
+                  Сервер вернул код:{' '}
+                  <strong className="font-mono text-zinc-900 bg-amber-100 px-1 py-0.5 rounded">
+                    {activeChallenge.devMockCode}
+                  </strong>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCode(activeChallenge.devMockCode || '')}
+                  className="px-2.5 py-1 text-xs font-semibold text-amber-900 bg-amber-200/80 hover:bg-amber-300 rounded-lg shrink-0 transition-colors"
+                >
+                  Вставить
+                </button>
+              </div>
+            )}
 
             <div className="flex gap-2">
               <Button
                 type="button"
                 variant="outline"
                 className="w-1/3"
-                onClick={cancelChallenge}
+                onClick={handleBack}
               >
                 <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Назад
               </Button>

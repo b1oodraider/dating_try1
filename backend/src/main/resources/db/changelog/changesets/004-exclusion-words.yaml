@@ -1,0 +1,86 @@
+databaseChangeLog:
+  # Private per-account feed settings; exclusion words are stored as an ordered list.
+  - changeSet:
+      id: 004-discovery-preferences
+      author: dating-team
+      changes:
+        - createTable:
+            tableName: discovery_preferences
+            columns:
+              - column:
+                  name: account_id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+                    foreignKeyName: fk_discovery_preferences_account
+                    references: accounts(id)
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - createTable:
+            tableName: discovery_exclusion_words
+            columns:
+              - column:
+                  name: account_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_exclusion_words_preferences
+                    references: discovery_preferences(account_id)
+                    deleteCascade: true
+              - column:
+                  name: position
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: word
+                  type: VARCHAR(30)
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            tableName: discovery_exclusion_words
+            columnNames: account_id, position
+            constraintName: pk_discovery_exclusion_words
+
+  # Full-text search over "about" is precomputed once per write (Russian stemming), not on every feed request.
+  # The active daily status is short and expires, so it is matched on the fly.
+  - changeSet:
+      id: 004-profile-text-search
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE profiles ADD COLUMN about_search tsvector
+              GENERATED ALWAYS AS (to_tsvector('russian', coalesce(about_text, ''))) STORED
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE FUNCTION profile_has_excluded_words(p_profile_id uuid, p_query text)
+              RETURNS boolean
+              LANGUAGE sql
+              STABLE
+              AS $$
+                SELECT EXISTS (
+                  SELECT 1
+                  FROM profiles p, to_tsquery('russian', p_query) q
+                  WHERE p.id = p_profile_id
+                    AND (
+                      p.about_search @@ q
+                      OR (
+                        p.daily_status_text IS NOT NULL
+                        AND (p.daily_status_expires_at IS NULL OR p.daily_status_expires_at > now())
+                        AND to_tsvector('russian', p.daily_status_text) @@ q
+                      )
+                    )
+                )
+              $$
+      rollback:
+        - sql:
+            sql: DROP FUNCTION IF EXISTS profile_has_excluded_words(uuid, text)
+        - sql:
+            sql: ALTER TABLE profiles DROP COLUMN IF EXISTS about_search

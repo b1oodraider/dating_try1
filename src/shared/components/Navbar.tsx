@@ -1,13 +1,30 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../core/context/AuthContext';
 import { Button } from './Button';
-import { HeartHandshake, User, Compass, Settings, ShieldCheck, LogIn } from 'lucide-react';
+import {
+  HeartHandshake,
+  User,
+  Compass,
+  Settings,
+  ShieldCheck,
+  LogIn,
+  Gem,
+  FlaskConical,
+  Crown,
+  MessageCircle,
+} from 'lucide-react';
+import { api } from '../../core/api/client';
+
+export type AppTab = 'discovery' | 'profile' | 'collection' | 'chats' | 'about';
 
 interface NavbarProps {
-  currentTab: 'discovery' | 'profile' | 'about';
-  onTabChange: (tab: 'discovery' | 'profile' | 'about') => void;
+  currentTab: AppTab;
+  onTabChange: (tab: AppTab) => void;
   onOpenAuth: () => void;
   onOpenSettings: () => void;
+  /** Shown only for test accounts (Account.testAccount). */
+  onOpenTestPanel: () => void;
+  unreadChatsCount?: number;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -15,6 +32,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onTabChange,
   onOpenAuth,
   onOpenSettings,
+  onOpenTestPanel,
+  unreadChatsCount = 0,
 }) => {
   const { account, profile } = useAuth();
 
@@ -61,6 +80,30 @@ export const Navbar: React.FC<NavbarProps> = ({
               if (!account) {
                 onOpenAuth();
               } else {
+                onTabChange('chats');
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all relative ${
+              currentTab === 'chats'
+                ? 'bg-white text-zinc-900 shadow-xs'
+                : 'text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Чаты</span>
+            {unreadChatsCount > 0 && (
+              <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] flex items-center justify-center font-bold">
+                {unreadChatsCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (!account) {
+                onOpenAuth();
+              } else {
                 onTabChange('profile');
               }
             }}
@@ -72,6 +115,25 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <User className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Моя анкета</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (!account) {
+                onOpenAuth();
+              } else {
+                onTabChange('collection');
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              currentTab === 'collection'
+                ? 'bg-white text-zinc-900 shadow-xs'
+                : 'text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            <Gem className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Коллекция</span>
           </button>
 
           <button
@@ -92,13 +154,36 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center gap-2">
           {account ? (
             <div className="flex items-center gap-1.5">
+              {profile?.premium && (
+                <span
+                  className="hidden xl:flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 rounded-xl border border-amber-300"
+                  title="Премиум активен"
+                >
+                  <Crown className="w-3.5 h-3.5 text-amber-500" />
+                  Премиум
+                </span>
+              )}
+              {account.testAccount && (
+                <button
+                  type="button"
+                  onClick={onOpenTestPanel}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-xl border border-violet-200 transition-colors"
+                  title="Тест-панель (тестовый аккаунт)"
+                >
+                  <FlaskConical className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">Тест-панель</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onOpenSettings}
                 className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium text-zinc-700 bg-zinc-50 hover:bg-zinc-100 rounded-xl border border-zinc-200 transition-colors"
                 title="Настройки аккаунта"
               >
-                <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                {profile?.premium ? (
+                  <Crown className="w-3.5 h-3.5 text-amber-500 xl:hidden" aria-label="Премиум активен" />
+                ) : null}
+                <div className={`w-2 h-2 rounded-full bg-emerald-500 ${profile?.premium ? 'hidden xl:block' : ''}`} />
                 <span className="font-mono text-[11px] hidden md:inline">
                   {account.phoneMasked}
                 </span>

@@ -6,10 +6,22 @@ spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/dating}
     username: ${SPRING_DATASOURCE_USERNAME:dating_user}
-    password: ${SPRING_DATASOURCE_PASSWORD:dating_secret_password}
+    password: ${SPRING_DATASOURCE_PASSWORD:dating_dev_password}
     hikari:
       maximum-pool-size: 5
 
 app:
   auth:
-    mock-enabled: true # Mock OTP is only permitted in dev/test profile
+    # Local development only: fixed code 123456, returned as devMockCode. Refused together with 'prod'.
+    mock-enabled: true
+    phone-hash-secret: ${APP_AUTH_PHONE_HASH_SECRET:dev-only-phone-hash-secret-change-me-0000}
+  media:
+    url-signing-secret: ${APP_MEDIA_URL_SIGNING_SECRET:dev-only-photo-url-signing-secret-change-me}
+  testing:
+    enabled: true
+    test-phones: +7 900 000-00-01, +7 900 000-00-02, +7 900 000-00-03
+    otp-code: "123456"
+    seed-auto-reply: true
+  admin:
+    # The first dev test phone is also the admin (log in with 123456, open the admin API).
+    bootstrap-phones: +7 900 000-00-01

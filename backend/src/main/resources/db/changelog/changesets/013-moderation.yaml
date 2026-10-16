@@ -1,0 +1,23 @@
+databaseChangeLog:
+  # Moderator decisions on reports. reason stays as the reporter chose it; final_reason is the violation
+  # the moderator confirmed (differs from reason when the report was reclassified).
+  - changeSet:
+      id: 013-report-decisions
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE reports
+                ADD COLUMN decision             VARCHAR(20)
+                    CHECK (decision IN ('ACCEPTED', 'RECLASSIFIED', 'REJECTED')),
+                ADD COLUMN final_reason         VARCHAR(30)
+                    CHECK (final_reason IN ('SPAM', 'FAKE_PROFILE', 'INAPPROPRIATE_CONTENT', 'HARASSMENT',
+                                            'SCAM', 'UNDERAGE', 'OTHER')),
+                ADD COLUMN moderator_account_id UUID REFERENCES accounts (id),
+                ADD COLUMN moderator_note       VARCHAR(1000),
+                ADD COLUMN decided_at           TIMESTAMP WITH TIME ZONE
+      rollback:
+        - sql:
+            sql: >
+              ALTER TABLE reports DROP COLUMN decided_at, DROP COLUMN moderator_note,
+                DROP COLUMN moderator_account_id, DROP COLUMN final_reason, DROP COLUMN decision

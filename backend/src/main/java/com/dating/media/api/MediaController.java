@@ -2,13 +2,17 @@ package com.dating.media.api;
 
 import com.dating.common.security.AuthenticatedUser;
 import com.dating.media.application.MediaService;
-import org.springframework.http.HttpHeaders;
+import com.dating.profiles.api.PhotoDto;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,16 +27,15 @@ public class MediaController {
     }
 
     @PostMapping(value = "/me/profile/photos", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<PhotoResponseDto> uploadPhoto(
+    public ResponseEntity<PhotoDto> uploadPhoto(
             @AuthenticationPrincipal AuthenticatedUser user,
             @RequestParam("file") MultipartFile file
     ) {
-        PhotoResponseDto response = mediaService.uploadPhoto(user.accountId(), file);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(mediaService.uploadPhoto(user.accountId(), file));
     }
 
     @GetMapping("/me/profile/photos")
-    public ResponseEntity<List<PhotoResponseDto>> getMyPhotos(@AuthenticationPrincipal AuthenticatedUser user) {
+    public ResponseEntity<List<PhotoDto>> getMyPhotos(@AuthenticationPrincipal AuthenticatedUser user) {
         return ResponseEntity.ok(mediaService.getMyPhotos(user.accountId()));
     }
 
@@ -54,14 +57,21 @@ public class MediaController {
         return ResponseEntity.noContent().build();
     }
 
-    @GetMapping("/profiles/{profileId}/photos/{photoId}")
-    public ResponseEntity<byte[]> getPhotoBinary(
-            @PathVariable UUID profileId,
-            @PathVariable UUID photoId
+    /**
+     * Public endpoint guarded by the URL signature (see PhotoUrlSigner), so it works in &lt;img src&gt;.
+     */
+    @GetMapping("/media/photos/{photoId}")
+    public ResponseEntity<Resource> getPhoto(
+            @PathVariable UUID photoId,
+            @RequestParam("exp") long expiresAt,
+            @RequestParam("sig") String signature
     ) {
-        byte[] data = mediaService.downloadPhoto(profileId, photoId);
+        MediaService.PhotoContent content = mediaService.loadPhoto(photoId, expiresAt, signature);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_TYPE, MediaType.IMAGE_JPEG_VALUE)
-                .body(data);
+                .contentType(MediaType.parseMediaType(content.mimeType()))
+                .cacheControl(CacheControl.maxAge(Duration.ofSeconds(content.cacheSeconds())).cachePrivate())
+                .header("X-Content-Type-Options", "nosniff")
+                .header("Content-Disposition", "inline")
+                .body(new FileSystemResource(content.path()));
     }
 }

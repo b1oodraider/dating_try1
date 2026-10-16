@@ -1,0 +1,48 @@
+databaseChangeLog:
+  # Height and relationship goals in profiles; premium "advanced search" filters by them and keeps
+  # a private list of excluded goals (hard filter, like exclusion words).
+  - changeSet:
+      id: 008-height-and-goals
+      author: dating-team
+      changes:
+        - sql:
+            sql: ALTER TABLE profiles ADD COLUMN height_cm INT CHECK (height_cm BETWEEN 120 AND 230)
+        - sql:
+            sql: >
+              CREATE TABLE relationship_goals (
+                code       VARCHAR(40) PRIMARY KEY,
+                label      VARCHAR(60) NOT NULL,
+                sort_order INT NOT NULL DEFAULT 0,
+                active     BOOLEAN NOT NULL DEFAULT TRUE
+              )
+        - sql:
+            sql: >
+              CREATE TABLE profile_goals (
+                profile_id UUID NOT NULL REFERENCES profiles (id) ON DELETE CASCADE,
+                goal_code  VARCHAR(40) NOT NULL REFERENCES relationship_goals (code),
+                PRIMARY KEY (profile_id, goal_code)
+              )
+        - sql:
+            sql: CREATE INDEX idx_profile_goals_goal ON profile_goals (goal_code)
+        - sql:
+            sql: >
+              CREATE TABLE discovery_excluded_goals (
+                account_id UUID NOT NULL REFERENCES discovery_preferences (account_id) ON DELETE CASCADE,
+                goal_code  VARCHAR(40) NOT NULL REFERENCES relationship_goals (code),
+                PRIMARY KEY (account_id, goal_code)
+              )
+        - sql:
+            splitStatements: false
+            sql: |
+              INSERT INTO relationship_goals (code, label, sort_order) VALUES
+                ('SERIOUS_RELATIONSHIP', 'Серьёзные отношения', 10),
+                ('FAMILY',               'Создание семьи',      20),
+                ('DATING',               'Свидания',            30),
+                ('FRIENDSHIP',           'Дружба',              40),
+                ('CHAT',                 'Общение',             50),
+                ('NOT_SURE',             'Пока не знаю',        60)
+      rollback:
+        - sql:
+            sql: DROP TABLE discovery_excluded_goals, profile_goals, relationship_goals
+        - sql:
+            sql: ALTER TABLE profiles DROP COLUMN height_cm

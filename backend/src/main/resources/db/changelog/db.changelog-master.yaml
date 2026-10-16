@@ -3,3 +3,41 @@ databaseChangeLog:
       file: db/changelog/changesets/001-initial-schema.yaml
   - include:
       file: db/changelog/changesets/002-seed-communication-tags.yaml
+  - include:
+      file: db/changelog/changesets/003-security-and-integrity.yaml
+  - include:
+      file: db/changelog/changesets/004-exclusion-words.yaml
+  - include:
+      file: db/changelog/changesets/005-economy.yaml
+  - include:
+      file: db/changelog/changesets/006-hunspell.yaml
+  - include:
+      file: db/changelog/changesets/007-test-accounts-cosmetics-achievements.yaml
+  - include:
+      file: db/changelog/changesets/008-height-goals-premium-filters.yaml
+  - include:
+      file: db/changelog/changesets/009-admin-catalog.yaml
+  - include:
+      file: db/changelog/changesets/010-gacha.yaml
+  - include:
+      file: db/changelog/changesets/011-boost.yaml
+  - include:
+      file: db/changelog/changesets/012-likes-chats.yaml
+  - include:
+      file: db/changelog/changesets/013-moderation.yaml
+  - include:
+      file: db/changelog/changesets/014-push-devices.yaml
+  - include:
+      file: db/changelog/changesets/015-sanctions.yaml
+  - include:
+      file: db/changelog/changesets/016-like-spam.yaml
+  - include:
+      file: db/changelog/changesets/017-behavior.yaml
+  - include:
+      file: db/changelog/changesets/018-verification.yaml
+  - include:
+      file: db/changelog/changesets/019-risk.yaml
+  - include:
+      file: db/changelog/changesets/020-compatibility.yaml
+  - include:
+      file: db/changelog/changesets/021-report-triage.yaml

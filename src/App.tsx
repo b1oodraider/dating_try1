@@ -1,17 +1,62 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './core/context/AuthContext';
-import { Navbar } from './shared/components/Navbar';
+import { Navbar, type AppTab } from './shared/components/Navbar';
 import { DiscoveryFeed } from './features/discovery/components/DiscoveryFeed';
 import { ProfileEditor } from './features/profile/components/ProfileEditor';
 import { AboutView } from './features/about/AboutView';
 import { AuthModal } from './features/auth/components/AuthModal';
 import { AccountSettingsModal } from './features/account/components/AccountSettingsModal';
+import { CollectionView } from './features/cosmetics/components/CollectionView';
+import { TestPanelModal } from './features/testing/components/TestPanelModal';
+import { ChatView } from './features/chat/components/ChatView';
+import { RestrictionsBanner } from './features/safety/components/RestrictionsBanner';
+import { Button } from './shared/components/Button';
+import { WifiOff, MessageCircle } from 'lucide-react';
+import { api } from './core/api/client';
 
 const AppContent: React.FC = () => {
-  const { account, isLoading } = useAuth();
-  const [currentTab, setCurrentTab] = useState<'discovery' | 'profile' | 'about'>('discovery');
+  const { account, isLoading, loadError, reloadSession, forgetSession, refreshProfile } = useAuth();
+  const [currentTab, setCurrentTab] = useState<AppTab>('discovery');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  /** Account the test panel was opened for: it never reopens by itself after switching accounts. */
+  const [testPanelAccountId, setTestPanelAccountId] = useState<string | null>(null);
+  /** Bumped after test-panel actions so the collection reloads the wallet. */
+  const [economyRevision, setEconomyRevision] = useState(0);
+
+  // Chat & Unread state
+  const [activeChatMatchId, setActiveChatMatchId] = useState<string | null>(null);
+  const [unreadChatsCount, setUnreadChatsCount] = useState(0);
+
+  const loadUnreadMatches = useCallback(async () => {
+    if (!account) {
+      setUnreadChatsCount(0);
+      return;
+    }
+    try {
+      const matches = await api.listMatches();
+      const count = matches.reduce((sum, m) => sum + (m.unreadCount > 0 ? 1 : 0), 0);
+      setUnreadChatsCount(count);
+    } catch {
+      // ignore
+    }
+  }, [account]);
+
+  useEffect(() => {
+    void loadUnreadMatches();
+    const interval = setInterval(loadUnreadMatches, 10000);
+    return () => clearInterval(interval);
+  }, [loadUnreadMatches]);
+
+  const handleEconomyChanged = useCallback(() => {
+    setEconomyRevision((r) => r + 1);
+    refreshProfile().catch((e: unknown) => console.warn('Profile refresh failed', e));
+  }, [refreshProfile]);
+
+  const handleOpenChat = useCallback((matchId: string) => {
+    setActiveChatMatchId(matchId);
+    setCurrentTab('chats');
+  }, []);
 
   if (isLoading) {
     return (
@@ -24,23 +69,84 @@ const AppContent: React.FC = () => {
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center px-4">
+        <div className="max-w-sm w-full bg-white border border-zinc-200/80 rounded-2xl p-6 text-center space-y-4 shadow-xs">
+          <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto text-rose-600">
+            <WifiOff className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-base font-bold text-zinc-900">Не удалось загрузить сессию</h2>
+            <p className="text-xs text-zinc-500">{loadError.message}</p>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Button type="button" variant="primary" onClick={() => void reloadSession()}>
+              Повторить
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={forgetSession}>
+              Выйти из аккаунта на этом устройстве
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-stone-100/60 text-zinc-900 flex flex-col font-sans selection:bg-rose-100 selection:text-rose-900">
+      {/* Account Restrictions Banner (if any) */}
+      <RestrictionsBanner />
+
       {/* Top Navigation */}
       <Navbar
         currentTab={currentTab}
         onTabChange={(tab) => setCurrentTab(tab)}
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
+        onOpenTestPanel={() => setTestPanelAccountId(account?.id ?? null)}
+        unreadChatsCount={unreadChatsCount}
       />
 
       {/* Main Content View */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-6">
-        {currentTab === 'discovery' && <DiscoveryFeed />}
+        {currentTab === 'discovery' && (
+          <DiscoveryFeed
+            onRequestAuth={() => setIsAuthModalOpen(true)}
+            revision={economyRevision}
+            onOpenChat={handleOpenChat}
+          />
+        )}
 
-        {currentTab === 'profile' && (
+        {currentTab === 'chats' && (
           account ? (
-            <ProfileEditor />
+            <ChatView
+              initialMatchId={activeChatMatchId}
+              onSelectMatchId={(id) => setActiveChatMatchId(id)}
+            />
+          ) : (
+            <div className="max-w-md mx-auto text-center py-16 space-y-4">
+              <div className="w-12 h-12 bg-zinc-200/80 rounded-2xl flex items-center justify-center mx-auto text-zinc-600 font-bold text-lg">
+                <MessageCircle className="w-6 h-6" />
+              </div>
+              <h2 className="text-lg font-bold text-zinc-900">Чаты доступны после входа</h2>
+              <p className="text-xs text-zinc-500">
+                Войдите по номеру телефона, чтобы видеть ваши взаимные симпатии и переписываться.
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsAuthModalOpen(true)}
+                className="px-5 py-2.5 bg-zinc-900 text-white rounded-xl text-xs font-semibold hover:bg-zinc-800 transition-colors shadow-xs cursor-pointer"
+              >
+                Войти по номеру телефона
+              </button>
+            </div>
+          )
+        )}
+
+        {(currentTab === 'profile' || currentTab === 'collection') && (
+          account ? (
+            currentTab === 'profile' ? <ProfileEditor /> : <CollectionView revision={economyRevision} />
           ) : (
             <div className="max-w-md mx-auto text-center py-16 space-y-4">
               <div className="w-12 h-12 bg-zinc-200/80 rounded-2xl flex items-center justify-center mx-auto text-zinc-600 font-bold text-lg">
@@ -53,7 +159,7 @@ const AppContent: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsAuthModalOpen(true)}
-                className="px-5 py-2.5 bg-zinc-900 text-white rounded-xl text-xs font-semibold hover:bg-zinc-800 transition-colors shadow-xs"
+                className="px-5 py-2.5 bg-zinc-900 text-white rounded-xl text-xs font-semibold hover:bg-zinc-800 transition-colors shadow-xs cursor-pointer"
               >
                 Войти по номеру телефона
               </button>
@@ -88,14 +194,26 @@ const AppContent: React.FC = () => {
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
       />
+
+      {account?.testAccount && (
+        <TestPanelModal
+          isOpen={testPanelAccountId === account.id}
+          onClose={() => setTestPanelAccountId(null)}
+          onChanged={handleEconomyChanged}
+        />
+      )}
     </div>
   );
 };
 
+import { ToastProvider } from './shared/components/Toast';
+
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ToastProvider>
   );
 }

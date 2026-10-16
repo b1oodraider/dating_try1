@@ -1,40 +1,53 @@
 import React, { useState } from 'react';
-import { DailyStatus } from '../../../core/types';
+import { getErrorMessage } from '../../../core/api/client';
 import { Button } from '../../../shared/components/Button';
-import { Clock, Sparkles, X } from 'lucide-react';
+import { Clock, Sparkles, X, AlertCircle } from 'lucide-react';
+
+/** Must match the backend limit for dailyStatusText. */
+const MAX_STATUS_LENGTH = 200;
 
 interface DailyStatusEditorProps {
-  currentStatus?: DailyStatus | null;
-  onSave: (status: DailyStatus | null) => void;
+  statusText: string | null;
+  /** Already null on the server when the status has expired. */
+  expiresAt: string | null;
+  /** Saves the status; "" clears it. Rejects on failure. */
+  onSave: (text: string) => Promise<unknown>;
 }
 
 export const DailyStatusEditor: React.FC<DailyStatusEditorProps> = ({
-  currentStatus,
+  statusText,
+  expiresAt,
   onSave,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [text, setText] = useState(currentStatus?.text || '');
+  const [text, setText] = useState(statusText ?? '');
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Check if status is expired
-  const isExpired =
-    currentStatus?.expiresAt && new Date(currentStatus.expiresAt).getTime() < Date.now();
-  const activeStatus = isExpired ? null : currentStatus;
+  // The server already nulls expired statuses; this guards a page left open past the expiry.
+  const isExpired = expiresAt !== null && new Date(expiresAt).getTime() <= Date.now();
+  const activeStatus = statusText && !isExpired ? statusText : null;
+
+  const save = async (value: string) => {
+    setIsSaving(true);
+    setError(null);
+    try {
+      await onSave(value);
+      setIsEditing(false);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Не удалось сохранить статус'));
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleSave = () => {
-    if (!text.trim()) {
-      onSave(null);
-      setIsEditing(false);
-      return;
-    }
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    onSave({ text: text.trim(), expiresAt });
-    setIsEditing(false);
+    void save(text.trim());
   };
 
   const handleClear = () => {
     setText('');
-    onSave(null);
-    setIsEditing(false);
+    void save('');
   };
 
   return (
@@ -49,6 +62,7 @@ export const DailyStatusEditor: React.FC<DailyStatusEditorProps> = ({
             type="button"
             onClick={handleClear}
             className="text-zinc-400 hover:text-zinc-600 text-xs p-1"
+            disabled={isSaving}
             title="Сбросить статус"
           >
             <X className="w-3.5 h-3.5" />
@@ -56,15 +70,22 @@ export const DailyStatusEditor: React.FC<DailyStatusEditorProps> = ({
         )}
       </div>
 
+      {error && (
+        <p role="alert" className="text-[11px] text-rose-600 flex items-center gap-1">
+          <AlertCircle className="w-3 h-3 shrink-0" /> {error}
+        </p>
+      )}
+
       {!isEditing ? (
         <div>
           {activeStatus ? (
             <div className="flex items-start justify-between gap-2">
-              <p className="text-xs text-zinc-800 italic">«{activeStatus.text}»</p>
+              <p className="text-xs text-zinc-800 italic">«{activeStatus}»</p>
               <button
                 type="button"
                 onClick={() => {
-                  setText(activeStatus.text);
+                  setText(activeStatus);
+                  setError(null);
                   setIsEditing(true);
                 }}
                 className="text-[11px] text-zinc-500 hover:text-zinc-900 underline shrink-0"
@@ -81,7 +102,11 @@ export const DailyStatusEditor: React.FC<DailyStatusEditorProps> = ({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setIsEditing(true)}
+                onClick={() => {
+                  setText('');
+                  setError(null);
+                  setIsEditing(true);
+                }}
               >
                 Установить
               </Button>
@@ -92,9 +117,16 @@ export const DailyStatusEditor: React.FC<DailyStatusEditorProps> = ({
         <div className="space-y-2 pt-1">
           <input
             type="text"
-            maxLength={100}
+            maxLength={MAX_STATUS_LENGTH}
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              // The editor lives inside the profile <form>: Enter must save the status, not submit the form.
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (!isSaving) handleSave();
+              }
+            }}
             placeholder="Например: Иду пить кофе в оранжерею в 18:00"
             className="w-full px-3 py-1.5 text-xs bg-white border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900"
           />
@@ -107,11 +139,21 @@ export const DailyStatusEditor: React.FC<DailyStatusEditorProps> = ({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => setIsEditing(false)}
+                onClick={() => {
+                  setIsEditing(false);
+                  setError(null);
+                }}
+                disabled={isSaving}
               >
                 Отмена
               </Button>
-              <Button type="button" variant="primary" size="sm" onClick={handleSave}>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={handleSave}
+                isLoading={isSaving}
+              >
                 Сохранить
               </Button>
             </div>

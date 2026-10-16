@@ -1,0 +1,21 @@
+databaseChangeLog:
+  # Push tokens (RuStore / FCM). A device belongs to the session it was registered with: logout, session expiry
+  # and account deletion stop pushes without extra bookkeeping (sessions are deleted -> cascade).
+  - changeSet:
+      id: 014-push-devices
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE push_devices (
+                token       VARCHAR(1024) PRIMARY KEY,
+                provider    VARCHAR(20) NOT NULL CHECK (provider IN ('RUSTORE', 'FCM')),
+                account_id  UUID NOT NULL REFERENCES accounts (id),
+                session_id  UUID NOT NULL UNIQUE REFERENCES sessions (id) ON DELETE CASCADE,
+                updated_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+        - sql:
+            sql: CREATE INDEX idx_push_devices_account ON push_devices (account_id)
+      rollback:
+        - sql:
+            sql: DROP TABLE push_devices

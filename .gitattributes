@@ -1,0 +1,6 @@
+# Shell scripts must keep LF even on Windows checkouts (core.autocrlf=true), otherwise
+# ./gradlew fails inside the Linux Docker build with "not found".
+gradlew text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+*.jar binary

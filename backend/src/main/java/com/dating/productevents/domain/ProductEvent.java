@@ -1,12 +1,14 @@
 package com.dating.productevents.domain;
 
+import com.dating.common.persistence.AssignedIdEntity;
 import jakarta.persistence.*;
+
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
 @Table(name = "product_events")
-public class ProductEvent {
+public class ProductEvent extends AssignedIdEntity {
 
     @Id
     @Column(name = "event_id")
@@ -35,7 +37,8 @@ public class ProductEvent {
         this.attributesJson = attributesJson;
     }
 
-    public UUID getEventId() {
+    @Override
+    public UUID getId() {
         return eventId;
     }
 

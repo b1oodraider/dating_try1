@@ -1,0 +1,87 @@
+databaseChangeLog:
+  # Exclusion words: Hunspell (real lemmas: "пью"/"пьёт" -> "пить", "кальяна" -> "кальян") with the
+  # Snowball stemmer as fallback for words the dictionary does not know ("вейпить" -> "вейп").
+  # The dictionary files ship with infra/postgres/Dockerfile. On a server without them the
+  # configuration silently degrades to the stemmer only, so the migration never fails.
+  # "ё" is folded to "е" on both sides (documents and queries) because users rarely type "ё".
+  - changeSet:
+      id: 006-hunspell-text-search
+      author: dating-team
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              DO $$
+              BEGIN
+                CREATE TEXT SEARCH DICTIONARY dating_hunspell_ru (
+                  TEMPLATE = ispell, DictFile = ru_ru, AffFile = ru_ru, StopWords = russian
+                );
+              EXCEPTION WHEN OTHERS THEN
+                RAISE WARNING 'Hunspell ru_ru dictionary is not installed (%); falling back to the Snowball stemmer', SQLERRM;
+              END
+              $$
+        - sql:
+            sql: CREATE TEXT SEARCH CONFIGURATION dating_russian (COPY = pg_catalog.russian)
+        - sql:
+            splitStatements: false
+            sql: |
+              DO $$
+              BEGIN
+                IF EXISTS (SELECT 1 FROM pg_ts_dict WHERE dictname = 'dating_hunspell_ru') THEN
+                  ALTER TEXT SEARCH CONFIGURATION dating_russian
+                    ALTER MAPPING FOR word, hword, hword_part WITH dating_hunspell_ru, russian_stem;
+                END IF;
+              END
+              $$
+        - sql:
+            sql: ALTER TABLE profiles DROP COLUMN about_search
+        - sql:
+            sql: >
+              ALTER TABLE profiles ADD COLUMN about_search tsvector
+              GENERATED ALWAYS AS (to_tsvector('dating_russian'::regconfig, translate(coalesce(about_text, ''), 'ёЁ', 'еЕ'))) STORED
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE FUNCTION profile_has_excluded_words(p_profile_id uuid, p_query text)
+              RETURNS boolean
+              LANGUAGE sql
+              STABLE
+              AS $$
+                SELECT EXISTS (
+                  SELECT 1
+                  FROM profiles p, to_tsquery('dating_russian'::regconfig, translate(p_query, 'ёЁ', 'еЕ')) q
+                  WHERE p.id = p_profile_id
+                    AND (
+                      p.about_search @@ q
+                      OR (
+                        p.daily_status_text IS NOT NULL
+                        AND (p.daily_status_expires_at IS NULL OR p.daily_status_expires_at > now())
+                        AND to_tsvector('dating_russian'::regconfig, translate(p.daily_status_text, 'ёЁ', 'еЕ')) @@ q
+                      )
+                    )
+                )
+              $$
+      rollback:
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE FUNCTION profile_has_excluded_words(p_profile_id uuid, p_query text)
+              RETURNS boolean LANGUAGE sql STABLE AS $$
+                SELECT EXISTS (
+                  SELECT 1 FROM profiles p, to_tsquery('russian', p_query) q
+                  WHERE p.id = p_profile_id
+                    AND (p.about_search @@ q
+                      OR (p.daily_status_text IS NOT NULL
+                          AND (p.daily_status_expires_at IS NULL OR p.daily_status_expires_at > now())
+                          AND to_tsvector('russian', p.daily_status_text) @@ q)))
+              $$
+        - sql:
+            sql: ALTER TABLE profiles DROP COLUMN about_search
+        - sql:
+            sql: >
+              ALTER TABLE profiles ADD COLUMN about_search tsvector
+              GENERATED ALWAYS AS (to_tsvector('russian', coalesce(about_text, ''))) STORED
+        - sql:
+            sql: DROP TEXT SEARCH CONFIGURATION IF EXISTS dating_russian
+        - sql:
+            sql: DROP TEXT SEARCH DICTIONARY IF EXISTS dating_hunspell_ru

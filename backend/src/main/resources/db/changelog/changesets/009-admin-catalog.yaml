@@ -1,0 +1,146 @@
+databaseChangeLog:
+  # Staff roles. Read from the DB on every admin request (not baked into the session token),
+  # so revoking a role takes effect immediately.
+  - changeSet:
+      id: 009-account-roles
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE account_roles (
+                account_id UUID NOT NULL REFERENCES accounts (id),
+                role       VARCHAR(30) NOT NULL CHECK (role IN ('ADMIN', 'CONTENT_EDITOR', 'MODERATOR')),
+                granted_by UUID,
+                granted_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                PRIMARY KEY (account_id, role)
+              )
+        - sql:
+            sql: CREATE INDEX idx_account_roles_role ON account_roles (role)
+      rollback:
+        - sql:
+            sql: DROP TABLE account_roles
+
+  # Every admin write: who, what, before/after snapshots. actor has no FK on purpose: history must outlive accounts.
+  - changeSet:
+      id: 009-admin-audit-log
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE admin_audit_log (
+                id               UUID PRIMARY KEY,
+                actor_account_id UUID,
+                action           VARCHAR(50) NOT NULL,
+                entity_type      VARCHAR(40) NOT NULL,
+                entity_id        VARCHAR(100),
+                before           JSONB,
+                after            JSONB,
+                created_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+        - sql:
+            sql: CREATE INDEX idx_admin_audit_log_created ON admin_audit_log (created_at DESC)
+        - sql:
+            sql: CREATE INDEX idx_admin_audit_log_entity ON admin_audit_log (entity_type, entity_id, created_at DESC)
+      rollback:
+        - sql:
+            sql: DROP TABLE admin_audit_log
+
+  # Tag categories become their own reference table (label + order), seeded from the existing tags.
+  # communication_tags.category_label stays as a denormalized copy so existing reads do not change.
+  - changeSet:
+      id: 009-tag-categories
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE tag_categories (
+                code       VARCHAR(30) PRIMARY KEY,
+                label      VARCHAR(50) NOT NULL,
+                sort_order INT NOT NULL DEFAULT 0
+              )
+        - sql:
+            sql: >
+              INSERT INTO tag_categories (code, label, sort_order)
+              SELECT category, MIN(category_label), MIN(sort_order) FROM communication_tags GROUP BY category
+        - sql:
+            sql: >
+              ALTER TABLE communication_tags
+                ADD CONSTRAINT fk_communication_tags_category FOREIGN KEY (category) REFERENCES tag_categories (code)
+      rollback:
+        - sql:
+            sql: ALTER TABLE communication_tags DROP CONSTRAINT fk_communication_tags_category
+        - sql:
+            sql: DROP TABLE tag_categories
+
+  # Authors of catalog items (contests, collaborations); they will get a share of sales.
+  # Catalog items get an availability window, an optional author and an update timestamp.
+  - changeSet:
+      id: 009-authors-and-item-availability
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE authors (
+                id                    UUID PRIMARY KEY,
+                display_name          VARCHAR(80) NOT NULL,
+                account_id            UUID REFERENCES accounts (id),
+                revenue_share_percent INT NOT NULL CHECK (revenue_share_percent BETWEEN 0 AND 100),
+                contact_note          VARCHAR(500),
+                created_at            TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                updated_at            TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+        - sql:
+            sql: >
+              ALTER TABLE catalog_items
+                ADD COLUMN available_from  TIMESTAMP WITH TIME ZONE,
+                ADD COLUMN available_until TIMESTAMP WITH TIME ZONE,
+                ADD COLUMN author_id       UUID REFERENCES authors (id),
+                ADD COLUMN updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                ADD CONSTRAINT catalog_items_window_check
+                  CHECK (available_from IS NULL OR available_until IS NULL OR available_from < available_until)
+        - sql:
+            sql: CREATE INDEX idx_catalog_items_author ON catalog_items (author_id) WHERE author_id IS NOT NULL
+      rollback:
+        - sql:
+            sql: >
+              ALTER TABLE catalog_items
+                DROP CONSTRAINT catalog_items_window_check,
+                DROP COLUMN available_from, DROP COLUMN available_until, DROP COLUMN author_id, DROP COLUMN updated_at
+        - sql:
+            sql: DROP TABLE authors
+
+  # Images of catalog items (cosmetics are public, so the images are served without a signature).
+  - changeSet:
+      id: 009-catalog-images
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE catalog_images (
+                id          UUID PRIMARY KEY,
+                storage_key VARCHAR(100) NOT NULL UNIQUE,
+                mime_type   VARCHAR(30) NOT NULL,
+                size_bytes  BIGINT NOT NULL,
+                uploaded_by UUID,
+                created_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+      rollback:
+        - sql:
+            sql: DROP TABLE catalog_images
+
+  # Premium composition overrides edited by admins. A missing row means "use app.economy.* from config".
+  - changeSet:
+      id: 009-premium-settings
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE premium_settings (
+                setting_key VARCHAR(30) PRIMARY KEY CHECK (setting_key IN ('FEATURES', 'ALLOWANCES')),
+                value       JSONB NOT NULL,
+                updated_by  UUID,
+                updated_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+      rollback:
+        - sql:
+            sql: DROP TABLE premium_settings

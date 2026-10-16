@@ -1,132 +1,193 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { Account, AuthChallenge, Profile, Session } from '../types';
-import { api } from '../api/client';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import type { Account, AuthChallenge, MyProfile, ProfileUpdate } from '../types';
+import { api, ApiError, onUnauthorized, type SessionState } from '../api/client';
+import { clearAccountStorage } from '../storage/accountStorage';
 
 interface AuthContextType {
   account: Account | null;
-  session: Session | null;
-  profile: Profile | null;
+  profile: MyProfile | null;
+  /** True while the stored session is being restored. */
   isLoading: boolean;
+  /** Set when the session could not be restored for a reason other than 401 (network, 5xx). */
+  loadError: ApiError | null;
   activeChallenge: AuthChallenge | null;
+  reloadSession: () => Promise<void>;
+  /** Drops the local token without contacting the server (used from the load-error screen). */
+  forgetSession: () => void;
   requestOtp: (phone: string) => Promise<AuthChallenge>;
   verifyOtp: (code: string) => Promise<void>;
   cancelChallenge: () => void;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
-  updateProfile: (updates: Partial<Profile>) => Promise<Profile>;
-  publishProfile: () => Promise<void>;
-  hideProfile: () => Promise<void>;
-  refreshProfile: () => Promise<void>;
+  updateProfile: (update: ProfileUpdate) => Promise<MyProfile>;
+  publishProfile: () => Promise<MyProfile>;
+  hideProfile: () => Promise<MyProfile>;
+  refreshProfile: () => Promise<MyProfile>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [account, setAccount] = useState<Account | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<MyProfile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<ApiError | null>(null);
   const [activeChallenge, setActiveChallenge] = useState<AuthChallenge | null>(null);
 
-  // Load current session on init
-  const loadSession = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const data = await api.getSession();
-      setSession(data.session);
-      setAccount(data.account);
-      setProfile(data.profile);
-    } catch (e) {
-      console.error('Session load failed', e);
-    } finally {
-      setIsLoading(false);
+  const resetSession = useCallback(() => {
+    setAccount(null);
+    setProfile(null);
+    setLoadError(null);
+  }, []);
+
+  const applySession = useCallback((state: SessionState) => {
+    if (state.status === 'authenticated') {
+      setAccount(state.account);
+      setProfile(state.profile);
+      setLoadError(null);
+    } else if (state.status === 'anonymous') {
+      setAccount(null);
+      setProfile(null);
+      setLoadError(null);
+    } else {
+      setAccount(null);
+      setProfile(null);
+      setLoadError(state.error);
     }
   }, []);
 
-  useEffect(() => {
-    loadSession();
-  }, [loadSession]);
+  const reloadSession = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      applySession(await api.getSession());
+    } finally {
+      setIsLoading(false);
+    }
+  }, [applySession]);
 
-  const requestOtp = async (phone: string): Promise<AuthChallenge> => {
+  useEffect(() => {
+    void reloadSession();
+  }, [reloadSession]);
+
+  // Any 401 from an authenticated call means the token is gone: drop the session in the UI.
+  useEffect(() => onUnauthorized(resetSession), [resetSession]);
+
+  const forgetSession = useCallback(() => {
+    api.forgetLocalSession();
+    resetSession();
+  }, [resetSession]);
+
+  const requestOtp = useCallback(async (phone: string): Promise<AuthChallenge> => {
     const challenge = await api.requestOtp(phone);
     setActiveChallenge(challenge);
     return challenge;
-  };
+  }, []);
 
-  const verifyOtp = async (code: string): Promise<void> => {
-    if (!activeChallenge) throw new Error('Нет активного запроса авторизации');
-    const result = await api.verifyOtp(activeChallenge.challengeId, code, activeChallenge.maskedPhone);
-    setSession(result.session);
-    setAccount(result.account);
-    setProfile(result.profile);
+  const verifyOtp = useCallback(
+    async (code: string): Promise<void> => {
+      if (!activeChallenge) {
+        throw new ApiError({
+          code: 'INVALID_CHALLENGE',
+          message: 'Запросите код подтверждения заново.',
+          status: 400,
+        });
+      }
+      await api.verifyOtp(activeChallenge.challengeId, code);
+      setActiveChallenge(null);
+      applySession(await api.getSession());
+    },
+    [activeChallenge, applySession]
+  );
+
+  const cancelChallenge = useCallback(() => {
     setActiveChallenge(null);
-  };
+  }, []);
 
-  const cancelChallenge = () => {
-    setActiveChallenge(null);
-  };
+  const accountId = account?.id ?? null;
 
-  const logout = async () => {
-    await api.logout();
-    setSession(null);
-    setAccount(null);
-    setProfile(null);
-  };
+  // Per-account UI data (e.g. saved discovery filters) survives logout and lost sessions, so logging in
+  // again restores the same filters; only account deletion forgets it.
+  const logout = useCallback(async () => {
+    try {
+      await api.logout();
+    } catch (e) {
+      // The local token is already cleared by api.logout(); a failed server call must not keep the user logged in.
+      console.warn('Logout request failed', e);
+    } finally {
+      resetSession();
+    }
+  }, [resetSession]);
 
-  const deleteAccount = async () => {
+  const deleteAccount = useCallback(async () => {
     await api.deleteAccount();
-    setSession(null);
-    setAccount(null);
-    setProfile(null);
-  };
+    if (accountId) clearAccountStorage(accountId);
+    resetSession();
+  }, [accountId, resetSession]);
 
-  const updateProfile = async (updates: Partial<Profile>): Promise<Profile> => {
-    if (!account) throw new Error('Не авторизован');
-    const updated = await api.updateMyProfile(account.id, updates);
+  const updateProfile = useCallback(async (update: ProfileUpdate): Promise<MyProfile> => {
+    const updated = await api.updateMyProfile(update);
     setProfile(updated);
     return updated;
-  };
+  }, []);
 
-  const publishProfile = async () => {
-    if (!account) return;
-    const updated = await api.publishProfile(account.id);
+  const publishProfile = useCallback(async (): Promise<MyProfile> => {
+    const updated = await api.publishProfile();
     setProfile(updated);
-  };
+    return updated;
+  }, []);
 
-  const hideProfile = async () => {
-    if (!account) return;
-    const updated = await api.hideProfile(account.id);
+  const hideProfile = useCallback(async (): Promise<MyProfile> => {
+    const updated = await api.hideProfile();
     setProfile(updated);
-  };
+    return updated;
+  }, []);
 
-  const refreshProfile = async () => {
-    if (!account) return;
-    const p = await api.getMyProfile(account.id);
-    setProfile(p);
-  };
+  const refreshProfile = useCallback(async (): Promise<MyProfile> => {
+    const updated = await api.getMyProfile();
+    setProfile(updated);
+    return updated;
+  }, []);
 
-  return (
-    <AuthContext.Provider
-      value={{
-        account,
-        session,
-        profile,
-        isLoading,
-        activeChallenge,
-        requestOtp,
-        verifyOtp,
-        cancelChallenge,
-        logout,
-        deleteAccount,
-        updateProfile,
-        publishProfile,
-        hideProfile,
-        refreshProfile,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo<AuthContextType>(
+    () => ({
+      account,
+      profile,
+      isLoading,
+      loadError,
+      activeChallenge,
+      reloadSession,
+      forgetSession,
+      requestOtp,
+      verifyOtp,
+      cancelChallenge,
+      logout,
+      deleteAccount,
+      updateProfile,
+      publishProfile,
+      hideProfile,
+      refreshProfile,
+    }),
+    [
+      account,
+      profile,
+      isLoading,
+      loadError,
+      activeChallenge,
+      reloadSession,
+      forgetSession,
+      requestOtp,
+      verifyOtp,
+      cancelChallenge,
+      logout,
+      deleteAccount,
+      updateProfile,
+      publishProfile,
+      hideProfile,
+      refreshProfile,
+    ]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = (): AuthContextType => {

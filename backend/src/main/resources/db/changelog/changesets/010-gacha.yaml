@@ -1,0 +1,193 @@
+databaseChangeLog:
+  # Gacha: banners with weighted pools, pity counters per account and pity group, idempotent pull requests
+  # and an append-only pull history. Tickets are spent and rewards granted through the economy ledger
+  # (EconomyService.spend / grant with RewardSource.GACHA); these tables only hold gacha-specific state.
+  # Design and decisions: docs/gacha.md.
+  - changeSet:
+      id: 010-gacha-schema
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE gacha_banners (
+                code                   VARCHAR(50) PRIMARY KEY,
+                title                  VARCHAR(100) NOT NULL,
+                description            VARCHAR(500),
+                type                   VARCHAR(20) NOT NULL CHECK (type IN ('PERMANENT', 'LIMITED')),
+                starts_at              TIMESTAMP WITH TIME ZONE,
+                ends_at                TIMESTAMP WITH TIME ZONE,
+                active                 BOOLEAN NOT NULL DEFAULT TRUE,
+                cost_item_code         VARCHAR(50) NOT NULL DEFAULT 'GACHA_TICKET' REFERENCES catalog_items (code),
+                cost_per_pull          INT NOT NULL DEFAULT 1 CHECK (cost_per_pull BETWEEN 1 AND 1000),
+                multi_pull_size        INT NOT NULL DEFAULT 10 CHECK (multi_pull_size BETWEEN 2 AND 100),
+                pity_group             VARCHAR(50) NOT NULL,
+                epic_pity              INT CHECK (epic_pity BETWEEN 1 AND 1000),
+                legendary_pity         INT CHECK (legendary_pity BETWEEN 1 AND 10000),
+                soft_pity_start        INT CHECK (soft_pity_start >= 1),
+                soft_pity_weight_step  BIGINT NOT NULL DEFAULT 0 CHECK (soft_pity_weight_step >= 0),
+                sort_order             INT NOT NULL DEFAULT 0,
+                attributes             JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at             TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                updated_at             TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                CONSTRAINT gacha_banners_window_check CHECK (
+                  (type = 'PERMANENT' OR (starts_at IS NOT NULL AND ends_at IS NOT NULL))
+                  AND (starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at))
+              )
+        - sql:
+            sql: >
+              CREATE TABLE gacha_pool_entries (
+                banner_code VARCHAR(50) NOT NULL REFERENCES gacha_banners (code) ON DELETE CASCADE,
+                entry_id    VARCHAR(50) NOT NULL,
+                reward_type VARCHAR(20) NOT NULL CHECK (reward_type IN ('ITEM', 'PREMIUM_DAYS')),
+                item_code   VARCHAR(50) REFERENCES catalog_items (code),
+                quantity    BIGINT,
+                days        INT,
+                rarity      VARCHAR(20) NOT NULL CHECK (rarity IN ('COMMON', 'RARE', 'EPIC', 'LEGENDARY')),
+                weight      BIGINT NOT NULL CHECK (weight BETWEEN 1 AND 1000000000),
+                featured    BOOLEAN NOT NULL DEFAULT FALSE,
+                sort_order  INT NOT NULL DEFAULT 0,
+                PRIMARY KEY (banner_code, entry_id),
+                CONSTRAINT gacha_pool_entries_reward_check CHECK (
+                  (reward_type = 'ITEM' AND item_code IS NOT NULL AND quantity >= 1 AND days IS NULL)
+                  OR (reward_type = 'PREMIUM_DAYS' AND item_code IS NULL AND quantity IS NULL AND days BETWEEN 1 AND 3650))
+              )
+        - sql:
+            sql: >
+              CREATE TABLE gacha_pity_counters (
+                account_id            UUID NOT NULL REFERENCES accounts (id),
+                pity_group            VARCHAR(50) NOT NULL,
+                pulls_since_epic      INT NOT NULL DEFAULT 0 CHECK (pulls_since_epic >= 0),
+                pulls_since_legendary INT NOT NULL DEFAULT 0 CHECK (pulls_since_legendary >= 0),
+                total_pulls           BIGINT NOT NULL DEFAULT 0,
+                updated_at            TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                PRIMARY KEY (account_id, pity_group)
+              )
+        - sql:
+            sql: >
+              CREATE TABLE gacha_pull_requests (
+                id              UUID PRIMARY KEY,
+                account_id      UUID NOT NULL REFERENCES accounts (id),
+                idempotency_key VARCHAR(100) NOT NULL,
+                banner_code     VARCHAR(50) NOT NULL,
+                pull_count      INT NOT NULL,
+                cost_item_code  VARCHAR(50) NOT NULL,
+                cost_quantity   BIGINT NOT NULL,
+                created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                CONSTRAINT uq_gacha_pull_requests_idempotency UNIQUE (account_id, idempotency_key)
+              )
+        - sql:
+            sql: >
+              CREATE TABLE gacha_pulls (
+                seq          BIGSERIAL PRIMARY KEY,
+                id           UUID NOT NULL UNIQUE,
+                request_id   UUID NOT NULL REFERENCES gacha_pull_requests (id) ON DELETE CASCADE,
+                account_id   UUID NOT NULL REFERENCES accounts (id),
+                banner_code  VARCHAR(50) NOT NULL,
+                pity_group   VARCHAR(50) NOT NULL,
+                pull_index   INT NOT NULL,
+                entry_id     VARCHAR(50) NOT NULL,
+                reward_type  VARCHAR(20) NOT NULL,
+                item_code    VARCHAR(50),
+                quantity     BIGINT,
+                days         INT,
+                rarity       VARCHAR(20) NOT NULL,
+                result_type  VARCHAR(20) NOT NULL CHECK (result_type IN ('NEW', 'DUPLICATE_SHARDS')),
+                shards       INT NOT NULL DEFAULT 0,
+                pity_trigger VARCHAR(20),
+                created_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                CONSTRAINT uq_gacha_pulls_request_index UNIQUE (request_id, pull_index)
+              )
+        - sql:
+            sql: CREATE INDEX idx_gacha_pulls_account_seq ON gacha_pulls (account_id, seq DESC)
+        - sql:
+            sql: >
+              CREATE TABLE gacha_test_forced_pulls (
+                id          BIGSERIAL PRIMARY KEY,
+                account_id  UUID NOT NULL REFERENCES accounts (id),
+                banner_code VARCHAR(50) NOT NULL REFERENCES gacha_banners (code) ON DELETE CASCADE,
+                entry_id    VARCHAR(50) NOT NULL,
+                created_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+        - sql:
+            sql: CREATE INDEX idx_gacha_test_forced_pulls_account ON gacha_test_forced_pulls (account_id, banner_code, id)
+      rollback:
+        - sql:
+            sql: DROP TABLE IF EXISTS gacha_test_forced_pulls, gacha_pulls, gacha_pull_requests, gacha_pity_counters, gacha_pool_entries, gacha_banners
+
+  # Duplicate compensation currency (real item, not a stub) and extra STUB cosmetics so that every rarity
+  # has entries in both demo banners.
+  - changeSet:
+      id: 010-gacha-catalog
+      author: dating-team
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              INSERT INTO catalog_items (code, kind, category, equip_slot, title, rarity, attributes) VALUES
+                ('GACHA_SHARD',             'CONSUMABLE', 'GACHA_SHARD',    NULL,             'Осколок удачи',              NULL,        '{"icon": "shard"}'),
+                ('STICKERS_STUB_HEARTS',    'COSMETIC',   'STICKER_PACK',   NULL,             'Сердечки (тест)',            'COMMON',    '{"stub": true, "emoji": "💖", "stickers": ["heart_beat", "heart_hug", "heart_fire"]}'),
+                ('STATUS_STUB_COFFEE',      'COSMETIC',   'PROFILE_STATUS', 'PROFILE_STATUS', 'Кофеман (тест)',             'COMMON',    '{"stub": true, "emoji": "☕", "label": "Кофеман", "color": "#92400E"}'),
+                ('WALLPAPER_STUB_AURORA',   'COSMETIC',   'CHAT_WALLPAPER', 'CHAT_WALLPAPER', 'Северное сияние (тест)',     'EPIC',      '{"stub": true, "background": "#064E3B", "accent": "#6EE7B7", "pattern": "waves"}'),
+                ('STICKERS_STUB_DRAGONS',   'COSMETIC',   'STICKER_PACK',   NULL,             'Драконы (тест)',             'LEGENDARY', '{"stub": true, "emoji": "🐉", "stickers": ["dragon_hi", "dragon_love", "dragon_fire"]}'),
+                ('WALLPAPER_STUB_STARFALL', 'COSMETIC',   'CHAT_WALLPAPER', 'CHAT_WALLPAPER', 'Звездопад (тест, лимит)',    'EPIC',      '{"stub": true, "background": "#0F172A", "accent": "#FDE68A", "pattern": "stars", "limited": true}'),
+                ('FRAME_STUB_STARLIGHT',    'COSMETIC',   'PHOTO_FRAME',    'PHOTO_FRAME',    'Звёздная рамка (тест, лимит)', 'LEGENDARY', '{"stub": true, "borderColor": "#FACC15", "borderWidth": 4, "glow": true, "limited": true}')
+              ON CONFLICT (code) DO NOTHING
+      rollback:
+        - sql:
+            sql: >
+              DELETE FROM catalog_items WHERE code IN ('GACHA_SHARD', 'STICKERS_STUB_HEARTS', 'STATUS_STUB_COFFEE',
+                'WALLPAPER_STUB_AURORA', 'STICKERS_STUB_DRAGONS', 'WALLPAPER_STUB_STARFALL', 'FRAME_STUB_STARLIGHT')
+
+  # Demo banners. Weights are in basis points (total 10 000) so they read as percentages:
+  # COMMON 70 %, RARE 24 %, EPIC 5 %, LEGENDARY 1 %. Pity: EPIC+ within 10 pulls, LEGENDARY at 80.
+  - changeSet:
+      id: 010-gacha-demo-banners
+      author: dating-team
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              INSERT INTO gacha_banners (code, title, description, type, starts_at, ends_at, pity_group,
+                                         epic_pity, legendary_pity, sort_order, attributes) VALUES
+                ('STANDARD', 'Стандартный', 'Постоянный баннер: стикеры, обои чата, статусы, рамки, суперлайки, бусты и дни премиума.',
+                 'PERMANENT', NULL, NULL, 'STANDARD', 10, 80, 100, '{"stub": true, "accent": "#6366F1"}'),
+                ('LIMITED_DEMO_STARFALL', 'Звёздный фестиваль (демо)', 'Временный баннер: повышенный шанс на «Звёздную рамку» и обои «Звездопад».',
+                 'LIMITED', now(), now() + interval '1 year', 'LIMITED', 10, 80, 10, '{"stub": true, "accent": "#FACC15"}')
+              ON CONFLICT (code) DO NOTHING
+        - sql:
+            splitStatements: false
+            sql: |
+              INSERT INTO gacha_pool_entries (banner_code, entry_id, reward_type, item_code, quantity, days, rarity, weight, featured, sort_order) VALUES
+                ('STANDARD', 'stickers_cats',     'ITEM',         'STICKERS_STUB_CATS',     1,    NULL, 'COMMON',    1800, FALSE, 10),
+                ('STANDARD', 'wallpaper_night',   'ITEM',         'WALLPAPER_STUB_NIGHT',   1,    NULL, 'COMMON',    1800, FALSE, 20),
+                ('STANDARD', 'stickers_hearts',   'ITEM',         'STICKERS_STUB_HEARTS',   1,    NULL, 'COMMON',    1700, FALSE, 30),
+                ('STANDARD', 'status_coffee',     'ITEM',         'STATUS_STUB_COFFEE',     1,    NULL, 'COMMON',    1700, FALSE, 40),
+                ('STANDARD', 'stickers_space',    'ITEM',         'STICKERS_STUB_SPACE',    1,    NULL, 'RARE',       500, FALSE, 50),
+                ('STANDARD', 'wallpaper_sunset',  'ITEM',         'WALLPAPER_STUB_SUNSET',  1,    NULL, 'RARE',       500, FALSE, 60),
+                ('STANDARD', 'status_early_bird', 'ITEM',         'STATUS_STUB_EARLY_BIRD', 1,    NULL, 'RARE',       500, FALSE, 70),
+                ('STANDARD', 'superlike_x3',      'ITEM',         'SUPERLIKE',              3,    NULL, 'RARE',       500, FALSE, 80),
+                ('STANDARD', 'boost_x1',          'ITEM',         'BOOST',                  1,    NULL, 'RARE',       400, FALSE, 90),
+                ('STANDARD', 'status_bookworm',   'ITEM',         'STATUS_STUB_BOOKWORM',   1,    NULL, 'EPIC',       150, TRUE,  100),
+                ('STANDARD', 'frame_gold',        'ITEM',         'FRAME_STUB_GOLD',        1,    NULL, 'EPIC',       150, TRUE,  110),
+                ('STANDARD', 'wallpaper_aurora',  'ITEM',         'WALLPAPER_STUB_AURORA',  1,    NULL, 'EPIC',       100, FALSE, 120),
+                ('STANDARD', 'premium_3d',        'PREMIUM_DAYS', NULL,                     NULL, 3,    'EPIC',       100, FALSE, 130),
+                ('STANDARD', 'frame_neon',        'ITEM',         'FRAME_STUB_NEON',        1,    NULL, 'LEGENDARY',   60, TRUE,  140),
+                ('STANDARD', 'stickers_dragons',  'ITEM',         'STICKERS_STUB_DRAGONS',  1,    NULL, 'LEGENDARY',   40, TRUE,  150),
+
+                ('LIMITED_DEMO_STARFALL', 'stickers_cats',      'ITEM',         'STICKERS_STUB_CATS',      1,    NULL, 'COMMON',    1750, FALSE, 10),
+                ('LIMITED_DEMO_STARFALL', 'wallpaper_night',    'ITEM',         'WALLPAPER_STUB_NIGHT',    1,    NULL, 'COMMON',    1750, FALSE, 20),
+                ('LIMITED_DEMO_STARFALL', 'stickers_hearts',    'ITEM',         'STICKERS_STUB_HEARTS',    1,    NULL, 'COMMON',    1750, FALSE, 30),
+                ('LIMITED_DEMO_STARFALL', 'status_coffee',      'ITEM',         'STATUS_STUB_COFFEE',      1,    NULL, 'COMMON',    1750, FALSE, 40),
+                ('LIMITED_DEMO_STARFALL', 'stickers_space',     'ITEM',         'STICKERS_STUB_SPACE',     1,    NULL, 'RARE',       600, FALSE, 50),
+                ('LIMITED_DEMO_STARFALL', 'wallpaper_sunset',   'ITEM',         'WALLPAPER_STUB_SUNSET',   1,    NULL, 'RARE',       600, FALSE, 60),
+                ('LIMITED_DEMO_STARFALL', 'status_early_bird',  'ITEM',         'STATUS_STUB_EARLY_BIRD',  1,    NULL, 'RARE',       600, FALSE, 70),
+                ('LIMITED_DEMO_STARFALL', 'superlike_x3',       'ITEM',         'SUPERLIKE',               3,    NULL, 'RARE',       600, FALSE, 80),
+                ('LIMITED_DEMO_STARFALL', 'wallpaper_starfall', 'ITEM',         'WALLPAPER_STUB_STARFALL', 1,    NULL, 'EPIC',       250, TRUE,  90),
+                ('LIMITED_DEMO_STARFALL', 'status_bookworm',    'ITEM',         'STATUS_STUB_BOOKWORM',    1,    NULL, 'EPIC',       125, FALSE, 100),
+                ('LIMITED_DEMO_STARFALL', 'premium_3d',         'PREMIUM_DAYS', NULL,                      NULL, 3,    'EPIC',       125, FALSE, 110),
+                ('LIMITED_DEMO_STARFALL', 'frame_starlight',    'ITEM',         'FRAME_STUB_STARLIGHT',    1,    NULL, 'LEGENDARY',   70, TRUE,  120),
+                ('LIMITED_DEMO_STARFALL', 'frame_neon',         'ITEM',         'FRAME_STUB_NEON',         1,    NULL, 'LEGENDARY',   30, FALSE, 130)
+              ON CONFLICT (banner_code, entry_id) DO NOTHING
+      rollback:
+        - sql:
+            sql: DELETE FROM gacha_banners WHERE code IN ('STANDARD', 'LIMITED_DEMO_STARFALL')

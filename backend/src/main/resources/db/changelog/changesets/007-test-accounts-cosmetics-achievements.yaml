@@ -1,0 +1,166 @@
+databaseChangeLog:
+  # Test accounts: allowlisted phones get test_account = true; they are isolated from real users in
+  # discovery and may use /api/v1/testing (when enabled). Their economy clock can be shifted.
+  - changeSet:
+      id: 007-test-accounts
+      author: dating-team
+      changes:
+        - sql:
+            sql: ALTER TABLE accounts ADD COLUMN test_account BOOLEAN NOT NULL DEFAULT FALSE
+        - sql:
+            sql: >
+              CREATE TABLE account_clock_offsets (
+                account_id     UUID PRIMARY KEY REFERENCES accounts (id),
+                offset_seconds BIGINT NOT NULL DEFAULT 0,
+                updated_at     TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+      rollback:
+        - sql:
+            sql: DROP TABLE account_clock_offsets
+        - sql:
+            sql: ALTER TABLE accounts DROP COLUMN test_account
+
+  # Consumables live in two buckets: PERMANENT (bought, earned, won) and PERIODIC (premium allowance).
+  # Spending takes PERIODIC first; TOP_UP allowances look only at PERIODIC, so purchases are never "eaten".
+  - changeSet:
+      id: 007-wallet-buckets
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE wallet_balances
+              ADD COLUMN bucket VARCHAR(10) NOT NULL DEFAULT 'PERMANENT' CHECK (bucket IN ('PERMANENT', 'PERIODIC'))
+        - sql:
+            sql: ALTER TABLE wallet_balances DROP CONSTRAINT wallet_balances_pkey
+        - sql:
+            sql: ALTER TABLE wallet_balances ADD PRIMARY KEY (account_id, item_code, bucket)
+        - sql:
+            sql: ALTER TABLE economy_ledger_lines ADD COLUMN bucket VARCHAR(10)
+      rollback:
+        - sql:
+            sql: ALTER TABLE economy_ledger_lines DROP COLUMN bucket
+        - sql:
+            sql: DELETE FROM wallet_balances WHERE bucket = 'PERIODIC'
+        - sql:
+            sql: ALTER TABLE wallet_balances DROP CONSTRAINT wallet_balances_pkey
+        - sql:
+            sql: ALTER TABLE wallet_balances DROP COLUMN bucket
+        - sql:
+            sql: ALTER TABLE wallet_balances ADD PRIMARY KEY (account_id, item_code)
+
+  # Catalog becomes data-driven for cosmetics: category (what it is), equip_slot (where it is worn),
+  # title, rarity and free-form attributes that clients render generically (colors, emoji, assets).
+  - changeSet:
+      id: 007-catalog-cosmetics
+      author: dating-team
+      changes:
+        - sql:
+            sql: ALTER TABLE catalog_items DROP CONSTRAINT catalog_items_kind_check
+        - sql:
+            sql: >
+              ALTER TABLE catalog_items
+                ADD COLUMN category   VARCHAR(30),
+                ADD COLUMN equip_slot VARCHAR(30),
+                ADD COLUMN title      VARCHAR(80),
+                ADD COLUMN rarity     VARCHAR(20),
+                ADD COLUMN attributes JSONB NOT NULL DEFAULT '{}'::jsonb
+        - sql:
+            sql: UPDATE catalog_items SET category = kind, kind = 'COSMETIC' WHERE kind = 'STICKER_PACK'
+        - sql:
+            sql: UPDATE catalog_items SET category = COALESCE(category, kind), title = COALESCE(title, code)
+        - sql:
+            sql: ALTER TABLE catalog_items ALTER COLUMN category SET NOT NULL, ALTER COLUMN title SET NOT NULL
+        - sql:
+            sql: >
+              ALTER TABLE catalog_items
+                ADD CONSTRAINT catalog_items_kind_check CHECK (kind IN ('CONSUMABLE', 'COSMETIC')),
+                ADD CONSTRAINT catalog_items_rarity_check CHECK (rarity IS NULL OR rarity IN ('COMMON', 'RARE', 'EPIC', 'LEGENDARY')),
+                ADD CONSTRAINT catalog_items_slot_check CHECK (equip_slot IS NULL OR kind = 'COSMETIC')
+        - sql:
+            sql: >
+              CREATE TABLE equipped_cosmetics (
+                account_id UUID NOT NULL REFERENCES accounts (id),
+                slot       VARCHAR(30) NOT NULL,
+                item_code  VARCHAR(50) NOT NULL REFERENCES catalog_items (code),
+                updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                PRIMARY KEY (account_id, slot)
+              )
+      rollback:
+        - sql:
+            sql: DROP TABLE equipped_cosmetics
+        - sql:
+            sql: >
+              ALTER TABLE catalog_items
+                DROP CONSTRAINT catalog_items_slot_check,
+                DROP CONSTRAINT catalog_items_rarity_check,
+                DROP CONSTRAINT catalog_items_kind_check,
+                DROP COLUMN category, DROP COLUMN equip_slot, DROP COLUMN title, DROP COLUMN rarity, DROP COLUMN attributes
+        - sql:
+            sql: ALTER TABLE catalog_items ADD CONSTRAINT catalog_items_kind_check CHECK (kind IN ('CONSUMABLE', 'COSMETIC', 'STICKER_PACK'))
+
+  # Minimal achievement registry: definitions with rewards and completions. Triggers (event listeners)
+  # will come with the achievements feature; for now completions are made via the testing API.
+  - changeSet:
+      id: 007-achievements
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE achievement_definitions (
+                code        VARCHAR(50) PRIMARY KEY,
+                title       VARCHAR(100) NOT NULL,
+                description VARCHAR(300),
+                rewards     JSONB NOT NULL DEFAULT '[]'::jsonb,
+                active      BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+        - sql:
+            sql: >
+              CREATE TABLE account_achievements (
+                account_id       UUID NOT NULL REFERENCES accounts (id),
+                achievement_code VARCHAR(50) NOT NULL REFERENCES achievement_definitions (code),
+                completed_at     TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                PRIMARY KEY (account_id, achievement_code)
+              )
+      rollback:
+        - sql:
+            sql: DROP TABLE account_achievements, achievement_definitions
+
+  # Stub content for testing the economy end to end. Codes contain STUB / attributes.stub = true;
+  # replace with real content once premium, gacha and cosmetics are designed.
+  - changeSet:
+      id: 007-stub-catalog-and-achievements
+      author: dating-team
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              INSERT INTO catalog_items (code, kind, category, equip_slot, title, rarity, attributes) VALUES
+                ('SUPERLIKE',              'CONSUMABLE', 'SUPERLIKE',      NULL,             'Суперлайк',              NULL,        '{"stub": true, "icon": "star"}'),
+                ('GACHA_TICKET',           'CONSUMABLE', 'GACHA_TICKET',   NULL,             'Билет удачи',            NULL,        '{"stub": true, "icon": "ticket"}'),
+                ('BOOST',                  'CONSUMABLE', 'BOOST',          NULL,             'Буст анкеты',            NULL,        '{"stub": true, "icon": "rocket", "durationMinutes": 30}'),
+                ('STICKERS_STUB_CATS',     'COSMETIC',   'STICKER_PACK',   NULL,             'Котики (тест)',          'COMMON',    '{"stub": true, "emoji": "🐱", "stickers": ["cat_wave", "cat_heart", "cat_sleep"]}'),
+                ('STICKERS_STUB_SPACE',    'COSMETIC',   'STICKER_PACK',   NULL,             'Космос (тест)',          'RARE',      '{"stub": true, "emoji": "🚀", "stickers": ["rocket", "planet", "alien"]}'),
+                ('WALLPAPER_STUB_NIGHT',   'COSMETIC',   'CHAT_WALLPAPER', 'CHAT_WALLPAPER', 'Ночной город (тест)',    'COMMON',    '{"stub": true, "background": "#1E1B4B", "accent": "#A5B4FC", "pattern": "stars"}'),
+                ('WALLPAPER_STUB_SUNSET',  'COSMETIC',   'CHAT_WALLPAPER', 'CHAT_WALLPAPER', 'Закат (тест)',           'RARE',      '{"stub": true, "background": "#FDBA74", "accent": "#DB2777", "pattern": "waves"}'),
+                ('STATUS_STUB_EARLY_BIRD', 'COSMETIC',   'PROFILE_STATUS', 'PROFILE_STATUS', 'Ранняя пташка (тест)',   'RARE',      '{"stub": true, "emoji": "🐦", "label": "Ранняя пташка", "color": "#0EA5E9"}'),
+                ('STATUS_STUB_BOOKWORM',   'COSMETIC',   'PROFILE_STATUS', 'PROFILE_STATUS', 'Книжный червь (тест)',   'EPIC',      '{"stub": true, "emoji": "📚", "label": "Книжный червь", "color": "#7C3AED"}'),
+                ('FRAME_STUB_GOLD',        'COSMETIC',   'PHOTO_FRAME',    'PHOTO_FRAME',    'Золотая рамка (тест)',   'EPIC',      '{"stub": true, "borderColor": "#D4AF37", "borderWidth": 4}'),
+                ('FRAME_STUB_NEON',        'COSMETIC',   'PHOTO_FRAME',    'PHOTO_FRAME',    'Неоновая рамка (тест)',  'LEGENDARY', '{"stub": true, "borderColor": "#22D3EE", "borderWidth": 3, "glow": true}')
+              ON CONFLICT (code) DO NOTHING
+        - sql:
+            splitStatements: false
+            sql: |
+              INSERT INTO achievement_definitions (code, title, description, rewards) VALUES
+                ('STUB_FIRST_PHOTO',       'Первое фото (тест)',         'Загрузить первую фотографию',
+                 '[{"item": "SUPERLIKE", "quantity": 1}]'),
+                ('STUB_PROFILE_PUBLISHED', 'Анкета опубликована (тест)', 'Опубликовать анкету',
+                 '[{"item": "FRAME_STUB_GOLD", "quantity": 1}, {"premiumDays": 3}]'),
+                ('STUB_COLLECTOR',         'Коллекционер (тест)',        'Набор косметики для проверки витрины',
+                 '[{"item": "GACHA_TICKET", "quantity": 2}, {"item": "STATUS_STUB_EARLY_BIRD", "quantity": 1}, {"item": "STICKERS_STUB_CATS", "quantity": 1}, {"item": "WALLPAPER_STUB_NIGHT", "quantity": 1}]')
+              ON CONFLICT (code) DO NOTHING
+      rollback:
+        - sql:
+            sql: DELETE FROM achievement_definitions WHERE code LIKE 'STUB\_%'
+        - sql:
+            sql: DELETE FROM catalog_items WHERE attributes ->> 'stub' = 'true'

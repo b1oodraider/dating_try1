@@ -1,0 +1,31 @@
+app:
+  auth:
+    mock-enabled: true
+    resend-cooldown: 1s
+    max-challenges-per-phone-per-hour: 100
+    max-challenges-per-phone-per-day: 1000
+    phone-hash-secret: test-phone-hash-secret-0123456789abcdef
+    max-challenges-per-ip-per-hour: 10000
+  media:
+    url-signing-secret: test-photo-url-signing-secret-0123456789
+  cors:
+    allowed-origins: http://localhost:3000
+  economy:
+    premium-features: [TEST_PREMIUM_FEATURE, ADVANCED_FILTERS, EXCLUSION_WORDS]
+    premium-allowances:
+      - item-code: TEST_SUPERLIKE
+        quantity: 5
+        period: WEEKLY
+        mode: TOP_UP
+      - item-code: TEST_TICKET
+        quantity: 1
+        period: WEEKLY
+        mode: ADD
+  testing:
+    enabled: true
+    test-phones: >-
+      +78000000001, +78000000002, +78000000003, +78000000004, +78000000005,
+      +78000000006, +78000000007, +78000000008, +78000000009
+    otp-code: "654321"
+  admin:
+    bootstrap-phones: +7 801 000-00-01

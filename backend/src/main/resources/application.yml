@@ -1,21 +1,29 @@
+# Base configuration shared by all profiles.
+# There is intentionally NO default profile: run with SPRING_PROFILES_ACTIVE=dev locally
+# and SPRING_PROFILES_ACTIVE=prod in Docker. The datasource comes from SPRING_DATASOURCE_* env vars.
 server:
   port: 8080
-  servlet:
-    context-path: /
+  shutdown: graceful
+  error:
+    include-stacktrace: never
+    include-message: never
 
 spring:
   application:
     name: dating-backend
-  profiles:
-    active: dev
   servlet:
     multipart:
       max-file-size: 5MB
-      max-request-size: 10MB
+      max-request-size: 6MB
+
+  datasource:
+    hikari:
+      # Each PostgreSQL connection loads the Hunspell dictionary once (~26 MB), keep the pool small.
+      maximum-pool-size: ${DB_POOL_SIZE:5}
 
   jpa:
     hibernate:
-      ddl-auto: validate # Strictly no ddl-auto=update in production per requirements
+      ddl-auto: validate # schema is owned by Liquibase
     open-in-view: false
     properties:
       hibernate:
@@ -29,15 +37,87 @@ spring:
 
 app:
   auth:
-    otp-expiration-seconds: 300
+    mock-enabled: false
+    otp-ttl: 5m
     max-attempts: 5
-    mock-enabled: false # Default false
+    session-ttl: 30d
+    resend-cooldown: 60s
+    max-challenges-per-phone-per-hour: 5
+    max-challenges-per-phone-per-day: 10
+    max-challenges-per-ip-per-hour: 30
+    # Required, >= 32 chars. Keys the phone hash (account key); changing it detaches every account from its phone.
+    phone-hash-secret: ${APP_AUTH_PHONE_HASH_SECRET:}
   media:
-    storage-path: ./data/media
-    allowed-mime-types:
-      - image/jpeg
-      - image/png
-      - image/webp
+    storage-path: ${APP_MEDIA_STORAGE_PATH:./data/media}
+    max-file-size: 5MB
+    max-photos-per-profile: 6
+    # Required, >= 32 chars. Signs photo URLs; rotating it invalidates all issued photo links.
+    url-signing-secret: ${APP_MEDIA_URL_SIGNING_SECRET:}
+    url-ttl: 1h
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+  economy:
+    # Feature codes reserved for premium (checked via FeatureAccess.require). Empty until decided.
+    # ADVANCED_FILTERS: search by height/goals + excluded goals; EXCLUSION_WORDS: saved exclusion words.
+    # Remove a code to make the feature free. The premium badge is shown for any active premium.
+    premium-features: [ADVANCED_FILTERS, EXCLUSION_WORDS]
+    # Consumables granted to premium users every period (into the PERIODIC bucket, spent first).
+    #   period: DAILY | WEEKLY | MONTHLY (UTC calendar)
+    #   mode:   TOP_UP refills up to quantity (unused units do not pile up); ADD adds quantity every period
+    # STUB values for testing until the premium content is decided (premium cannot be bought yet).
+    premium-allowances:
+      - item-code: SUPERLIKE
+        quantity: 5
+        period: WEEKLY
+        mode: TOP_UP
+      - item-code: GACHA_TICKET
+        quantity: 1
+        period: WEEKLY
+        mode: ADD
+      - item-code: BOOST
+        quantity: 1
+        period: WEEKLY
+        mode: TOP_UP
+  boost:
+    # How long one boost lasts (docs/boost.md).
+    duration: ${APP_BOOST_DURATION:30m}
+    # Show others that a profile is boosted (PublicProfile.boosted). Off on purpose: a hidden boost keeps the feed fair.
+    public-badge: ${APP_BOOST_PUBLIC_BADGE:false}
+  admin:
+    # Phones that get the ADMIN role on login (comma-separated). Further roles are granted via /api/v1/admin.
+    bootstrap-phones: ${APP_ADMIN_BOOTSTRAP_PHONES:}
+  authors:
+    # Revenue share of a new catalog item author, percent of sales (editable per author).
+    default-revenue-share-percent: 30
+  testing:
+    # Test accounts: phones below become test accounts (isolated from real users in discovery).
+    # enabled=true additionally exposes /api/v1/testing and a fixed OTP code (no SMS) for these phones.
+    enabled: ${APP_TESTING_ENABLED:false}
+    test-phones: ${APP_TESTING_TEST_PHONES:}
+    otp-code: ${APP_TESTING_OTP_CODE:}
+    # QA chat bot: seed profiles answer test accounts with a canned phrase after the delay (docs/chats.md).
+    seed-auto-reply: ${APP_TESTING_SEED_AUTO_REPLY:false}
+    seed-auto-reply-delay: 3s
+  social:
+    # A "pass" hides the profile from the feed for this long, then it can be shown again.
+    pass-ttl: 30d
+    reports-per-hour: 20
+  chat:
+    messages-per-minute: 30
+  push:
+    # A provider without credentials is off (devices are stored, nothing is sent). See docs/api-contract.md "Push".
+    rustore:
+      project-id: ${APP_PUSH_RUSTORE_PROJECT_ID:}
+      service-token: ${APP_PUSH_RUSTORE_SERVICE_TOKEN:}
+    fcm:
+      # Path to the Firebase service account JSON key (mounted as a file, never committed).
+      credentials-file: ${APP_PUSH_FCM_CREDENTIALS_FILE:}
+  realtime:
+    # Server-Sent Events (GET /api/v1/events): heartbeat period, one-time ticket lifetime, connection lifetime.
+    heartbeat-interval: 25s
+    ticket-ttl: 60s
+    emitter-timeout: 30m
+    max-connections-per-account: 5
 
 management:
   endpoints:
@@ -46,4 +126,10 @@ management:
         include: health,info
   endpoint:
     health:
-      show-details: when-authorized
+      show-details: never
+      probes:
+        enabled: true
+
+logging:
+  pattern:
+    level: "%5p [%X{traceId:-}]"

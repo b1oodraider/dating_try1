@@ -1,26 +1,33 @@
 import React, { useState } from 'react';
-import { CommunicationTag } from '../../../core/types';
-import { COMMUNICATION_TAGS, TAG_CATEGORIES } from '../constants/communicationTags';
-import { TagChip } from './TagChip';
-import { Search } from 'lucide-react';
+import type { Tag } from '../../../core/types';
+import { useTags } from '../hooks/useTags';
+import { Button } from '../../../shared/components/Button';
+import { Search, AlertCircle } from 'lucide-react';
+
+/** Backend limit for tagCodes in PUT /me/profile. */
+export const MAX_PROFILE_TAGS = 10;
 
 interface TagPickerProps {
-  selectedTags: CommunicationTag[];
-  onChange: (tags: CommunicationTag[]) => void;
+  selectedTags: Tag[];
+  onChange: (tags: Tag[]) => void;
   maxTags?: number;
+  disabled?: boolean;
 }
 
 export const TagPicker: React.FC<TagPickerProps> = ({
   selectedTags,
   onChange,
-  maxTags = 8,
+  maxTags = MAX_PROFILE_TAGS,
+  disabled = false,
 }) => {
+  const { tags: allTags, categories, isLoading, error, reload } = useTags();
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('all');
 
   const selectedCodes = new Set(selectedTags.map((t) => t.code));
 
-  const handleToggle = (tag: CommunicationTag) => {
+  const handleToggle = (tag: Tag) => {
+    if (disabled) return;
     if (selectedCodes.has(tag.code)) {
       onChange(selectedTags.filter((t) => t.code !== tag.code));
     } else {
@@ -31,14 +38,38 @@ export const TagPicker: React.FC<TagPickerProps> = ({
     }
   };
 
-  const filteredTags = COMMUNICATION_TAGS.filter((tag) => {
+  const query = search.trim().toLowerCase();
+  const filteredTags = allTags.filter((tag) => {
     const matchesSearch =
-      tag.label.toLowerCase().includes(search.toLowerCase()) ||
-      tag.description.toLowerCase().includes(search.toLowerCase());
+      tag.label.toLowerCase().includes(query) ||
+      tag.description.toLowerCase().includes(query);
     const matchesCategory =
       activeCategory === 'all' || tag.category === activeCategory;
     return matchesSearch && matchesCategory;
   });
+
+  if (isLoading) {
+    return (
+      <div className="py-8 flex items-center justify-center gap-2 text-xs text-zinc-500">
+        <div className="w-4 h-4 border-2 border-zinc-900 border-t-transparent rounded-full animate-spin" />
+        Загрузка карточек...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center justify-between gap-2">
+        <span className="flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          {error}
+        </span>
+        <Button type="button" variant="outline" size="sm" onClick={reload}>
+          Повторить
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -53,10 +84,10 @@ export const TagPicker: React.FC<TagPickerProps> = ({
               : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
           }`}
         >
-          Все ({COMMUNICATION_TAGS.length})
+          Все ({allTags.length})
         </button>
-        {TAG_CATEGORIES.map((cat) => {
-          const count = COMMUNICATION_TAGS.filter((t) => t.category === cat.id).length;
+        {categories.map((cat) => {
+          const count = cat.tags.length;
           return (
             <button
               key={cat.id}
@@ -104,7 +135,9 @@ export const TagPicker: React.FC<TagPickerProps> = ({
             <div
               key={tag.code}
               onClick={() => handleToggle(tag)}
-              className={`p-3 rounded-xl border text-left cursor-pointer transition-all flex flex-col justify-between ${
+              className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                disabled ? 'cursor-wait opacity-70' : 'cursor-pointer'
+              } ${
                 isSelected
                   ? 'bg-zinc-900 text-white border-zinc-900 shadow-sm'
                   : 'bg-white border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50'

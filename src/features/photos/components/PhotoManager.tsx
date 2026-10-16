@@ -1,80 +1,83 @@
 import React, { useRef, useState } from 'react';
-import { ProfilePhoto } from '../../../core/types';
-import { api } from '../../../core/api/client';
+import type { Photo } from '../../../core/types';
+import { api, getErrorMessage } from '../../../core/api/client';
 import { Button } from '../../../shared/components/Button';
 import { ImagePlus, Trash2, Star, AlertCircle } from 'lucide-react';
 
+const MAX_PHOTOS = 6;
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+// UX pre-check only: the server validates the real content type by magic bytes.
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
 interface PhotoManagerProps {
-  accountId: string;
-  photos: ProfilePhoto[];
-  onPhotosChange: () => void;
+  photos: Photo[];
+  /** Re-fetches the profile so the photo list (and its signed URLs) is up to date. */
+  onPhotosChange: () => Promise<unknown>;
 }
 
-export const PhotoManager: React.FC<PhotoManagerProps> = ({
-  accountId,
-  photos,
-  onPhotosChange,
-}) => {
+export const PhotoManager: React.FC<PhotoManagerProps> = ({ photos: photosProp, onPhotosChange }) => {
+  const photos = photosProp ?? [];
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [busyPhotoId, setBusyPhotoId] = useState<string | null>(null);
+
+  const resetFileInput = () => {
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setError(null);
+
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      setError('Поддерживаются только форматы JPEG, PNG и WebP');
+      resetFileInput();
+      return;
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      setError('Максимальный размер файла — 5 МБ');
+      resetFileInput();
+      return;
+    }
+
     setIsUploading(true);
-
     try {
-      // Validate format
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-      if (!allowedTypes.includes(file.type)) {
-        throw new Error('Поддерживаются только форматы JPEG, PNG и WebP');
-      }
-
-      // Validate size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error('Максимальный размер файла — 5 МБ');
-      }
-
-      // Convert to Data URL
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const dataUrl = reader.result as string;
-          await api.addPhoto(accountId, dataUrl, file.type, file.size);
-          onPhotosChange();
-        } catch (err: unknown) {
-          setError(err instanceof Error ? err.message : 'Ошибка при добавлении фото');
-        } finally {
-          setIsUploading(false);
-          if (fileInputRef.current) fileInputRef.current.value = '';
-        }
-      };
-      reader.readAsDataURL(file);
+      await api.uploadPhoto(file);
+      await onPhotosChange();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки файла');
+      setError(getErrorMessage(err, 'Ошибка при добавлении фото'));
+    } finally {
       setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      resetFileInput();
     }
   };
 
   const handleDelete = async (photoId: string) => {
+    setError(null);
+    setBusyPhotoId(photoId);
     try {
-      await api.deletePhoto(accountId, photoId);
-      onPhotosChange();
+      await api.deletePhoto(photoId);
+      await onPhotosChange();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Ошибка удаления фото');
+      setError(getErrorMessage(err, 'Ошибка удаления фото'));
+    } finally {
+      setBusyPhotoId(null);
     }
   };
 
   const handleSetPrimary = async (photoId: string) => {
+    setError(null);
+    setBusyPhotoId(photoId);
     try {
-      await api.setPrimaryPhoto(accountId, photoId);
-      onPhotosChange();
+      await api.setPrimaryPhoto(photoId);
+      await onPhotosChange();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Ошибка обновления главного фото');
+      setError(getErrorMessage(err, 'Ошибка обновления главного фото'));
+    } finally {
+      setBusyPhotoId(null);
     }
   };
 
@@ -83,13 +86,13 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-xs font-semibold text-zinc-900">
-            Фотографии анкеты ({photos.length}/6)
+            Фотографии анкеты ({photos.length}/{MAX_PHOTOS})
           </h3>
           <p className="text-[11px] text-zinc-500">
-            JPEG, PNG или WebP до 5 МБ. Первое фото используется как основное.
+            JPEG, PNG или WebP до 5 МБ. Главное фото показывается в ленте.
           </p>
         </div>
-        {photos.length < 6 && (
+        {photos.length < MAX_PHOTOS && (
           <Button
             type="button"
             variant="outline"
@@ -119,7 +122,9 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
 
       {photos.length === 0 ? (
         <div
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => {
+            if (!isUploading) fileInputRef.current?.click();
+          }}
           className="border-2 border-dashed border-zinc-200 hover:border-zinc-300 rounded-2xl p-6 text-center cursor-pointer transition-colors bg-zinc-50/50"
         >
           <ImagePlus className="w-8 h-8 text-zinc-400 mx-auto mb-2" />
@@ -131,7 +136,9 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({
           {photos.map((photo) => (
             <div
               key={photo.id}
-              className="group relative aspect-3/4 rounded-xl overflow-hidden border border-zinc-200 bg-zinc-100 shadow-xs"
+              className={`group relative aspect-3/4 rounded-xl overflow-hidden border border-zinc-200 bg-zinc-100 shadow-xs ${
+                busyPhotoId === photo.id ? 'opacity-60 pointer-events-none' : ''
+              }`}
             >
               <img
                 src={photo.url}

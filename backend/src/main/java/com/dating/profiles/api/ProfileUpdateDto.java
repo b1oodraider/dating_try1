@@ -4,10 +4,14 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 
-import java.util.Set;
+import java.util.List;
 
+/**
+ * All fields optional: null means "leave unchanged" (height is removed with clearHeight = true). Trimmed-length rules (e.g. a name of spaces)
+ * are checked in the service, after trimming.
+ */
 public record ProfileUpdateDto(
-        @Size(min = 2, max = 50, message = "Имя должно быть от 2 до 50 символов")
+        @Size(max = 50, message = "Имя должно быть от 2 до 50 символов")
         String displayName,
 
         @Min(value = 18, message = "Возраст должен быть не менее 18 лет")
@@ -20,8 +24,19 @@ public record ProfileUpdateDto(
         @Size(max = 1000, message = "Описание «О себе» не должно превышать 1000 символов")
         String aboutText,
 
-        Set<String> tagCodes,
+        @Size(max = 10, message = "Можно выбрать не более 10 карточек")
+        List<String> tagCodes,
 
         @Size(max = 200, message = "Статус на сегодня не должен превышать 200 символов")
-        String dailyStatusText
+        String dailyStatusText,
+
+        @Min(value = 120, message = "Рост должен быть от 120 до 230 см")
+        @Max(value = 230, message = "Рост должен быть от 120 до 230 см")
+        Integer heightCm,
+
+        @Size(max = 3, message = "Можно выбрать не более 3 целей")
+        List<String> goalCodes,
+
+        /** true removes the height from the profile; cannot be combined with heightCm. */
+        Boolean clearHeight
 ) {}

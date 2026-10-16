@@ -1,12 +1,17 @@
+# Usage: cp infra/.env.example infra/.env, fill in the secrets, then
+#   docker compose -f infra/compose.yaml --env-file infra/.env up -d --build
 services:
   postgres:
-    image: postgres:16-alpine
+    # postgres:16-alpine + Russian Hunspell dictionary for full-text search (see infra/postgres/Dockerfile)
+    build:
+      context: ./postgres
+    image: dating-postgres:16
     container_name: dating-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-dating}
       POSTGRES_USER: ${DB_USER:-dating_user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-dating_secret_password}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set (see infra/.env.example)}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -35,9 +40,19 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-dating}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-dating_user}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-dating_secret_password}
-      APP_STORAGE_LOCAL_PATH: /app/data/media
-      APP_AUTH_MOCK_ENABLED: "false" # Strictly prohibited in production per AGENTS.md
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      APP_MEDIA_STORAGE_PATH: /app/data/media
+      APP_MEDIA_URL_SIGNING_SECRET: ${APP_MEDIA_URL_SIGNING_SECRET:?APP_MEDIA_URL_SIGNING_SECRET must be set (>= 32 chars)}
+      APP_AUTH_PHONE_HASH_SECRET: ${APP_AUTH_PHONE_HASH_SECRET:?APP_AUTH_PHONE_HASH_SECRET must be set (>= 32 chars)}
+      APP_PUSH_RUSTORE_PROJECT_ID: ${APP_PUSH_RUSTORE_PROJECT_ID:-}
+      APP_PUSH_RUSTORE_SERVICE_TOKEN: ${APP_PUSH_RUSTORE_SERVICE_TOKEN:-}
+      APP_PUSH_FCM_CREDENTIALS_FILE: ${APP_PUSH_FCM_CREDENTIALS_FILE:-}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:?APP_CORS_ALLOWED_ORIGINS must list the web client origin(s)}
+      APP_AUTH_MOCK_ENABLED: "false" # mock OTP is refused by the app together with the prod profile
+      # Test accounts (QA on this environment): comma-separated phones and their fixed OTP code.
+      APP_TESTING_ENABLED: ${APP_TESTING_ENABLED:-false}
+      APP_TESTING_TEST_PHONES: ${APP_TESTING_TEST_PHONES:-}
+      APP_TESTING_OTP_CODE: ${APP_TESTING_OTP_CODE:-}
     volumes:
       - media_data:/app/data/media
     networks:
@@ -57,5 +72,5 @@ volumes:
 
 networks:
   internal_net:
-    internal: true # PostgreSQL is strictly not accessible from outside
+    internal: true # PostgreSQL is not reachable from outside
   public_net:

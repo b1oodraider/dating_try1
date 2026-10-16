@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Modal } from '../../../shared/components/Modal';
 import { Button } from '../../../shared/components/Button';
 import { useAuth } from '../../../core/context/AuthContext';
+import { getErrorMessage } from '../../../core/api/client';
 import { ShieldCheck, Trash2, LogOut, AlertTriangle, Key, Calendar } from 'lucide-react';
 
 interface AccountSettingsModalProps {
@@ -16,28 +17,52 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const { account, logout, deleteAccount } = useAuth();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   if (!account) return null;
 
-  const handleLogout = async () => {
-    await logout();
+  const handleClose = () => {
+    setShowDeleteConfirm(false);
+    setDeleteError(null);
     onClose();
+  };
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      // logout() never throws: local state is cleared even if the server is unreachable.
+      await logout();
+    } finally {
+      setIsLoggingOut(false);
+      handleClose();
+    }
   };
 
   const handleDeleteAccount = async () => {
     setIsDeleting(true);
+    setDeleteError(null);
     try {
       await deleteAccount();
-      onClose();
+      handleClose();
+    } catch (err: unknown) {
+      setDeleteError(getErrorMessage(err, 'Не удалось удалить аккаунт. Попробуйте ещё раз.'));
     } finally {
       setIsDeleting(false);
     }
   };
 
+  const statusLabel =
+    account.status === 'ACTIVE'
+      ? 'Подтверждён (Активен)'
+      : account.status === 'SUSPENDED'
+      ? 'Приостановлен'
+      : 'Удалён';
+
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={handleClose}
       title="Настройки аккаунта и безопасность"
       description="Управление сессией, приватностью и данными"
       maxWidth="md"
@@ -55,7 +80,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           <div className="flex items-center justify-between text-xs">
             <span className="text-zinc-500">Статус аккаунта:</span>
             <span className="text-emerald-700 font-semibold flex items-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5" /> Подтверждён (Активен)
+              <ShieldCheck className="w-3.5 h-3.5" /> {statusLabel}
             </span>
           </div>
 
@@ -76,7 +101,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           <p>
             • Ваш номер телефона замаскирован и не отображается в профиле.<br />
             • Тексты анкеты защищены и не используются для обучения AI.<br />
-            • Фотографии выдаются только авторизованным пользователям сервиса.
+            • Фотографии выдаются только по временным подписанным ссылкам.
           </p>
         </div>
 
@@ -87,6 +112,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
             variant="outline"
             className="w-full justify-start text-xs"
             onClick={handleLogout}
+            isLoading={isLoggingOut}
           >
             <LogOut className="w-3.5 h-3.5 mr-2" /> Завершить сеанс (Выйти)
           </Button>
@@ -108,12 +134,20 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
               <p className="text-[11px] text-rose-700 leading-relaxed">
                 Все ваши данные: анкета, фотографии, карточки предпочтений и история сессий будут безвозвратно удалены.
               </p>
+              {deleteError && (
+                <p role="alert" className="text-[11px] font-semibold text-rose-800">
+                  {deleteError}
+                </p>
+              )}
               <div className="flex gap-2 pt-1">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setShowDeleteConfirm(false)}
+                  onClick={() => {
+                    setShowDeleteConfirm(false);
+                    setDeleteError(null);
+                  }}
                 >
                   Отмена
                 </Button>

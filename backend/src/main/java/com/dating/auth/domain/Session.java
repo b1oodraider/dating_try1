@@ -1,12 +1,14 @@
 package com.dating.auth.domain;
 
+import com.dating.common.persistence.AssignedIdEntity;
 import jakarta.persistence.*;
+
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
 @Table(name = "sessions")
-public class Session {
+public class Session extends AssignedIdEntity {
 
     @Id
     private UUID id;
@@ -37,6 +39,7 @@ public class Session {
         this.expiresAt = expiresAt;
     }
 
+    @Override
     public UUID getId() {
         return id;
     }
@@ -62,10 +65,8 @@ public class Session {
     }
 
     public void revoke() {
-        this.revokedAt = Instant.now();
-    }
-
-    public boolean isValid() {
-        return revokedAt == null && Instant.now().isBefore(expiresAt);
+        if (revokedAt == null) {
+            this.revokedAt = Instant.now();
+        }
     }
 }

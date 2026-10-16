@@ -8,7 +8,8 @@ public record TagResponseDto(
         String categoryLabel,
         String label,
         String description,
-        int sortOrder
+        int sortOrder,
+        Integer scalePosition
 ) {
     public static TagResponseDto from(CommunicationTag tag) {
         return new TagResponseDto(
@@ -17,7 +18,8 @@ public record TagResponseDto(
                 tag.getCategoryLabel(),
                 tag.getLabel(),
                 tag.getDescription(),
-                tag.getSortOrder()
+                tag.getSortOrder(),
+                tag.getScalePosition()
         );
     }
 }
