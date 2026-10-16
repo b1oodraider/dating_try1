@@ -26,6 +26,10 @@ public class RestrictionGuard {
         this.repository = repository;
     }
 
+    public boolean isRestricted(UUID accountId, RestrictionKind kind) {
+        return repository.active(accountId).stream().anyMatch(r -> r.kind() == kind);
+    }
+
     /**
      * @throws ApiException 403 ACCOUNT_RESTRICTED, details { kind, until: ISO time or null = until lifted }
      */

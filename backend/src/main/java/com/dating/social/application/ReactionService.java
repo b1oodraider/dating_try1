@@ -1,5 +1,6 @@
 package com.dating.social.application;
 
+import com.dating.safety.application.LikeSpamDetector;
 import com.dating.safety.application.RestrictionGuard;
 import com.dating.safety.domain.RestrictionKind;
 import com.dating.common.errors.ApiException;
@@ -38,11 +39,14 @@ public class ReactionService {
     private final ApplicationEventPublisher eventPublisher;
     private final ProductEventPublisher productEvents;
     private final RestrictionGuard restrictionGuard;
+    private final LikeSpamDetector likeSpamDetector;
 
     public ReactionService(SocialRepository repository, SocialTargets targets, MatchService matchService,
                            EconomyService economyService, ApplicationEventPublisher eventPublisher,
-                           ProductEventPublisher productEvents, RestrictionGuard restrictionGuard) {
+                           ProductEventPublisher productEvents, RestrictionGuard restrictionGuard,
+                           LikeSpamDetector likeSpamDetector) {
         this.restrictionGuard = restrictionGuard;
+        this.likeSpamDetector = likeSpamDetector;
         this.repository = repository;
         this.targets = targets;
         this.matchService = matchService;
@@ -118,6 +122,7 @@ public class ReactionService {
                 throw new ApiException("ALREADY_LIKED", "Вы уже лайкнули эту анкету", HttpStatus.CONFLICT);
             }
             repository.upsertReaction(actor, target, ReactionType.PASS); // a repeated pass restarts the TTL
+            likeSpamDetector.onReaction(actor, target, ReactionType.PASS.name());
             productEvents.publish("profile_passed", Map.of());
             return ReactionResultDto.notMatched();
         }
@@ -136,6 +141,7 @@ public class ReactionService {
             economyService.spend(actor, SUPERLIKE_ITEM, 1, target.toString(), spendKey);
         }
         repository.upsertReaction(actor, target, type);
+        likeSpamDetector.onReaction(actor, target, type.name());
         productEvents.publish(type == ReactionType.SUPERLIKE ? "profile_superliked" : "profile_liked", Map.of());
 
         // Only a new like can create a match: re-liking (e.g. like → super like) never resurrects an unmatch.

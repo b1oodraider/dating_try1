@@ -450,6 +450,40 @@ paths:
             image/webp: {}
         '404': { description: 'IMAGE_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
+  /discovery/views:
+    post:
+      summary: Сколько времени смотрели анкеты (для правила спам-лайков)
+      description: |
+        Пачками, когда карточка уходит с экрана или закрываются подробности. Никому не показывается, хранится 90 дней,
+        удаляется вместе с аккаунтом. Неизвестные и свои анкеты пропускаются.
+        Правило спам-лайков: за последние 10 реакций (не старше 10 мин) ≥ 90 % лайков И (медианная пауза < 3 с ИЛИ,
+        если просмотры пришли для большинства лайков, ≥ 80 % лайков после < 1 с на экране без открытия подробностей) →
+        ограничение LIKES (LIKE_SPAM) на 1 ч, удваивается при повторах в течение 30 дней до 7 дней; лайки этого окна
+        удаляются (пропадают из «вас лайкнули»), лайки за существующими мэтчами остаются.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [views]
+              properties:
+                views:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: object
+                    required: [profileId, dwellMs]
+                    properties:
+                      profileId: { type: string, format: uuid }
+                      dwellMs: { type: integer, minimum: 0, maximum: 3600000, description: Время на экране (карточка и подробности) }
+                      openedDetails: { type: boolean, default: false }
+      responses:
+        '204': { description: Сохранено }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /discovery/profiles/{profileId}/like:
     parameters:
       - { $ref: '#/components/parameters/ProfileId' }

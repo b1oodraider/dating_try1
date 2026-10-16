@@ -1,0 +1,43 @@
+databaseChangeLog:
+  # Every reaction as it happened (profile_reactions keeps only the latest one per pair). Feeds the like-spam rule
+  # and, later, behavioral metrics. Kept 90 days.
+  - changeSet:
+      id: 016-reaction-events
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE reaction_events (
+                id                BIGSERIAL PRIMARY KEY,
+                actor_account_id  UUID NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+                target_account_id UUID NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+                type              VARCHAR(10) NOT NULL CHECK (type IN ('LIKE', 'SUPERLIKE', 'PASS')),
+                reacted_at        TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT clock_timestamp()
+              )
+        - sql:
+            sql: CREATE INDEX idx_reaction_events_actor ON reaction_events (actor_account_id, reacted_at DESC)
+      rollback:
+        - sql:
+            sql: DROP TABLE reaction_events
+
+  # How long a profile was looked at, reported by the client (feed card on screen, details opened).
+  # Used to tell "liked without looking" apart from a quick but real decision. Kept 90 days.
+  - changeSet:
+      id: 016-profile-views
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE profile_views (
+                id                 BIGSERIAL PRIMARY KEY,
+                viewer_account_id  UUID NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+                target_account_id  UUID NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+                dwell_ms           INT NOT NULL CHECK (dwell_ms BETWEEN 0 AND 3600000),
+                opened_details     BOOLEAN NOT NULL,
+                viewed_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT clock_timestamp()
+              )
+        - sql:
+            sql: CREATE INDEX idx_profile_views_pair ON profile_views (viewer_account_id, target_account_id, viewed_at DESC)
+      rollback:
+        - sql:
+            sql: DROP TABLE profile_views

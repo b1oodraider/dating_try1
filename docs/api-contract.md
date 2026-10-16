@@ -310,6 +310,18 @@ POST /discovery/profiles/{profileId}/pass        200 ReactionResult (always matc
   liked/super-liked profiles and blocks (both directions) are hidden from discovery permanently.
   Side effects: the target gets the `like_received` real-time event (no match) or both get `match` (see Realtime).
 
+## Profile views (auth) — for the like-spam rule; never shown to anybody
+POST /discovery/views   body { views: 1..100 × { profileId: uuid, dwellMs: 0..3600000 (time on screen, card + details),
+                        openedDetails?: boolean } }   204 ; 400 VALIDATION_ERROR. Unknown / own profiles are skipped.
+  Send in batches when cards leave the screen or details close. Kept 90 days, deleted with the account.
+
+## Like spam (automatic)
+Over the last 10 reactions (within 10 min): >= 90 % likes AND (median pause < 3 s OR, when views were sent for most
+of the likes, >= 80 % of likes after < 1 s on screen without opening the details) → LIKES restriction (reason LIKE_SPAM,
+source RULE) for 1 h, doubling with each repeat within 30 days up to 7 d. The likes of that window are removed (they
+vanish from the receivers' "who liked me"); likes behind an existing match stay. The like that triggered it still
+answers 200 (and is removed); the next one gets 403 ACCOUNT_RESTRICTED. Passing is never restricted.
+
 ## Received likes (auth) — "who liked me"
 Likes I have not answered yet (no like back, no active pass of mine, no block); super likes first, then newest.
 ReceivedLike = { profile: PublicProfile, superlike: boolean, likedAt }
