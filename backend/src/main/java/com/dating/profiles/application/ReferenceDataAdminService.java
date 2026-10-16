@@ -124,6 +124,33 @@ public class ReferenceDataAdminService {
     }
 
     /**
+     * Orders a category's cards on a scale (or turns the scale off). Every listed card must belong to the category;
+     * a scale needs both end labels and at least two placed cards.
+     *
+     * @throws ApiException 404 CATEGORY_NOT_FOUND, 400 VALIDATION_ERROR
+     */
+    @Transactional
+    public CategoryRow setScale(String code, boolean scale, String minLabel, String maxLabel,
+                                java.util.Map<String, Integer> positions) {
+        if (!repository.lock("tag_categories", code)) {
+            throw categoryNotFound();
+        }
+        java.util.Map<String, Integer> placed = scale ? positions : java.util.Map.of();
+        if (scale && (minLabel == null || maxLabel == null || placed.size() < 2)) {
+            throw ApiException.validation("VALIDATION_ERROR", "Шкале нужны подписи концов и хотя бы две карточки",
+                    java.util.Map.of("positions", "Расставьте хотя бы две карточки и подпишите концы шкалы"));
+        }
+        java.util.Set<String> ofCategory = repository.tags().stream()
+                .filter(t -> t.category().equals(code)).map(TagRow::code).collect(java.util.stream.Collectors.toSet());
+        placed.keySet().stream().filter(tag -> !ofCategory.contains(tag)).findFirst().ifPresent(tag -> {
+            throw ApiException.validation("VALIDATION_ERROR", "Карточка не из этой категории: " + tag,
+                    java.util.Map.of("positions", "Карточка " + tag + " не из категории " + code));
+        });
+        repository.setScale(code, scale, scale ? minLabel : null, scale ? maxLabel : null, placed);
+        return repository.category(code).orElseThrow();
+    }
+
+    /**
      * A category is plain grouping data, so it is only deleted when empty (hide its tags instead).
      */
     @Transactional

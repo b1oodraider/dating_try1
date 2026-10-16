@@ -31,15 +31,12 @@ public record PublicProfileDto(
         List<GoalDto> goals,
         boolean premium,
         boolean verified,
+        Integer compatibility,
         @JsonInclude(JsonInclude.Include.NON_NULL) Boolean boosted
 ) {
+    /** @param compatibility percent match by cards with the viewer, null when there is too little to compare */
     public static PublicProfileDto from(Profile profile, List<PhotoDto> photos, Map<String, DecorationDto> decorations,
-                                        boolean premium) {
-        return from(profile, photos, decorations, premium, null);
-    }
-
-    public static PublicProfileDto from(Profile profile, List<PhotoDto> photos, Map<String, DecorationDto> decorations,
-                                        boolean premium, Boolean boosted) {
+                                        boolean premium, Integer compatibility, Boolean boosted) {
         List<TagResponseDto> tags = profile.getTags().stream()
                 .filter(CommunicationTag::isActive) // hidden by an admin
                 .map(TagResponseDto::from)
@@ -59,6 +56,7 @@ public record PublicProfileDto(
                 ProfileService.goalsOf(profile),
                 premium,
                 profile.isVerified(),
+                compatibility,
                 boosted
         );
     }

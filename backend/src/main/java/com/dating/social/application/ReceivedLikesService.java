@@ -51,7 +51,7 @@ public class ReceivedLikesService {
         List<SocialRepository.ReceivedLikeRow> rows =
                 repository.receivedLikes(me, properties.passTtl(), limit, (long) page * limit);
         Map<UUID, PublicProfileDto> byAccount =
-                profiles.byAccountIds(rows.stream().map(SocialRepository.ReceivedLikeRow::actorAccountId).toList());
+                profiles.byAccountIds(me, rows.stream().map(SocialRepository.ReceivedLikeRow::actorAccountId).toList());
         List<ReceivedLikeDto> items = rows.stream()
                 .map(row -> {
                     PublicProfileDto profile = byAccount.get(row.actorAccountId());

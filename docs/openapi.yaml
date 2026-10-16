@@ -1634,6 +1634,39 @@ paths:
         '404': { description: 'CATEGORY_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '409': { description: 'CATEGORY_IN_USE', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
+  /admin/tag-categories/{code}/scale:
+    put:
+      tags: [admin]
+      summary: Расставить карточки категории по шкале (для процента совпадения)
+      description: |
+        Роли: CONTENT_EDITOR или ADMIN. Заменяет шкалу целиком: карточки, которых нет в positions, теряют место;
+        scale=false выключает шкалу. Шкале нужны обе подписи и хотя бы две карточки ЭТОЙ категории.
+        404 CATEGORY_NOT_FOUND, 400 VALIDATION_ERROR. Пишется в аудит (TAG_CATEGORY, SET_SCALE).
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scale]
+              properties:
+                scale: { type: boolean }
+                scaleMinLabel: { type: string, maxLength: 60 }
+                scaleMaxLabel: { type: string, maxLength: 60 }
+                positions: { type: object, additionalProperties: { type: integer, minimum: 1, maximum: 100 }, description: 'Код карточки → место (меньше = ближе к scaleMinLabel)' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminCategory' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/RoleRequired' }
+        '404': { $ref: '#/components/responses/Error' }
+
   /admin/goals:
     get:
       tags: [admin]
@@ -2746,6 +2779,7 @@ components:
         label: { type: string }
         description: { type: string }
         sortOrder: { type: integer }
+        scalePosition: { type: [integer, 'null'], description: Место на шкале категории (меньше — ближе к её началу); null — категория не шкала }
 
     Photo:
       type: object
@@ -2799,6 +2833,14 @@ components:
         goals: { type: array, items: { $ref: '#/components/schemas/Goal' } }
         premium: { type: boolean, description: Бейдж премиума }
         verified: { type: boolean, description: Селфи подтверждено модератором }
+        compatibility:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 100
+          description: |
+            Совпадение со СМОТРЯЩИМ по карточкам. Учитываются категории, заполненные обоими, с равным весом:
+            шкала — 1 − |среднее место A − среднее место B| / длина шкалы; остальные — общие карточки / меньший выбор.
+            null, если общих категорий меньше двух.
         boosted: { type: boolean, description: 'Только при app.boost.public-badge=true и активном бусте; иначе поля нет' }
 
     ProfileUpdate:
@@ -3385,6 +3427,7 @@ components:
         sortOrder: { type: integer }
         active: { type: boolean }
         usageCount: { type: integer, format: int64 }
+        scalePosition: { type: [integer, 'null'] }
 
     AdminCategory:
       type: object
@@ -3393,6 +3436,9 @@ components:
         label: { type: string }
         sortOrder: { type: integer }
         tagCount: { type: integer, format: int64 }
+        scale: { type: boolean, description: Карточки упорядочены от scaleMinLabel до scaleMaxLabel }
+        scaleMinLabel: { type: [string, 'null'] }
+        scaleMaxLabel: { type: [string, 'null'] }
 
     AdminGoalFields:
       type: object

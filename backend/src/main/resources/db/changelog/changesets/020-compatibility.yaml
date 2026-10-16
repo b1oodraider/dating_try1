@@ -1,0 +1,38 @@
+databaseChangeLog:
+  # Compatibility by cards (docs/trust-safety.md, block G). A "scale" category orders its cards from one end to
+  # the other (scale_position), so neighbours are closer than opposites; other categories compare as sets.
+  - changeSet:
+      id: 020-card-scales
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE tag_categories
+                ADD COLUMN scale BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN scale_min_label VARCHAR(60),
+                ADD COLUMN scale_max_label VARCHAR(60)
+        - sql:
+            sql: ALTER TABLE communication_tags ADD COLUMN scale_position INT CHECK (scale_position BETWEEN 1 AND 100)
+        - sql:
+            sql: >
+              UPDATE tag_categories SET scale = TRUE, scale_min_label = 'Не спешу с ответом',
+                scale_max_label = 'Люблю живой диалог' WHERE code = 'pace'
+        - sql:
+            sql: >
+              UPDATE communication_tags SET scale_position = CASE code
+                WHEN 'PACE_ASYNCHRONOUS' THEN 1 WHEN 'PACE_LOW_BATTERY' THEN 2 WHEN 'PACE_FAST_CHAT' THEN 3 END
+               WHERE code IN ('PACE_ASYNCHRONOUS', 'PACE_LOW_BATTERY', 'PACE_FAST_CHAT')
+        - sql:
+            sql: >
+              UPDATE tag_categories SET scale = TRUE, scale_min_label = 'Только текст',
+                scale_max_label = 'Голосовые и звонки' WHERE code = 'calls'
+        - sql:
+            sql: >
+              UPDATE communication_tags SET scale_position = CASE code
+                WHEN 'CALLS_TEXT_ONLY' THEN 1 WHEN 'CALLS_PRE_CALL_CHECK' THEN 2 WHEN 'CALLS_VOICE_WELCOME' THEN 3 END
+               WHERE code IN ('CALLS_TEXT_ONLY', 'CALLS_PRE_CALL_CHECK', 'CALLS_VOICE_WELCOME')
+      rollback:
+        - sql:
+            sql: >
+              ALTER TABLE communication_tags DROP COLUMN scale_position;
+              ALTER TABLE tag_categories DROP COLUMN scale_max_label, DROP COLUMN scale_min_label, DROP COLUMN scale

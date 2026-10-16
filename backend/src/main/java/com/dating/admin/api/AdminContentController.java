@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
@@ -59,6 +60,16 @@ public class AdminContentController {
     public record UpdateCategoryRequest(
             @NotBlank(message = "Укажите название") @Size(max = 50) String label,
             @Min(0) @Max(100_000) Integer sortOrder) {
+    }
+
+    /**
+     * @param positions card code → place on the scale (1..100; smaller = closer to scaleMinLabel)
+     */
+    public record CategoryScaleRequest(
+            @NotNull(message = "Укажите, шкала ли это") Boolean scale,
+            @Size(max = 60) String scaleMinLabel,
+            @Size(max = 60) String scaleMaxLabel,
+            java.util.Map<String, @NotNull @Min(1) @Max(100) Integer> positions) {
     }
 
     public record CreateGoalRequest(
@@ -132,6 +143,18 @@ public class AdminContentController {
     public CategoryRow updateCategory(@AuthenticationPrincipal AuthenticatedUser user, @PathVariable String code,
                                       @Valid @RequestBody UpdateCategoryRequest request) {
         return service.updateCategory(user.accountId(), code, request.label().strip(), orZero(request.sortOrder()));
+    }
+
+    /** Orders the category's cards on a scale for compatibility (or turns the scale off). */
+    @PutMapping("/tag-categories/{code}/scale")
+    public CategoryRow setCategoryScale(@AuthenticationPrincipal AuthenticatedUser user, @PathVariable String code,
+                                        @Valid @RequestBody CategoryScaleRequest request) {
+        return service.setCategoryScale(user.accountId(), code, request.scale(), blankToNull(request.scaleMinLabel()),
+                blankToNull(request.scaleMaxLabel()), request.positions() == null ? java.util.Map.of() : request.positions());
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.strip();
     }
 
     @DeleteMapping("/tag-categories/{code}")

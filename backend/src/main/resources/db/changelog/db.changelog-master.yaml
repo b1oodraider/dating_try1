@@ -37,3 +37,5 @@ databaseChangeLog:
       file: db/changelog/changesets/018-verification.yaml
   - include:
       file: db/changelog/changesets/019-risk.yaml
+  - include:
+      file: db/changelog/changesets/020-compatibility.yaml

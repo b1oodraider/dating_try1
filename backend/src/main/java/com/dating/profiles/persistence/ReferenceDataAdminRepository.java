@@ -4,6 +4,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -14,11 +15,14 @@ import java.util.UUID;
 @Repository
 public class ReferenceDataAdminRepository {
 
+    /** @param scalePosition place on the category's scale (null = not placed) */
     public record TagRow(String code, String category, String categoryLabel, String label, String description,
-                         int sortOrder, boolean active, long usageCount) {
+                         int sortOrder, boolean active, long usageCount, Integer scalePosition) {
     }
 
-    public record CategoryRow(String code, String label, int sortOrder, long tagCount) {
+    /** @param scale the cards are ordered from scaleMinLabel to scaleMaxLabel (compatibility by distance) */
+    public record CategoryRow(String code, String label, int sortOrder, long tagCount, boolean scale,
+                              String scaleMinLabel, String scaleMaxLabel) {
     }
 
     public record GoalRow(String code, String label, int sortOrder, boolean active, long usageCount) {
@@ -26,7 +30,7 @@ public class ReferenceDataAdminRepository {
 
     private static final String TAG_SELECT = """
             SELECT t.code, t.category, t.category_label, t.label, t.description, t.sort_order, t.active,
-                   (SELECT COUNT(*) FROM profile_communication_tags p WHERE p.tag_id = t.id)
+                   (SELECT COUNT(*) FROM profile_communication_tags p WHERE p.tag_id = t.id), t.scale_position
             FROM communication_tags t
             """;
     private static final String GOAL_SELECT = """
@@ -114,10 +118,12 @@ public class ReferenceDataAdminRepository {
 
     public List<CategoryRow> categories() {
         return jdbc.sql("""
-                        SELECT c.code, c.label, c.sort_order, (SELECT COUNT(*) FROM communication_tags t WHERE t.category = c.code)
+                        SELECT c.code, c.label, c.sort_order, (SELECT COUNT(*) FROM communication_tags t WHERE t.category = c.code),
+                               c.scale, c.scale_min_label, c.scale_max_label
                         FROM tag_categories c ORDER BY c.sort_order, c.code
                         """)
-                .query((rs, n) -> new CategoryRow(rs.getString(1), rs.getString(2), rs.getInt(3), rs.getLong(4)))
+                .query((rs, n) -> new CategoryRow(rs.getString(1), rs.getString(2), rs.getInt(3), rs.getLong(4),
+                        rs.getBoolean(5), rs.getString(6), rs.getString(7)))
                 .list();
     }
 
@@ -149,6 +155,19 @@ public class ReferenceDataAdminRepository {
                 .param("code", code)
                 .param("label", label)
                 .update();
+    }
+
+    /**
+     * Replaces the whole scale of a category: its flag and end labels, and the positions of its cards
+     * (cards not listed lose their position).
+     */
+    public void setScale(String category, boolean scale, String minLabel, String maxLabel, Map<String, Integer> positions) {
+        jdbc.sql("UPDATE tag_categories SET scale = :scale, scale_min_label = :min, scale_max_label = :max WHERE code = :code")
+                .param("code", category).param("scale", scale).param("min", minLabel).param("max", maxLabel).update();
+        jdbc.sql("UPDATE communication_tags SET scale_position = NULL WHERE category = :code").param("code", category).update();
+        positions.forEach((tag, position) ->
+                jdbc.sql("UPDATE communication_tags SET scale_position = :position WHERE code = :tag AND category = :code")
+                        .param("position", position).param("tag", tag).param("code", category).update());
     }
 
     public void deleteCategory(String code) {
@@ -192,7 +211,7 @@ public class ReferenceDataAdminRepository {
 
     private TagRow mapTag(java.sql.ResultSet rs, int n) throws java.sql.SQLException {
         return new TagRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5),
-                rs.getInt(6), rs.getBoolean(7), rs.getLong(8));
+                rs.getInt(6), rs.getBoolean(7), rs.getLong(8), rs.getObject(9, Integer.class));
     }
 
     private GoalRow mapGoal(java.sql.ResultSet rs, int n) throws java.sql.SQLException {

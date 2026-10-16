@@ -95,6 +95,17 @@ public class AdminContentService {
     }
 
     @Transactional
+    public CategoryRow setCategoryScale(UUID actor, String code, boolean scale, String minLabel, String maxLabel,
+                                        java.util.Map<String, Integer> positions) {
+        roleAccess.require(actor, EDITORS);
+        CategoryRow before = referenceData.findCategory(code).orElse(null);
+        CategoryRow after = referenceData.setScale(code, scale, minLabel, maxLabel, positions);
+        auditLog.record(actor, "SET_SCALE", "TAG_CATEGORY", code, before,
+                java.util.Map.of("category", after, "positions", positions));
+        return after;
+    }
+
+    @Transactional
     public void deleteCategory(UUID actor, String code) {
         roleAccess.require(actor, EDITORS);
         CategoryRow before = referenceData.findCategory(code).orElse(null);

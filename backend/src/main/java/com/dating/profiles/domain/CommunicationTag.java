@@ -31,6 +31,14 @@ public class CommunicationTag {
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 
+    /** Place on its category's scale (see tag_categories.scale); null = not placed. Written by the admin API. */
+    @Column(name = "scale_position", insertable = false, updatable = false)
+    private Integer scalePosition;
+
+    public Integer getScalePosition() {
+        return scalePosition;
+    }
+
     protected CommunicationTag() {
     }
 

@@ -57,7 +57,7 @@ public class MatchViews {
             return List.of();
         }
         List<UUID> ids = matches.stream().map(MatchInfo::id).toList();
-        Map<UUID, PublicProfileDto> byAccount = profiles.byAccountIds(matches.stream().map(m -> m.other(me)).toList());
+        Map<UUID, PublicProfileDto> byAccount = profiles.byAccountIds(me, matches.stream().map(m -> m.other(me)).toList());
         Map<UUID, ChatMessage> last = repository.lastMessages(ids);
         Map<UUID, Long> unread = repository.unreadCounts(me, ids);
         Map<UUID, ChatRepository.ReadState> mine = new HashMap<>();

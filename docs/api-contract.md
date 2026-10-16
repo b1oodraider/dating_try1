@@ -20,7 +20,8 @@ Errors with `details` (returned by the endpoints listed below):
                                                               sending); until = ISO time or null (until lifted). See GET /me/restrictions
 
 ## Types
-Tag        = { code, category: string, categoryLabel, label, description, sortOrder }
+Tag        = { code, category: string, categoryLabel, label, description, sortOrder, scalePosition: number|null (place on the
+               category's scale, smaller = closer to its min end; null = the category is not a scale) }
              category = a tag category code (seeded: pace, format, calls, boundaries, social; editable via /admin/tag-categories)
 Photo      = { id, url, mimeType, sizeBytes, sortOrder, isPrimary, createdAt }
              url is a RELATIVE signed path, e.g. "/api/v1/media/photos/{id}?exp=1760000000&sig=ab12..". Valid ~1h.
@@ -36,7 +37,12 @@ MyProfile  = { id, displayName: string|null, age: number|null, city: string|null
                verified: boolean,            // selfie checked by a moderator; a new photo resets it
                createdAt, updatedAt }
 PublicProfile = { id, displayName, age, city, aboutText: string|null, dailyStatusText: string|null, tags: Tag[], photos: Photo[],
-                  decorations: Decorations, verified: boolean (selfie checked by a moderator, see Selfie verification) }
+                  decorations: Decorations, verified: boolean (selfie checked by a moderator, see Selfie verification),
+                  compatibility: number|null (0..100, match with the VIEWER by cards; null with fewer than 2 categories
+                  filled in by both) }
+             Compatibility: each category both filled in counts equally. Scale category: 1 − |mean position A − mean
+             position B| / scale span (neighbours close, opposite ends far). Other categories: shared cards / the
+             smaller selection. Present in the feed, received likes and matches.
              (no accountId, no statuses)
 Decorations = { [slot: 'PHOTO_FRAME'|'PROFILE_STATUS'|...]: Decoration }   // only public slots; may be {}
 Decoration  = { code, title, rarity: 'COMMON'|'RARE'|'EPIC'|'LEGENDARY'|null, attributes: object }
@@ -528,8 +534,8 @@ GET    /admin/audit?entityType=&entityId=&limit=50   newest first; limit clamped
 ### Content: tags, tag categories, goals (editors)
 Codes are set on creation and never change. Deleting something that profiles use hides it (active = false) instead.
 Text fields are trimmed. Bean validation errors: 400 VALIDATION_ERROR with fieldErrors.
-AdminTag      = { code, category, categoryLabel, label, description, sortOrder, active, usageCount }
-AdminCategory = { code, label, sortOrder, tagCount }
+AdminTag      = { code, category, categoryLabel, label, description, sortOrder, active, usageCount, scalePosition: number|null }
+AdminCategory = { code, label, sortOrder, tagCount, scale: boolean, scaleMinLabel: string|null, scaleMaxLabel: string|null }
 AdminGoal     = { code, label, sortOrder, active, usageCount }
 DeleteResult  = { result: 'DELETED'|'DEACTIVATED' }   // DEACTIVATED: in use, hidden; show again with PUT active=true
 GET    /admin/tags                 200 AdminTag[] (all, incl. inactive; by sortOrder, code)
@@ -543,6 +549,11 @@ GET    /admin/tag-categories       200 AdminCategory[] (by sortOrder, code)
 POST   /admin/tag-categories       body { code: ^[a-z][a-z0-9_]{1,29}$, label (1..50), sortOrder? 0..100000 (0) }  201 AdminCategory ; 409 CATEGORY_EXISTS
 PUT    /admin/tag-categories/{code}  body { label, sortOrder? }  200 AdminCategory ; 404 CATEGORY_NOT_FOUND
 DELETE /admin/tag-categories/{code}  204 ; 404 CATEGORY_NOT_FOUND ; 409 CATEGORY_IN_USE (has tags, active or not)
+PUT    /admin/tag-categories/{code}/scale  body { scale: boolean, scaleMinLabel?: <= 60, scaleMaxLabel?: <= 60,
+                                       positions?: { [tagCode]: 1..100 } }  — replaces the whole scale; unlisted cards lose
+                                       their place; scale=false clears it. 200 AdminCategory ; 404 CATEGORY_NOT_FOUND ;
+                                       400 VALIDATION_ERROR (a scale needs both labels and 2+ cards of THIS category).
+                                       Audited (TAG_CATEGORY, SET_SCALE). Defaults: pace (slow → live chat), calls (text → calls).
 GET    /admin/goals                200 AdminGoal[] (all, by sortOrder, code)
 POST   /admin/goals                body { code: ^[A-Z][A-Z0-9_]{1,39}$, label (1..60), sortOrder? 0..100000 (0), active? (true) }  201 AdminGoal ; 409 GOAL_EXISTS
 PUT    /admin/goals/{code}         body { label, sortOrder?, active? (true) }  200 AdminGoal ; 404 GOAL_NOT_FOUND

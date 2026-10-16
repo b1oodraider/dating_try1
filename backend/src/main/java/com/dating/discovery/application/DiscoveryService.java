@@ -1,5 +1,6 @@
 package com.dating.discovery.application;
 
+import com.dating.profiles.application.CompatibilityService;
 import com.dating.safety.application.BehaviorService;
 import com.dating.accounts.domain.Account;
 import com.dating.accounts.domain.AccountStatus;
@@ -50,12 +51,15 @@ public class DiscoveryService {
     private final FeatureAccess featureAccess;
     private final DiscoveryBoosts boosts;
     private final BehaviorService behavior;
+    private final CompatibilityService compatibilityService;
 
     public DiscoveryService(ProfileRepository profileRepository, ProfilePhotoQuery photoQuery,
                             ExclusionWordsService exclusionWords, ProfileDecorationQuery decorationQuery,
                             AccountService accountService, ExcludedGoalsService excludedGoals,
-                            FeatureAccess featureAccess, DiscoveryBoosts boosts, BehaviorService behavior) {
+                            FeatureAccess featureAccess, DiscoveryBoosts boosts, BehaviorService behavior,
+                            CompatibilityService compatibilityService) {
         this.behavior = behavior;
+        this.compatibilityService = compatibilityService;
         this.profileRepository = profileRepository;
         this.photoQuery = photoQuery;
         this.exclusionWords = exclusionWords;
@@ -125,9 +129,11 @@ public class DiscoveryService {
         Map<UUID, Map<String, DecorationDto>> decorations =
                 decorationQuery.publicDecorations(page.getContent().stream().map(Profile::getAccountId).toList());
 
+        Map<UUID, Integer> compatibility = compatibilityService.forViewer(callerAccountId, page.getContent());
         List<PublicProfileDto> items = page.getContent().stream()
                 .map(p -> PublicProfileDto.from(p, photos.getOrDefault(p.getId(), List.of()),
                         decorations.getOrDefault(p.getAccountId(), Map.of()), premiumOwners.contains(p.getAccountId()),
+                        compatibility.get(p.getAccountId()),
                         boostBadges.contains(p.getAccountId()) ? Boolean.TRUE : null))
                 .toList();
 
