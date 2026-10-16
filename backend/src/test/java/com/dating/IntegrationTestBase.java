@@ -91,6 +91,12 @@ public abstract class IntegrationTestBase {
     @DynamicPropertySource
     static void mediaProperties(DynamicPropertyRegistry registry) {
         registry.add("app.media.storage-path", MEDIA_DIR::toString);
+        // Both push providers point at a local fake (PushStub), so every context sends real HTTP pushes.
+        registry.add("app.push.rustore.base-url", () -> com.dating.support.PushStub.BASE_URL);
+        registry.add("app.push.rustore.project-id", () -> com.dating.support.PushStub.RUSTORE_PROJECT);
+        registry.add("app.push.rustore.service-token", () -> com.dating.support.PushStub.RUSTORE_SERVICE_TOKEN);
+        registry.add("app.push.fcm.base-url", () -> com.dating.support.PushStub.BASE_URL);
+        registry.add("app.push.fcm.credentials-file", () -> com.dating.support.PushStub.FCM_CREDENTIALS.toString());
     }
 
     @Autowired

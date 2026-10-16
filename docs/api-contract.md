@@ -373,6 +373,20 @@ GET  /events          text/event-stream. Auth: `Authorization: Bearer` header (m
     read           { matchId, lastReadMessageId, lastReadAt }   the other person read the chat up to this message
   All events are sent only after the business transaction commits. Account deletion closes all its streams.
 
+## Push notifications (auth)
+The push token of THIS device, tied to the current session: logout or session expiry stops pushes, account deletion
+removes the device. One device per session (a refreshed token replaces the old one); a token seen under another
+session moves there. Register after every login and whenever the SDK reports a new token.
+PUT    /me/push-device   body { provider: 'RUSTORE'|'FCM', token: string (1..1024) }   204 ; 400 VALIDATION_ERROR | MALFORMED_REQUEST
+DELETE /me/push-device   204 (forget this device; idempotent)
+  RUSTORE = RuStore Push SDK token (Android in Russia); FCM = Firebase token (Android with Google services, iOS via APNs).
+  Pushes (FCM HTTP v1 / RuStore format) are sent after commit, best effort, also when the app is open (hide them in the
+  foreground: the same thing arrives over SSE). Texts are generic (no names, no message text). `data` (all strings):
+    { type: 'match', matchId }               new match (both people)
+    { type: 'message', matchId }             new message (recipient only)
+    { type: 'like_received', superlike: 'true'|'false' }
+  A provider without server credentials is off: devices are kept, nothing is sent.
+
 ## Catalog (auth)
 CatalogItem = { code, kind: 'CONSUMABLE'|'COSMETIC', category, equipSlot: string|null, rarity: string|null, title, attributes: object,
                 availableFrom: string|null, availableUntil: string|null,   // acquisition window [from, until), null = open

@@ -104,6 +104,14 @@ app:
     reports-per-hour: 20
   chat:
     messages-per-minute: 30
+  push:
+    # A provider without credentials is off (devices are stored, nothing is sent). See docs/api-contract.md "Push".
+    rustore:
+      project-id: ${APP_PUSH_RUSTORE_PROJECT_ID:}
+      service-token: ${APP_PUSH_RUSTORE_SERVICE_TOKEN:}
+    fcm:
+      # Path to the Firebase service account JSON key (mounted as a file, never committed).
+      credentials-file: ${APP_PUSH_FCM_CREDENTIALS_FILE:}
   realtime:
     # Server-Sent Events (GET /api/v1/events): heartbeat period, one-time ticket lifetime, connection lifetime.
     heartbeat-interval: 25s

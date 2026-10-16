@@ -686,6 +686,36 @@ paths:
                   expiresAt: { type: string, format: date-time }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /me/push-device:
+    put:
+      summary: Push-токен этого устройства
+      description: |
+        Привязан к текущей сессии: выход или истечение сессии останавливают push, удаление аккаунта удаляет устройство.
+        Одно устройство на сессию (новый токен заменяет старый); токен из другой сессии переезжает в текущую.
+        Регистрировать после каждого входа и при смене токена в SDK. Push уходят после коммита, в т.ч. при открытом
+        приложении (в foreground скрывать — то же придёт по SSE). Тексты без имён и текста сообщений.
+        data (строки): {type: match, matchId} | {type: message, matchId} | {type: like_received, superlike: 'true'|'false'}.
+        Провайдер без серверных ключей выключен: устройства хранятся, push не отправляются.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, token]
+              properties:
+                provider: { type: string, enum: [RUSTORE, FCM], description: 'RUSTORE — RuStore Push SDK (Android в РФ); FCM — Firebase (Android с Google-сервисами, iOS через APNs)' }
+                token: { type: string, minLength: 1, maxLength: 1024 }
+      responses:
+        '204': { description: Сохранено }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      summary: Забыть push-токен этого устройства (идемпотентно)
+      responses:
+        '204': { description: Удалено }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /events:
     get:
       summary: Поток событий реального времени (SSE)
