@@ -42,7 +42,7 @@ class ProfileCard extends StatelessWidget {
 
     final photo = AspectRatio(
       aspectRatio: 4 / 3,
-      child: _ProfilePhoto(url: photoUrl),
+      child: NetworkPhoto(url: photoUrl),
     );
 
     return Card(
@@ -70,6 +70,16 @@ class ProfileCard extends StatelessWidget {
                   children: [
                     Text(title, style: theme.textTheme.titleLarge),
                     if (profile.premium) const PremiumBadge(),
+                    if (profile.verified)
+                      const Tooltip(
+                        message: 'Селфи проверено модератором',
+                        child: Icon(Icons.verified, color: Colors.teal, size: 20),
+                      ),
+                    if (profile.compatibility != null)
+                      Chip(
+                        label: Text('${profile.compatibility}% совпадение'),
+                        visualDensity: VisualDensity.compact,
+                      ),
                   ],
                 ),
                 if (profileStatus != null) ...[
@@ -115,7 +125,7 @@ class ProfileCard extends StatelessWidget {
                 ],
                 if (about != null && about.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  Text(about, maxLines: 3, overflow: TextOverflow.ellipsis),
+                  Text(about),
                 ],
                 if (profile.tags.isNotEmpty) ...[
                   const SizedBox(height: 12),
@@ -140,8 +150,9 @@ class ProfileCard extends StatelessWidget {
   }
 }
 
-class _ProfilePhoto extends StatelessWidget {
-  const _ProfilePhoto({required this.url});
+/// A signed photo URL with a placeholder (missing or expired link).
+class NetworkPhoto extends StatelessWidget {
+  const NetworkPhoto({super.key, required this.url});
 
   final String? url;
 

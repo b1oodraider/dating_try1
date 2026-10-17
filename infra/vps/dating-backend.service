@@ -1,0 +1,21 @@
+[Unit]
+Description=Dating backend (Spring Boot)
+After=network-online.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+User=dating
+Group=dating
+WorkingDirectory=/opt/dating
+EnvironmentFile=/opt/dating/backend.env
+# Sized for a 2 GB VPS shared with PostgreSQL.
+ExecStart=/usr/bin/java -Xms256m -Xmx640m -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -jar /opt/dating/app.jar
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/dating
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

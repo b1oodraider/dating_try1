@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_exception.dart';
@@ -6,21 +8,28 @@ import '../../core/models/discovery_filters.dart';
 import '../../core/models/public_profile.dart';
 import '../../core/models/wallet.dart';
 import '../auth/session_controller.dart';
-import '../collection/collection_screen.dart';
-import '../profile/height_goals_screen.dart';
-import '../testing/test_panel_screen.dart';
+import '../chat/match_dialog.dart';
 import 'discovery_filters_screen.dart';
-import 'profile_card.dart';
+import 'profile_details_sheet.dart';
+import 'swipe_deck.dart';
 
-/// Feed of published profiles with pull-to-refresh and load-more paging.
+/// The feed as a Tinder-style deck of cards.
+///
+/// Reactions take the card off at once; the request runs in the background
+/// and a failure puts the card back. More cards are fetched from page 0 again
+/// (the server hides every profile I reacted to, so offset paging would skip
+/// some) once the reactions in flight are done.
 ///
 /// The query filters are saved per account and restored before the first
 /// feed request. Height and goals (premium) stay saved while premium is
 /// off but are not sent until it is back.
 class DiscoveryScreen extends StatefulWidget {
-  const DiscoveryScreen({super.key, required this.session});
+  const DiscoveryScreen({super.key, required this.session, this.onOpenChat});
 
   final SessionController session;
+
+  /// Opens the chat of a new match (from the "It's a match" dialog).
+  final void Function(String matchId)? onOpenChat;
 
   @override
   State<DiscoveryScreen> createState() => _DiscoveryScreenState();
@@ -28,12 +37,25 @@ class DiscoveryScreen extends StatefulWidget {
 
 class _DiscoveryScreenState extends State<DiscoveryScreen> {
   static const int _pageSize = 20;
+  static const int _refillAt = 5;
+  static const int _viewsBatch = 10;
 
-  final ScrollController _scrollController = ScrollController();
   final List<PublicProfile> _items = <PublicProfile>[];
 
-  int _page = 0;
-  bool _hasMore = false;
+  /// The server had nothing beyond the cards already in the deck.
+  bool _exhausted = false;
+
+  /// Reactions in flight; a refill waits for them.
+  int _pending = 0;
+
+  /// Reacted to in this session: never shown again even if a response races.
+  final Set<String> _reacted = <String>{};
+
+  /// When the current top card appeared and whether its details were opened.
+  String? _viewId;
+  DateTime _viewStart = DateTime.now();
+  bool _viewOpened = false;
+  final List<Map<String, Object>> _views = <Map<String, Object>>[];
 
   bool _loading = true; // first page, nothing to show yet
   String? _error; // first page failed and there is nothing to show
@@ -64,7 +86,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_onScroll);
     _start();
   }
 
@@ -76,7 +97,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    _flushViews();
     super.dispose();
   }
 
@@ -87,12 +108,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           .getDiscoveryPage(_effectiveFilters, page: 0, limit: _pageSize);
       if (!mounted) return;
       if (generation != _generation) return;
+      final fresh = page.items.where((p) => !_reacted.contains(p.id)).toList();
       setState(() {
         _items
           ..clear()
-          ..addAll(page.items);
-        _page = page.page;
-        _hasMore = page.hasMore;
+          ..addAll(fresh);
+        _exhausted = page.totalElements <= fresh.length;
         _loading = false;
         _error = null;
         _loadingMore = false;
@@ -184,8 +205,16 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     _refresh();
   }
 
+  void _maybeRefill() {
+    if (_items.length > _refillAt || _exhausted || _pending > 0) return;
+    if (_loading || _loadingMore || _loadMoreError != null || _error != null) {
+      return;
+    }
+    _loadMore();
+  }
+
   Future<void> _loadMore() async {
-    if (_loading || _loadingMore || !_hasMore) return;
+    if (_loading || _loadingMore) return;
     final generation = _generation;
     setState(() {
       _loadingMore = true;
@@ -193,17 +222,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     });
     try {
       final page = await widget.session.api
-          .getDiscoveryPage(
-            _effectiveFilters,
-            page: _page + 1,
-            limit: _pageSize,
-          );
+          .getDiscoveryPage(_effectiveFilters, page: 0, limit: _pageSize);
       if (!mounted) return;
       if (generation != _generation) return;
+      final known = {..._items.map((p) => p.id), ..._reacted};
+      final added = page.items.where((p) => !known.contains(p.id)).toList();
       setState(() {
-        _items.addAll(page.items);
-        _page = page.page;
-        _hasMore = page.hasMore;
+        _items.addAll(added);
+        _exhausted = added.isEmpty;
         _loadingMore = false;
       });
     } catch (e) {
@@ -244,8 +270,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   Future<void> _restartFeed({bool refreshState = true}) async {
     setState(() {
       _items.clear();
-      _page = 0;
-      _hasMore = false;
+      _exhausted = false;
       _loading = true;
       _error = null;
       _loadingMore = false;
@@ -296,61 +321,112 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     _restartFeed();
   }
 
-  void _onScroll() {
-    // Auto-load near the bottom; after a failure wait for an explicit retry.
-    if (_loadMoreError != null) return;
-    if (_scrollController.position.extentAfter < 600) _loadMore();
+  // ------------------------------------------------- views (like-spam rule)
+
+  void _trackTop() {
+    final top = _items.isEmpty ? null : _items.first.id;
+    if (top == _viewId) return;
+    _viewId = top;
+    _viewStart = DateTime.now();
+    _viewOpened = false;
   }
 
-  Future<void> _openHeightGoals() async {
-    final saved = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => HeightGoalsScreen(session: widget.session),
-      ),
-    );
-    if (!mounted) return;
-    if (saved != true) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Рост и цели сохранены')),
-    );
+  void _recordView(String profileId) {
+    if (_viewId != profileId) return;
+    final dwell = DateTime.now().difference(_viewStart).inMilliseconds;
+    _views.add({
+      'profileId': profileId,
+      'dwellMs': math.min(dwell, 3600000),
+      'openedDetails': _viewOpened,
+    });
+    _viewId = null;
+    if (_views.length >= _viewsBatch) _flushViews();
   }
 
-  void _openCollection() {
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => CollectionScreen(session: widget.session),
-      ),
-    );
+  void _flushViews() {
+    if (_views.isEmpty) return;
+    final batch = List<Map<String, Object>>.of(_views);
+    _views.clear();
+    widget.session.api.sendProfileViews(batch).catchError((Object e) {
+      debugPrint('Views not sent: $e');
+    });
   }
 
-  void _openTestPanel() {
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => TestPanelScreen(session: widget.session),
-      ),
-    );
+  // ---------------------------------------------------------- reactions
+
+  Future<void> _react(PublicProfile profile, SwipeAction action) async {
+    _recordView(profile.id);
+    setState(() {
+      _reacted.add(profile.id);
+      _items.removeWhere((p) => p.id == profile.id);
+      _pending++;
+    });
+    final api = widget.session.api;
+    try {
+      final result = await switch (action) {
+        SwipeAction.like => api.like(profile.id),
+        SwipeAction.superlike =>
+          api.superlike(profile.id, _newKey()),
+        SwipeAction.pass => api.pass(profile.id),
+      };
+      if (!mounted) return;
+      final matchId = result.matchId;
+      if (result.matched && matchId != null) {
+        showMatchDialog(
+          context,
+          profile: profile,
+          photoUrl: api.resolveMediaUrl,
+          onOpenChat: () => widget.onOpenChat?.call(matchId),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      if (e is ApiException && e.isUnauthorized) return;
+      // A profile that is gone (hidden, blocked) is not put back.
+      if (!(e is ApiException && e.code == 'PROFILE_NOT_FOUND')) {
+        setState(() {
+          _reacted.remove(profile.id);
+          _items.insert(0, profile);
+        });
+      }
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(describeError(e))));
+    } finally {
+      if (mounted) {
+        setState(() => _pending--);
+        _maybeRefill();
+      }
+    }
   }
 
-  Future<void> _confirmLogout() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Выйти из аккаунта?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Выйти'),
-          ),
-        ],
-      ),
+  static String _newKey() =>
+      '${DateTime.now().microsecondsSinceEpoch}-${math.Random().nextInt(1 << 32)}';
+
+  Future<void> _openDetails(PublicProfile profile) async {
+    if (_viewId == profile.id) _viewOpened = true;
+    final result = await showProfileDetails(
+      context,
+      api: widget.session.api,
+      profile: profile,
+      withReactions: true,
     );
-    if (confirmed != true) return;
-    await widget.session.signOut();
+    if (!mounted || result == null) return;
+    if (result == ProfileDetailsResult.blocked) {
+      setState(() {
+        _reacted.add(profile.id);
+        _items.removeWhere((p) => p.id == profile.id);
+      });
+      _maybeRefill();
+      return;
+    }
+    _deckKey.currentState?.swipe(switch (result) {
+      ProfileDetailsResult.like => SwipeAction.like,
+      ProfileDetailsResult.superlike => SwipeAction.superlike,
+      _ => SwipeAction.pass,
+    });
   }
+
+  final GlobalKey<SwipeDeckState> _deckKey = GlobalKey<SwipeDeckState>();
 
   @override
   Widget build(BuildContext context) {
@@ -366,27 +442,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               child: const Icon(Icons.tune),
             ),
             onPressed: _openFilters,
-          ),
-          IconButton(
-            tooltip: 'Рост и цели',
-            icon: const Icon(Icons.person_outline),
-            onPressed: _openHeightGoals,
-          ),
-          IconButton(
-            tooltip: 'Коллекция',
-            icon: const Icon(Icons.collections_bookmark_outlined),
-            onPressed: _openCollection,
-          ),
-          if (_account?.testAccount ?? false)
-            IconButton(
-              tooltip: 'Тест-панель',
-              icon: const Icon(Icons.science_outlined),
-              onPressed: _openTestPanel,
-            ),
-          IconButton(
-            tooltip: 'Выйти',
-            icon: const Icon(Icons.logout),
-            onPressed: _confirmLogout,
           ),
         ],
       ),
@@ -404,81 +459,57 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       return _ErrorView(message: error, onRetry: _retry);
     }
 
+    _trackTop();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _maybeRefill();
+    });
+
     if (_items.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: _refresh,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          children: [
-            const SizedBox(height: 160),
-            const Center(child: Text('Пока нет подходящих анкет')),
-            if (!_effectiveFilters.isEmpty) ...[
+      final loadMoreError = _loadMoreError;
+      if (loadMoreError != null) {
+        return _ErrorView(message: loadMoreError, onRetry: _loadMore);
+      }
+      if (_loadingMore || _pending > 0) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.travel_explore, size: 56),
               const SizedBox(height: 12),
-              Center(
-                child: TextButton(
+              Text(
+                _reacted.isEmpty
+                    ? 'Пока нет подходящих анкет'
+                    : 'Вы посмотрели все анкеты',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+              FilledButton.tonal(
+                onPressed: _retry,
+                child: const Text('Обновить'),
+              ),
+              if (!_effectiveFilters.isEmpty)
+                TextButton(
                   onPressed: _resetFilters,
                   child: const Text('Сбросить фильтры'),
                 ),
-              ),
             ],
-          ],
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: _refresh,
-      child: ListView.builder(
-        controller: _scrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(12),
-        itemCount: _items.length + 1,
-        itemBuilder: (context, index) {
-          if (index == _items.length) return _buildFooter();
-          final profile = _items[index];
-          final photo = profile.primaryPhoto;
-          return ProfileCard(
-            profile: profile,
-            photoUrl: photo == null
-                ? null
-                : widget.session.api.resolveMediaUrl(photo.url),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildFooter() {
-    if (_loadingMore) {
-      return const Padding(
-        padding: EdgeInsets.all(16),
-        child: Center(child: CircularProgressIndicator()),
-      );
-    }
-    final loadMoreError = _loadMoreError;
-    if (loadMoreError != null) {
-      return Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Text(loadMoreError, textAlign: TextAlign.center),
-            TextButton(onPressed: _loadMore, child: const Text('Повторить')),
-          ],
-        ),
-      );
-    }
-    if (_hasMore) {
-      return Padding(
-        padding: const EdgeInsets.all(8),
-        child: Center(
-          child: TextButton(
-            onPressed: _loadMore,
-            child: const Text('Показать ещё'),
           ),
         ),
       );
     }
-    return const SizedBox(height: 24);
+
+    return SwipeDeck(
+      key: _deckKey,
+      profiles: _items,
+      photoUrl: widget.session.api.resolveMediaUrl,
+      onSwipe: _react,
+      onOpenDetails: _openDetails,
+    );
   }
 }
 

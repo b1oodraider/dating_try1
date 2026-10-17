@@ -11,7 +11,10 @@ import '../models/discovery_page.dart';
 import '../models/excluded_goals.dart';
 import '../models/exclusion_words.dart';
 import '../models/goal.dart';
+import '../models/json_utils.dart';
 import '../models/my_profile.dart';
+import '../models/photo.dart';
+import '../models/social.dart';
 import '../models/tag.dart';
 import '../models/testing_state.dart';
 import '../models/wallet.dart';
@@ -126,6 +129,12 @@ class DatingApiClient {
   /// `goalCodes: []` clears the goals (at most 3, 400 UNKNOWN_GOAL for
   /// unknown codes).
   Future<MyProfile> updateMyProfile({
+    String? displayName,
+    int? age,
+    String? city,
+    String? aboutText,
+    List<String>? tagCodes,
+    String? dailyStatusText,
     int? heightCm,
     bool clearHeight = false,
     List<String>? goalCodes,
@@ -137,12 +146,41 @@ class DatingApiClient {
       'PUT',
       '/me/profile',
       body: {
+        if (displayName != null) 'displayName': displayName,
+        if (age != null) 'age': age,
+        if (city != null) 'city': city,
+        if (aboutText != null) 'aboutText': aboutText,
+        if (tagCodes != null) 'tagCodes': List<String>.of(tagCodes),
+        if (dailyStatusText != null) 'dailyStatusText': dailyStatusText,
         if (heightCm != null) 'heightCm': heightCm,
         if (clearHeight) 'clearHeight': true,
         if (goalCodes != null) 'goalCodes': List<String>.of(goalCodes),
       },
     );
     return MyProfile.fromJson(_expectMap(json));
+  }
+
+  /// Requires auth. 400 PROFILE_INCOMPLETE with fieldErrors keyed by the
+  /// missing fields.
+  Future<MyProfile> publishProfile() async =>
+      MyProfile.fromJson(_expectMap(await _send('POST', '/me/profile/publish')));
+
+  Future<MyProfile> hideProfile() async =>
+      MyProfile.fromJson(_expectMap(await _send('POST', '/me/profile/hide')));
+
+  // -------------------------------------------------------------- Photos
+
+  /// JPEG/PNG/WebP up to 5 MB, at most 6 photos.
+  Future<Photo> uploadPhoto(List<int> bytes, String filename) async =>
+      Photo.fromJson(_expectMap(
+          await _sendFile('/me/profile/photos', bytes, filename)));
+
+  Future<void> makePhotoPrimary(String photoId) async {
+    await _send('PATCH', '/me/profile/photos/${_segment(photoId)}');
+  }
+
+  Future<void> deletePhoto(String photoId) async {
+    await _send('DELETE', '/me/profile/photos/${_segment(photoId)}');
   }
 
   // ---------------------------------------------------------------- Tags
@@ -219,6 +257,155 @@ class DatingApiClient {
         maxHeight: filters.maxHeight,
         goalCodes: filters.goalCodes,
       );
+
+  // ----------------------------------------------------------- Reactions
+
+  Future<ReactionResult> like(String profileId) => _reaction(profileId, 'like');
+
+  /// [idempotencyKey]: new per tap, reused on retry (spends one SUPERLIKE).
+  Future<ReactionResult> superlike(String profileId, String idempotencyKey) =>
+      _reaction(profileId, 'superlike', body: {'idempotencyKey': idempotencyKey});
+
+  Future<ReactionResult> pass(String profileId) => _reaction(profileId, 'pass');
+
+  Future<ReactionResult> _reaction(String profileId, String kind,
+      {Object? body}) async {
+    final json = await _send(
+      'POST',
+      '/discovery/profiles/${_segment(profileId)}/$kind',
+      body: body,
+    );
+    return ReactionResult.fromJson(_expectMap(json));
+  }
+
+  /// Time each card was on screen, for the like-spam rule (1..100 views).
+  Future<void> sendProfileViews(List<Map<String, Object>> views) async {
+    if (views.isEmpty) return;
+    await _send('POST', '/discovery/views', body: {'views': views});
+  }
+
+  /// 403 PREMIUM_REQUIRED (feature WHO_LIKED_ME) when it is a premium feature.
+  Future<ReceivedLikesPage> getReceivedLikes({int page = 0, int limit = 50}) async {
+    final json = await _send('GET', '/me/likes/received',
+        query: {'page': '$page', 'limit': '$limit'});
+    return ReceivedLikesPage.fromJson(_expectMap(json));
+  }
+
+  Future<int> getReceivedLikesCount() async =>
+      asInt(_expectMap(await _send('GET', '/me/likes/received/count'))['count']);
+
+  // ---------------------------------------------------------------- Chat
+
+  Future<List<Match>> getMatches() async {
+    final json = await _send('GET', '/matches');
+    if (json is! List) throw _badResponse();
+    return json.whereType<Map<String, dynamic>>().map(Match.fromJson).toList();
+  }
+
+  Future<void> unmatch(String matchId) async {
+    await _send('DELETE', '/matches/${_segment(matchId)}');
+  }
+
+  /// Newest first; [before] = id of the oldest message already loaded.
+  Future<MessagePage> getMessages(String matchId,
+      {String? before, int limit = 30}) async {
+    final json = await _send(
+      'GET',
+      '/matches/${_segment(matchId)}/messages',
+      query: {'limit': '$limit', if (before != null) 'before': before},
+    );
+    return MessagePage.fromJson(_expectMap(json));
+  }
+
+  /// [clientMessageId] is generated once per message and reused on retry.
+  Future<ChatMessage> sendMessage(
+    String matchId, {
+    required String clientMessageId,
+    String? text,
+    String? stickerPackCode,
+    String? sticker,
+  }) async {
+    final json = await _send(
+      'POST',
+      '/matches/${_segment(matchId)}/messages',
+      body: {
+        'clientMessageId': clientMessageId,
+        'type': text != null ? 'TEXT' : 'STICKER',
+        if (text != null) 'text': text,
+        if (stickerPackCode != null) 'stickerPackCode': stickerPackCode,
+        if (sticker != null) 'sticker': sticker,
+      },
+    );
+    return ChatMessage.fromJson(_expectMap(json));
+  }
+
+  Future<void> markRead(String matchId, String lastReadMessageId) async {
+    await _send('POST', '/matches/${_segment(matchId)}/read',
+        body: {'lastReadMessageId': lastReadMessageId});
+  }
+
+  // ------------------------------------------------------------- Safety
+
+  Future<void> block(String profileId) async {
+    await _send('POST', '/accounts/${_segment(profileId)}/block');
+  }
+
+  /// Returns the note to show when the report was closed at once (complaints
+  /// about silence), otherwise null.
+  Future<String?> report({
+    required String profileId,
+    required String reason,
+    String? messageId,
+    String? comment,
+  }) async {
+    final json = _expectMap(await _send('POST', '/reports', body: {
+      'profileId': profileId,
+      'reason': reason,
+      if (messageId != null) 'messageId': messageId,
+      if (comment != null && comment.trim().isNotEmpty) 'comment': comment.trim(),
+    }));
+    return json['status'] == 'DISMISSED' ? asStringOrNull(json['note']) : null;
+  }
+
+  Future<List<Restriction>> getRestrictions() async {
+    final json = await _send('GET', '/me/restrictions');
+    if (json is! List) throw _badResponse();
+    return json
+        .whereType<Map<String, dynamic>>()
+        .map(Restriction.fromJson)
+        .toList();
+  }
+
+  Future<VerificationState> getVerification() async =>
+      VerificationState.fromJson(
+          _expectMap(await _send('GET', '/me/verification')));
+
+  /// The open request (same gesture) or a new one with a random gesture.
+  Future<VerificationRequest> requestVerification() async =>
+      VerificationRequest.fromJson(
+          _expectMap(await _send('POST', '/me/verification')));
+
+  Future<VerificationRequest> submitSelfie(
+          String requestId, List<int> bytes, String filename) async =>
+      VerificationRequest.fromJson(_expectMap(await _sendFile(
+          '/me/verification/${_segment(requestId)}/selfie', bytes, filename)));
+
+  // ----------------------------------------------------------- Realtime
+
+  /// `GET /events` as a raw SSE byte stream, authorized by the header
+  /// (no ticket needed outside the browser). The caller parses and closes it.
+  Future<http.StreamedResponse> openEventStream(http.Client client) async {
+    final request = http.Request('GET', _uri('/events', null));
+    request.headers['Accept'] = 'text/event-stream';
+    final token = _token;
+    if (token != null) request.headers['Authorization'] = 'Bearer $token';
+    final response = await client.send(request).timeout(timeout);
+    if (response.statusCode == 401 && token != null && token == _token) {
+      _token = null;
+      await onUnauthorized?.call();
+    }
+    return response;
+  }
 
   // ------------------------------------------------------- Excluded goals
 
@@ -413,6 +600,42 @@ class DatingApiClient {
       decoded,
       traceIdHeader: response.headers['x-trace-id'],
     );
+  }
+
+  /// POSTs one file as multipart field `file` (photos, selfies).
+  Future<Object?> _sendFile(String path, List<int> bytes, String filename) async {
+    final request = http.MultipartRequest('POST', _uri(path, null))
+      ..headers['Accept'] = 'application/json'
+      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+    final token = _token;
+    if (token != null) request.headers['Authorization'] = 'Bearer $token';
+
+    final http.Response response;
+    try {
+      final streamed =
+          await _http.send(request).timeout(const Duration(seconds: 60));
+      response = await http.Response.fromStream(streamed);
+    } on TimeoutException {
+      throw const ApiException(
+        statusCode: 0,
+        code: 'TIMEOUT',
+        message: 'Загрузка не завершилась. Попробуйте ещё раз',
+      );
+    } on http.ClientException {
+      throw const ApiException(
+        statusCode: 0,
+        code: 'NETWORK_ERROR',
+        message: 'Нет соединения с сервером. Проверьте интернет и адрес API',
+      );
+    }
+    final decoded = _decodeBody(response);
+    if (response.statusCode >= 200 && response.statusCode < 300) return decoded;
+    if (response.statusCode == 401 && token != null && token == _token) {
+      _token = null;
+      await onUnauthorized?.call();
+    }
+    throw ApiException.fromResponse(response.statusCode, decoded,
+        traceIdHeader: response.headers['x-trace-id']);
   }
 
   /// Encodes a value (item code, slot) used as a single path segment.

@@ -20,6 +20,8 @@ class PublicProfile {
     this.heightCm,
     this.goals = const <Goal>[],
     this.premium = false,
+    this.verified = false,
+    this.compatibility,
   });
 
   final String id;
@@ -46,6 +48,12 @@ class PublicProfile {
   /// Premium badge (shown to others in the feed).
   final bool premium;
 
+  /// Selfie checked by a moderator.
+  final bool verified;
+
+  /// 0..100 match with me by cards; null when there is too little to compare.
+  final int? compatibility;
+
   Photo? get primaryPhoto {
     if (photos.isEmpty) return null;
     for (final photo in photos) {
@@ -70,6 +78,8 @@ class PublicProfile {
       heightCm: asIntOrNull(json['heightCm']),
       goals: Goal.parseList(json['goals']),
       premium: asBool(json['premium']),
+      verified: asBool(json['verified']),
+      compatibility: asIntOrNull(json['compatibility']),
     );
   }
 }

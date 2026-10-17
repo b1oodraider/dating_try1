@@ -1,0 +1,28 @@
+# {$DOMAIN} is replaced by install.sh. Caddy obtains and renews the HTTPS certificate itself.
+{$DOMAIN} {
+	encode gzip
+
+	# API and the event stream (Caddy flushes text/event-stream immediately). Photos are <= 5 MB.
+	handle /api/* {
+		request_body {
+			max_size 10MB
+		}
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	# Actuator stays internal.
+	handle /actuator/* {
+		respond 404
+	}
+
+	# Web client (single-page app).
+	handle {
+		root * /srv/dating-web
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+}

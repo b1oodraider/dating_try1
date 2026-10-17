@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'features/auth/phone_screen.dart';
 import 'features/auth/session_controller.dart';
-import 'features/discovery/discovery_screen.dart';
+import 'features/home/home_screen.dart';
 
 class DatingApp extends StatefulWidget {
   const DatingApp({super.key, required this.session});
@@ -69,7 +69,7 @@ class AuthGate extends StatelessWidget {
     return ListenableBuilder(
       listenable: session,
       builder: (context, _) => session.isAuthenticated
-          ? DiscoveryScreen(session: session)
+          ? HomeScreen(session: session)
           : PhoneScreen(session: session),
     );
   }

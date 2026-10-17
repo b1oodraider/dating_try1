@@ -31,6 +31,7 @@ services:
     build:
       context: ../backend
       dockerfile: Dockerfile
+    image: dating-backend:latest
     container_name: dating-backend
     restart: unless-stopped
     depends_on:
@@ -59,7 +60,8 @@ services:
       - internal_net
       - public_net
     ports:
-      - "8080:8080"
+      # Loopback only: a reverse proxy (Caddy) publishes it; Docker port rules bypass the host firewall.
+      - "127.0.0.1:8080:8080"
     deploy:
       resources:
         limits:
