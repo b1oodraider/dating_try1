@@ -30,15 +30,16 @@ test/                           — unit-тесты клиента и парси
 
 ## Первый запуск
 
-Папки платформ (`android/`, `ios/`) в репозиторий **не коммитятся**. Сгенерируйте их один раз внутри `mobile/`:
+Папка `android/` в репозитории (с разрешением INTERNET в основном манифесте и подписью release из
+`android/key.properties`, который не коммитится). iOS пока не настроен: `flutter create --platforms=ios .`.
 
 ```bash
 cd mobile
-flutter create --platforms=android,ios .
 flutter pub get
+flutter run --dart-define=API_BASE_URL=https://instareject.ru/api/v1
 ```
 
-Если `flutter create` создал `test/widget_test.dart` (он ссылается на несуществующий `MyApp`) — удалите его.
+Тестовый APK собирает CI при каждом пуше в `develop` (артефакт `dating-apk` во вкладке Actions).
 
 ## Адрес API
 

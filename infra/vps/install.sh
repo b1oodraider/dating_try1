@@ -78,10 +78,13 @@ APP_TESTING_OTP_CODE=$APP_TESTING_OTP_CODE
 SERVER_ADDRESS=127.0.0.1
 SERVER_FORWARD_HEADERS_STRATEGY=framework
 EOF
+# Provider settings (docs/integrations.md) pass through as they are.
+grep -E '^APP_(SMS|PAYMENTS|PUSH)_' "$ENV_FILE" >> "$APP_DIR/backend.env" || true
 chown root:dating "$APP_DIR/backend.env"
 chmod 640 "$APP_DIR/backend.env"
 umask 022
 install -m 644 "$APP_DIR/dating-backend.service" /etc/systemd/system/dating-backend.service
+install -m 755 "$APP_DIR/deploy.sh" /usr/local/sbin/dating-deploy
 systemctl daemon-reload
 systemctl enable dating-backend >/dev/null
 systemctl restart dating-backend

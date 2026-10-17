@@ -1,0 +1,100 @@
+# Tests on every push / PR; a push to develop also builds the test APK and deploys backend + web to the VPS.
+# Secrets (Settings -> Secrets and variables -> Actions):
+#   DEPLOY_SSH_KEY         private key whose public half sits on the server with command="/usr/local/sbin/dating-deploy"
+#   DEPLOY_KNOWN_HOSTS     ssh-keyscan line(s) of the server
+#   ANDROID_KEYSTORE_B64   base64 of the test signing keystore (same key every build, so updates install over)
+#   ANDROID_KEYSTORE_PASSWORD
+name: ci
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEPLOY_HOST: 83.69.233.36
+  API_BASE_URL: https://instareject.ru/api/v1
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21', cache: gradle }
+      # Integration tests use Testcontainers (Docker is available on GitHub runners).
+      - run: ./gradlew test bootJar --no-daemon --console=plain
+        working-directory: backend
+      - uses: actions/upload-artifact@v4
+        with: { name: backend-jar, path: backend/build/libs/*.jar, retention-days: 7 }
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with: { name: web, path: dist, retention-days: 7 }
+
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: mobile }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: '3.47.7', channel: stable, cache: true }
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - name: Signing key
+        if: github.event_name == 'push'
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > android/test.keystore
+            printf 'storeFile=test.keystore\nstorePassword=%s\nkeyAlias=test\nkeyPassword=%s\n' \
+              "$KEYSTORE_PASSWORD" "$KEYSTORE_PASSWORD" > android/key.properties
+          fi
+      - name: APK
+        if: github.event_name == 'push'
+        run: flutter build apk --release --dart-define=API_BASE_URL=$API_BASE_URL
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: dating-apk
+          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    needs: [backend, web, mobile]
+    runs-on: ubuntu-latest
+    environment: test-server
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: backend-jar, path: jar }
+      - uses: actions/download-artifact@v4
+        with: { name: web, path: web }
+      - name: Ship to the server
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          echo "$DEPLOY_SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          echo "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cp jar/*.jar app.jar
+          tar -czf - app.jar web | ssh -i ~/.ssh/deploy root@$DEPLOY_HOST
