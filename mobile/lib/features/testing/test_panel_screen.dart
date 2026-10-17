@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'social_test_card.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/api/api_exception.dart';
@@ -288,6 +289,7 @@ class _TestPanelScreenState extends State<TestPanelScreen> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
+        SocialTestCard(api: widget.session.api),
         _buildClockCard(context, state),
         _buildPremiumCard(context, state.wallet),
         _buildItemsCard(context, state.wallet),

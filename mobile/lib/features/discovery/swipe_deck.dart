@@ -105,12 +105,24 @@ class SwipeDeckState extends State<SwipeDeck>
     });
   }
 
+  /// Loads every photo of the top card ahead, so switching photos is instant.
+  void _precache(PublicProfile profile) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      for (final photo in profile.photos) {
+        precacheImage(NetworkImage(widget.photoUrl(photo.url)), context,
+            onError: (_, __) {});
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final top = _top;
     if (top?.id != _topId) {
       _topId = top?.id;
       _photoIndex = 0;
+      if (top != null) _precache(top);
     }
     final next = widget.profiles.length > 1 ? widget.profiles[1] : null;
 
@@ -259,6 +271,8 @@ class _CardFace extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
+          // Opaque base: the card below must never show through a loading photo.
+          const ColoredBox(color: Colors.black),
           NetworkPhoto(url: photo == null ? null : photoUrl(photo.url)),
           if (photos.length > 1)
             Positioned(

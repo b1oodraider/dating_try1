@@ -10,6 +10,7 @@ import '../models/discovery_filters.dart';
 import '../models/discovery_page.dart';
 import '../models/excluded_goals.dart';
 import '../models/exclusion_words.dart';
+import '../models/gacha.dart';
 import '../models/goal.dart';
 import '../models/json_utils.dart';
 import '../models/my_profile.dart';
@@ -389,6 +390,84 @@ class DatingApiClient {
           String requestId, List<int> bytes, String filename) async =>
       VerificationRequest.fromJson(_expectMap(await _sendFile(
           '/me/verification/${_segment(requestId)}/selfie', bytes, filename)));
+
+  // --------------------------------------------------------------- Gacha
+
+  /// Banners open now (without the full pool).
+  Future<List<GachaBanner>> getGachaBanners() async {
+    final json = await _send('GET', '/gacha/banners');
+    if (json is! List) throw _badResponse();
+    return json
+        .whereType<Map<String, dynamic>>()
+        .map(GachaBanner.fromJson)
+        .toList();
+  }
+
+  /// One banner with its full pool and the base chances.
+  Future<GachaBanner> getGachaBanner(String code) async => GachaBanner.fromJson(
+      _expectMap(await _send('GET', '/gacha/banners/${_segment(code)}')));
+
+  /// [count] is 1 or the banner's multiPullSize; [idempotencyKey] is new per
+  /// tap and reused on retry (the same results come back, nothing is spent).
+  Future<PullResponse> pullGacha(
+          String code, int count, String idempotencyKey) async =>
+      PullResponse.fromJson(_expectMap(await _send(
+        'POST',
+        '/gacha/banners/${_segment(code)}/pull',
+        body: {'count': count, 'idempotencyKey': idempotencyKey},
+      )));
+
+  Future<GachaHistoryPage> getGachaHistory({int limit = 30, int? before}) async =>
+      GachaHistoryPage.fromJson(_expectMap(await _send(
+        'GET',
+        '/gacha/history',
+        query: {'limit': '$limit', if (before != null) 'before': '$before'},
+      )));
+
+  Future<ShardsInfo> getGachaShards() async =>
+      ShardsInfo.fromJson(_expectMap(await _send('GET', '/gacha/shards')));
+
+  Future<void> exchangeShards(int tickets, String idempotencyKey) async {
+    await _send('POST', '/gacha/shards/exchange',
+        body: {'tickets': tickets, 'idempotencyKey': idempotencyKey});
+  }
+
+  // ------------------------------------------------------ Testing: social
+  //
+  // Seed profiles act on my behalf: they like me, match with me, write to me.
+
+  Future<List<SeedProfileRef>> getSeedProfiles() async {
+    final json = await _send('GET', '/testing/profiles');
+    if (json is! List) throw _badResponse();
+    return json
+        .whereType<Map<String, dynamic>>()
+        .map(SeedProfileRef.fromJson)
+        .toList();
+  }
+
+  Future<void> seedLikesMe(String seedAccountId, {bool superlike = false}) async {
+    await _send('POST', '/testing/social/seed/${_segment(seedAccountId)}/like-me',
+        body: {'superlike': superlike});
+  }
+
+  /// Returns the match id.
+  Future<String> seedMatch(String seedAccountId) async => asString(_expectMap(
+          await _send('POST', '/testing/social/seed/${_segment(seedAccountId)}/match'))[
+      'matchId']);
+
+  /// The seed of my match writes [text] to me.
+  Future<void> seedWrites(String matchId, String text) async {
+    await _send('POST', '/testing/social/matches/${_segment(matchId)}/messages',
+        body: {'text': text});
+  }
+
+  /// Forgets my passes (those profiles come back to the feed); returns how many.
+  Future<int> clearTestPasses() async =>
+      asInt(_expectMap(await _send('DELETE', '/testing/social/passes'))['deleted']);
+
+  /// Forgets all my likes, super likes and passes (matches stay).
+  Future<int> clearTestReactions() async => asInt(
+      _expectMap(await _send('DELETE', '/testing/social/reactions'))['deleted']);
 
   // ----------------------------------------------------------- Realtime
 

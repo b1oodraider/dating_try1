@@ -172,6 +172,8 @@ class NetworkPhoto extends StatelessWidget {
     return Image.network(
       imageUrl,
       fit: BoxFit.cover,
+      // Keep the previous photo on screen while the next one loads (no see-through frame).
+      gaplessPlayback: true,
       loadingBuilder: (context, child, progress) {
         if (progress == null) return child;
         return ColoredBox(

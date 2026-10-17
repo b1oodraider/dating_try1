@@ -6,10 +6,11 @@ import '../chat/chat_screen.dart';
 import '../chat/chats_controller.dart';
 import '../chat/chats_screen.dart';
 import '../discovery/discovery_screen.dart';
+import '../gacha/gacha_screen.dart';
 import '../likes/likes_screen.dart';
 import '../profile/my_profile_screen.dart';
 
-/// The signed-in app: feed, likes, chats, my profile. Owns the event stream
+/// The signed-in app: feed, likes, chats, gacha, my profile. Owns the event stream
 /// and the match list for the whole session.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.session});
@@ -71,6 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ChatsScreen(controller: _chats, events: _realtime.events),
             ),
           ),
+          GachaScreen(api: api),
           MyProfileScreen(session: widget.session),
         ],
       ),
@@ -98,6 +100,11 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               selectedIcon: const Icon(Icons.chat_bubble),
               label: 'Чаты',
+            ),
+            const NavigationDestination(
+              icon: Icon(Icons.casino_outlined),
+              selectedIcon: Icon(Icons.casino),
+              label: 'Удача',
             ),
             const NavigationDestination(
               icon: Icon(Icons.person_outline),

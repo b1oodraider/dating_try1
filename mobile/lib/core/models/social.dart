@@ -216,3 +216,25 @@ class VerificationState {
     );
   }
 }
+
+/// A QA seed profile (`GET /testing/profiles`): who can like or write to me.
+class SeedProfileRef {
+  const SeedProfileRef({
+    required this.accountId,
+    required this.name,
+    required this.published,
+  });
+
+  final String accountId;
+  final String name;
+  final bool published;
+
+  factory SeedProfileRef.fromJson(Map<String, dynamic> json) {
+    final profile = asJsonMap(json['profile']);
+    return SeedProfileRef(
+      accountId: asString(json['accountId']),
+      name: asString(profile['displayName'], 'Без имени'),
+      published: profile['publicationStatus'] == 'PUBLISHED',
+    );
+  }
+}
