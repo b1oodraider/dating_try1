@@ -8,8 +8,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
+ * @param minAge    narrows the viewer's saved age range for this request (the saved range always applies)
  * @param minHeight premium (ADVANCED_FILTERS): height in cm, profiles without height do not match
- * @param goalCodes premium (ADVANCED_FILTERS): profile has at least one of these goals
+ * @param goalCodes profile has at least one of these goals (free)
  */
 public record DiscoveryQueryDto(
         String city,
@@ -46,7 +47,7 @@ public record DiscoveryQueryDto(
     }
 
     public boolean usesAdvancedFilters() {
-        return minHeight != null || maxHeight != null || !goalCodes.isEmpty();
+        return minHeight != null || maxHeight != null;
     }
 
     private static Set<String> clean(Set<String> codes) {

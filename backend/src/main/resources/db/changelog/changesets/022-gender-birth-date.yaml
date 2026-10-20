@@ -1,0 +1,35 @@
+databaseChangeLog:
+  # Two-way hard filters (docs/matching.md, part 1): gender and who I look for, birth date instead of a stored age,
+  # and the age range I accept. They live on the profile because a candidate's own criteria decide whether the
+  # viewer may see them.
+  - changeSet:
+      id: 022-gender-birth-date
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE profiles
+                ADD COLUMN gender VARCHAR(6) CHECK (gender IN ('MALE', 'FEMALE')),
+                ADD COLUMN seeking VARCHAR(6) CHECK (seeking IN ('MALE', 'FEMALE')),
+                ADD COLUMN birth_date DATE,
+                ADD COLUMN pref_age_min INT NOT NULL DEFAULT 18 CHECK (pref_age_min BETWEEN 18 AND 100),
+                ADD COLUMN pref_age_max INT CHECK (pref_age_max BETWEEN 18 AND 100),
+                ADD CONSTRAINT chk_profiles_pref_age CHECK (pref_age_max IS NULL OR pref_age_max >= pref_age_min)
+        # Existing profiles keep their age: born in the middle of the year that gives it today.
+        - sql:
+            sql: >
+              UPDATE profiles SET birth_date = (CURRENT_DATE - make_interval(years => age) - INTERVAL '183 days')::date
+               WHERE age IS NOT NULL
+        - sql:
+            sql: ALTER TABLE profiles DROP COLUMN age
+        - sql:
+            sql: CREATE INDEX idx_profiles_matching ON profiles (gender, seeking, birth_date) WHERE publication_status = 'PUBLISHED'
+      rollback:
+        - sql:
+            sql: >
+              ALTER TABLE profiles ADD COLUMN age INT CHECK (age BETWEEN 18 AND 100);
+              UPDATE profiles SET age = date_part('year', age(birth_date))::int WHERE birth_date IS NOT NULL;
+              DROP INDEX idx_profiles_matching;
+              ALTER TABLE profiles DROP CONSTRAINT chk_profiles_pref_age,
+                DROP COLUMN pref_age_max, DROP COLUMN pref_age_min, DROP COLUMN birth_date,
+                DROP COLUMN seeking, DROP COLUMN gender

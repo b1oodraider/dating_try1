@@ -41,3 +41,5 @@ databaseChangeLog:
       file: db/changelog/changesets/020-compatibility.yaml
   - include:
       file: db/changelog/changesets/021-report-triage.yaml
+  - include:
+      file: db/changelog/changesets/022-gender-birth-date.yaml

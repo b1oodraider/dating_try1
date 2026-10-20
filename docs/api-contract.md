@@ -27,7 +27,9 @@ Photo      = { id, url, mimeType, sizeBytes, sortOrder, isPrimary, createdAt }
              url is a RELATIVE signed path, e.g. "/api/v1/media/photos/{id}?exp=1760000000&sig=ab12..". Valid ~1h.
              It needs NO Authorization header (usable directly in <img src> / Image.network after prefixing API origin).
              Refetch the profile/feed to get fresh URLs.
-MyProfile  = { id, displayName: string|null, age: number|null, city: string|null, aboutText: string|null,
+MyProfile  = { id, displayName: string|null, age: number|null (computed from birthDate), city: string|null, aboutText: string|null,
+               gender: 'MALE'|'FEMALE'|null, seeking: 'MALE'|'FEMALE'|null, birthDate: 'yyyy-MM-dd'|null,
+               ageFrom: number (default 18), ageTo: number|null (no upper limit),
                publicationStatus: 'DRAFT'|'PUBLISHED'|'HIDDEN',
                dailyStatusText: string|null, dailyStatusExpiresAt: string|null,   // already null when expired
                tags: Tag[], photos: Photo[] (sorted by sortOrder),
@@ -36,7 +38,7 @@ MyProfile  = { id, displayName: string|null, age: number|null, city: string|null
                      // to 100: NAME 10, AGE 10, CITY 10, FIRST_PHOTO 15 (these 4 are required to publish), MORE_PHOTOS 10 (3+),
                      // ABOUT 15 (50+ chars), CARDS 10 (cards in 2+ categories), GOALS 8, VERIFIED 8 (selfie), HEIGHT 4.
                      // A hint for the owner only: the feed never ranks by it.
-               missingForPublish: string[]   // subset of 'displayName','age','city','photos'; empty => can publish
+               missingForPublish: string[]   // subset of 'displayName','birthDate','gender','seeking','city','photos'; empty => can publish
                decorations: Decorations,     // how others see my profile
                verified: boolean,            // selfie checked by a moderator; a new photo resets it
                createdAt, updatedAt }
@@ -79,7 +81,11 @@ GET  /me/profile           200 MyProfile (created empty on first access: display
 PUT  /me/profile           body (all optional; omitted = unchanged):
        { displayName?: string (2..50 after trim), age?: int 18..100, city?: string (1..60 after trim),
          aboutText?: string (<=1000, "" clears), tagCodes?: string[] (<=10, must be known active codes, else 400 UNKNOWN_TAG),
-         dailyStatusText?: string (<=200; "" clears; sets 24h expiry) }
+         dailyStatusText?: string (<=200; "" clears; sets 24h expiry),
+         gender?: 'MALE'|'FEMALE', seeking?: 'MALE'|'FEMALE', birthDate?: 'yyyy-MM-dd' (18..100),
+         ageFrom?: 18..100, ageTo?: 18..100 (>= ageFrom), clearAgeTo?: true }
+       gender and birthDate are locked after the first publish (400 fieldErrors.gender|birthDate; support changes them).
+       age (18..100) is legacy: sets an approximate birthDate when birthDate is absent.
        200 MyProfile ; 400 VALIDATION_ERROR (fieldErrors) | UNKNOWN_TAG
 POST /me/profile/publish   200 MyProfile ; 400 PROFILE_INCOMPLETE with fieldErrors keyed by missing fields
 POST /me/profile/hide      200 MyProfile
@@ -97,6 +103,9 @@ GET /discovery/profiles?city=&minAge=&maxAge=&tagCodes=A,B&tagLogic=AND|OR&page=
   limit 1..50 (default 20), page >=0. Excludes caller's own profile. Only PUBLISHED profiles of ACTIVE accounts.
   Tag filter applied in DB before pagination (totals are exact).
   Caller's exclusion words (below) are applied automatically, also before pagination.
+  Two-way hard filters (docs/matching.md): the candidate's gender is who I look for and vice versa; the candidate's
+  age is in my ageFrom..ageTo and mine is in theirs (minAge/maxAge only narrow mine for this request); goals meet
+  (none set or NOT_SURE matches all). Without my gender, seeking and birthDate: 400 PROFILE_INCOMPLETE (fieldErrors).
   200 { items: PublicProfile[], page, limit, totalElements, totalPages }
 
 ## Exclusion words (auth) — private hard filter for the caller's feed, never shown to anyone else
@@ -159,7 +168,7 @@ DELETE /testing/clock                            back to real time
 
 ## Premium content (v1)
 Premium-only features are listed in server config `app.economy.premium-features`; codes today:
-  ADVANCED_FILTERS — discovery by height and goals + saved excluded goals
+  ADVANCED_FILTERS — discovery by height + saved excluded goals
   EXCLUSION_WORDS  — saved exclusion words (PUT /me/exclusion-words now returns 403 PREMIUM_REQUIRED for free users)
 Clients read the list from Wallet.premiumFeatures; a feature not listed there is free.
 Premium badge: Wallet.premium.active, MyProfile.premium and PublicProfile.premium (shown to others in the feed).
@@ -173,8 +182,8 @@ PUT /me/profile additionally accepts: heightCm (120..230), goalCodes: string[] (
   clearHeight: true (removes the height; 400 fieldErrors.heightCm if sent together with heightCm)
 
 ## Discovery: advanced filters (premium ADVANCED_FILTERS, else 403 PREMIUM_REQUIRED details.feature)
-GET /discovery/profiles additionally accepts: minHeight, maxHeight (cm; profiles without height do not match),
-  goalCodes=A,B (profile has at least one of them)
+GET /discovery/profiles additionally accepts: minHeight, maxHeight (cm; profiles without height do not match).
+  goalCodes=A,B (profile has at least one of them) is free.
 Saved excluded goals (hard filter: profiles having any of these goals are hidden):
 GET /me/excluded-goals  200 { goalCodes: string[], active: boolean }
 PUT /me/excluded-goals  body { goalCodes: string[] }  200 same ; 403 PREMIUM_REQUIRED ; 400 UNKNOWN_GOAL

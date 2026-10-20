@@ -16,6 +16,7 @@ import com.dating.profiles.domain.RelationshipGoal;
 import com.dating.profiles.api.DecorationDto;
 import com.dating.profiles.application.ProfileDecorationQuery;
 import com.dating.profiles.application.ProfilePhotoQuery;
+import com.dating.common.errors.ApiException;
 import com.dating.profiles.domain.CommunicationTag;
 import com.dating.profiles.domain.Profile;
 import com.dating.profiles.domain.PublicationStatus;
@@ -32,7 +33,10 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -81,18 +85,14 @@ public class DiscoveryService {
 
         // Test accounts and real users never see each other.
         boolean viewerIsTestAccount = accountService.isTestAccount(callerAccountId);
+        Profile viewer = requireMatchingProfile(callerAccountId);
         Specification<Profile> spec = Specification.where(isVisible())
                 .and(ownerIsActive(viewerIsTestAccount))
-                .and(notOwnedBy(callerAccountId));
+                .and(notOwnedBy(callerAccountId))
+                .and(mutualMatch(viewer, query));
         spec = spec.and(contributedExclusions(callerAccountId));
         if (query.city() != null) {
             spec = spec.and(cityEquals(query.city()));
-        }
-        if (query.minAge() != null) {
-            spec = spec.and((root, q, cb) -> cb.greaterThanOrEqualTo(root.get("age"), query.minAge()));
-        }
-        if (query.maxAge() != null) {
-            spec = spec.and((root, q, cb) -> cb.lessThanOrEqualTo(root.get("age"), query.maxAge()));
         }
         if (!query.tagCodes().isEmpty()) {
             spec = spec.and(hasTags(query.tagCodes(), query.tagLogic()));
@@ -157,6 +157,62 @@ public class DiscoveryService {
         };
     }
 
+    /**
+     * The viewer's own gender, who they look for and birth date drive the two-way filters; without them there
+     * is nothing to match, so the feed asks to fill them in (400 PROFILE_INCOMPLETE keyed by the missing fields).
+     */
+    private Profile requireMatchingProfile(UUID accountId) {
+        Profile viewer = profileRepository.findByAccountId(accountId).orElse(null);
+        Map<String, String> missing = new LinkedHashMap<>();
+        if (viewer == null || viewer.getGender() == null) {
+            missing.put("gender", "Укажите пол");
+        }
+        if (viewer == null || viewer.getSeeking() == null) {
+            missing.put("seeking", "Укажите, кого вы ищете");
+        }
+        if (viewer == null || viewer.getBirthDate() == null) {
+            missing.put("birthDate", "Укажите дату рождения");
+        }
+        if (!missing.isEmpty()) {
+            throw ApiException.validation("PROFILE_INCOMPLETE", "Заполните пол, кого ищете и дату рождения", missing);
+        }
+        return viewer;
+    }
+
+    /**
+     * Hard filters that must hold both ways (docs/matching.md, part 1): each one is who the other looks for,
+     * each one's age is in the other's range, and their goals meet. The viewer's range is their saved one,
+     * optionally narrowed by the query.
+     */
+    static Specification<Profile> mutualMatch(Profile viewer, DiscoveryQueryDto query) {
+        LocalDate today = LocalDate.now();
+        int viewerAge = viewer.getAge();
+        int minAge = Math.max(viewer.getPrefAgeMin(), query.minAge() == null ? 0 : query.minAge());
+        Integer maxAge = viewer.getPrefAgeMax();
+        if (query.maxAge() != null) {
+            maxAge = maxAge == null ? query.maxAge() : Math.min(maxAge, query.maxAge());
+        }
+        Integer maxAgeFinal = maxAge;
+        Specification<Profile> spec = (root, q, cb) -> cb.and(
+                cb.equal(root.get("gender"), viewer.getSeeking()),
+                cb.equal(root.get("seeking"), viewer.getGender()),
+                cb.lessThanOrEqualTo(root.get("birthDate"), today.minusYears(minAge)),
+                maxAgeFinal == null ? cb.conjunction()
+                        : cb.greaterThan(root.get("birthDate"), today.minusYears(maxAgeFinal + 1L)),
+                cb.lessThanOrEqualTo(root.get("prefAgeMin"), viewerAge),
+                cb.or(cb.isNull(root.get("prefAgeMax")), cb.greaterThanOrEqualTo(root.get("prefAgeMax"), viewerAge)));
+        Set<String> goals = new HashSet<>();
+        viewer.getGoals().forEach(goal -> goals.add(goal.getCode()));
+        if (!goals.isEmpty() && !goals.contains(NOT_SURE_GOAL)) {
+            // Unknown goals (none set, or "not sure") never shut anyone out.
+            goals.add(NOT_SURE_GOAL);
+            spec = spec.and(Specification.not(hasAnyGoal(null)).or(hasAnyGoal(goals)));
+        }
+        return spec;
+    }
+
+    static final String NOT_SURE_GOAL = "NOT_SURE";
+
     // ---------------------------------------------------------------- filters contributed by other modules
 
     /** E.g. social: already liked / passed profiles and blocks. Setter injection keeps the constructor stable. */
@@ -175,13 +231,15 @@ public class DiscoveryService {
         return spec;
     }
 
+    /** @param goalCodes null = any goal at all */
     private static Specification<Profile> hasAnyGoal(Set<String> goalCodes) {
         return (root, q, cb) -> {
             Subquery<String> matched = q.subquery(String.class);
             Root<Profile> p2 = matched.from(Profile.class);
             Join<Profile, RelationshipGoal> goal = p2.join("goals");
-            matched.select(goal.get("code"))
-                    .where(cb.equal(p2.get("id"), root.get("id")), goal.get("code").in(goalCodes));
+            matched.select(goal.get("code")).where(goalCodes == null
+                    ? cb.equal(p2.get("id"), root.get("id"))
+                    : cb.and(cb.equal(p2.get("id"), root.get("id")), goal.get("code").in(goalCodes)));
             return cb.exists(matched);
         };
     }
@@ -191,7 +249,9 @@ public class DiscoveryService {
                 cb.equal(root.get("publicationStatus"), PublicationStatus.PUBLISHED),
                 cb.equal(root.get("visibilityStatus"), VisibilityStatus.PUBLIC),
                 cb.isNotNull(root.get("displayName")),
-                cb.isNotNull(root.get("age")),
+                cb.isNotNull(root.get("birthDate")),
+                cb.isNotNull(root.get("gender")),
+                cb.isNotNull(root.get("seeking")),
                 cb.isNotNull(root.get("city"))
         );
     }

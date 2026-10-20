@@ -23,7 +23,7 @@ class ProfileRulesTest {
         assertNull(profile.getDisplayName());
         assertNull(profile.getAge());
         assertEquals(0, ProfileTips.percent(ProfileTips.of(profile, 0)));
-        assertEquals(List.of("displayName", "age", "city", "photos"),
+        assertEquals(List.of("displayName", "birthDate", "gender", "seeking", "city", "photos"),
                 List.copyOf(ProfileService.missingForPublish(profile, 0).keySet()));
     }
 
@@ -38,7 +38,9 @@ class ProfileRulesTest {
     void fullProfileIsComplete() {
         Profile profile = new Profile(UUID.randomUUID(), UUID.randomUUID());
         profile.setDisplayName("Анна");
-        profile.setAge(26);
+        profile.setBirthDate(java.time.LocalDate.now().minusYears(26));
+        profile.setGender(com.dating.profiles.domain.Gender.FEMALE);
+        profile.setSeeking(com.dating.profiles.domain.Gender.MALE);
         profile.setCity("Москва");
         profile.setAboutText("Люблю долгие прогулки, плёночную фотографию и хороший кофе");
         profile.replaceTags(Set.of(tag("A"), tag("B"), tag("C")));

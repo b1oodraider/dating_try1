@@ -34,7 +34,7 @@ public final class ProfileTips {
         String about = profile.getAboutText() == null ? "" : profile.getAboutText().trim();
         return List.of(
                         new Tip("NAME", "Укажите имя", 10, !isBlank(profile.getDisplayName()), true),
-                        new Tip("AGE", "Укажите возраст", 10, profile.getAge() != null, true),
+                        new Tip("AGE", "Укажите дату рождения", 10, profile.getBirthDate() != null, true),
                         new Tip("CITY", "Укажите город", 10, !isBlank(profile.getCity()), true),
                         new Tip("FIRST_PHOTO", "Добавьте фотографию", 15, photoCount >= 1, true),
                         new Tip("MORE_PHOTOS", "Добавьте ещё фото: с " + GOOD_PHOTO_COUNT

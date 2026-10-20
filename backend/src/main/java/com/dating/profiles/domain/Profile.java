@@ -4,6 +4,8 @@ import com.dating.common.persistence.AssignedIdEntity;
 import jakarta.persistence.*;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.Period;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -22,8 +24,25 @@ public class Profile extends AssignedIdEntity {
     @Column(name = "display_name", length = 50)
     private String displayName;
 
-    @Column(name = "age")
-    private Integer age;
+    @Column(name = "birth_date")
+    private LocalDate birthDate;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "gender", length = 6)
+    private Gender gender;
+
+    /** The gender this person looks for. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "seeking", length = 6)
+    private Gender seeking;
+
+    /** Ages this person accepts; a candidate outside them never sees this profile either. */
+    @Column(name = "pref_age_min", nullable = false)
+    private int prefAgeMin = 18;
+
+    /** null = no upper limit. */
+    @Column(name = "pref_age_max")
+    private Integer prefAgeMax;
 
     @Column(name = "city", length = 60)
     private String city;
@@ -104,12 +123,49 @@ public class Profile extends AssignedIdEntity {
         touch();
     }
 
+    /** Full years today; null until the birth date is known. */
     public Integer getAge() {
-        return age;
+        return birthDate == null ? null : Period.between(birthDate, LocalDate.now()).getYears();
     }
 
-    public void setAge(Integer age) {
-        this.age = age;
+    public LocalDate getBirthDate() {
+        return birthDate;
+    }
+
+    public void setBirthDate(LocalDate birthDate) {
+        this.birthDate = birthDate;
+        touch();
+    }
+
+    public Gender getGender() {
+        return gender;
+    }
+
+    public void setGender(Gender gender) {
+        this.gender = gender;
+        touch();
+    }
+
+    public Gender getSeeking() {
+        return seeking;
+    }
+
+    public void setSeeking(Gender seeking) {
+        this.seeking = seeking;
+        touch();
+    }
+
+    public int getPrefAgeMin() {
+        return prefAgeMin;
+    }
+
+    public Integer getPrefAgeMax() {
+        return prefAgeMax;
+    }
+
+    public void setPrefAgeRange(int min, Integer max) {
+        this.prefAgeMin = min;
+        this.prefAgeMax = max;
         touch();
     }
 

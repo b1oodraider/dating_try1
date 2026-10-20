@@ -139,7 +139,7 @@ class TestingApiIntegrationTest extends IntegrationTestBase {
         testing(login(newPhone()), get("/api/v1/testing/profiles"), null, 403)
                 .andExpect(jsonPath("$.code").value("TEST_ACCOUNT_REQUIRED"));
 
-        String seedJson = "{\"profile\": {\"displayName\": \"Сид\", \"age\": 25, \"city\": \"" + city + "\","
+        String seedJson = "{\"profile\": {\"gender\": \"MALE\", \"seeking\": \"MALE\", \"displayName\": \"Сид\", \"age\": 25, \"city\": \"" + city + "\","
                 + " \"aboutText\": \"Люблю горы\", \"heightCm\": 170, \"goalCodes\": [\"DATING\"]},"
                 + " \"premiumDays\": 30, \"cosmetics\": [\"FRAME_STUB_GOLD\", \"STATUS_STUB_BOOKWORM\", \"STICKERS_STUB_CATS\"]}";
         MvcResult created = testing(tester, post("/api/v1/testing/profiles"), seedJson, 201)
@@ -183,7 +183,7 @@ class TestingApiIntegrationTest extends IntegrationTestBase {
         testing(tester, delete(seedPath), null, 404);
         discovery(tester, city, null, null, 20).andExpect(jsonPath("$.totalElements").value(0));
 
-        testing(tester, post("/api/v1/testing/profiles"), "{\"profile\": {\"displayName\": \"Ещё\"}}", 201);
+        testing(tester, post("/api/v1/testing/profiles"), "{\"profile\": {\"gender\": \"MALE\", \"seeking\": \"MALE\", \"displayName\": \"Ещё\"}}", 201);
         testing(tester, delete("/api/v1/testing/profiles"), null)
                 .andExpect(jsonPath("$.deleted", greaterThanOrEqualTo(1)));
         testing(tester, get("/api/v1/testing/profiles"), null).andExpect(jsonPath("$", hasSize(0)));

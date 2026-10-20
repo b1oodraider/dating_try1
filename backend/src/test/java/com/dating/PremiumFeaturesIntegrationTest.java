@@ -47,13 +47,15 @@ class PremiumFeaturesIntegrationTest extends IntegrationTestBase {
     @Test
     void premiumFeaturesAreClosedForFreeUsers() throws Exception {
         String token = login(newPhone());
+        canSearch(token);
 
         mvc.perform(get("/api/v1/discovery/profiles").queryParam("minHeight", "170").header("Authorization", bearer(token)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("PREMIUM_REQUIRED"))
                 .andExpect(jsonPath("$.details.feature").value("ADVANCED_FILTERS"));
+        // Goals are a free filter now (docs/matching.md).
         mvc.perform(get("/api/v1/discovery/profiles").queryParam("goalCodes", "DATING").header("Authorization", bearer(token)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isOk());
 
         putWords(token, "[\"курить\"]").andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.details.feature").value("EXCLUSION_WORDS"));
@@ -135,6 +137,7 @@ class PremiumFeaturesIntegrationTest extends IntegrationTestBase {
     }
 
     private ResultActions search(String token, String city, String param, String value) throws Exception {
+        canSearch(token);
         var request = get("/api/v1/discovery/profiles").header("Authorization", bearer(token)).queryParam("city", city);
         if (param != null) {
             request.queryParam(param, value);

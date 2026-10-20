@@ -155,7 +155,7 @@ class ApiIntegrationTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$.id").value(firstId))
                 .andExpect(jsonPath("$.displayName").value(nullValue()))
                 .andExpect(jsonPath("$.age").value(nullValue()))
-                .andExpect(jsonPath("$.missingForPublish", contains("displayName", "age", "city", "photos")));
+                .andExpect(jsonPath("$.missingForPublish", contains("displayName", "birthDate", "gender", "seeking", "city", "photos")));
 
         mvc.perform(post("/api/v1/me/profile/publish").header("Authorization", bearer(token)))
                 .andExpect(status().isBadRequest())
@@ -183,7 +183,7 @@ class ApiIntegrationTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$.dailyStatusText").value("Иду на выставку"))
                 .andExpect(jsonPath("$.dailyStatusExpiresAt").isNotEmpty())
                 .andExpect(jsonPath("$.tags[0].code").value("PACE_ASYNCHRONOUS"))
-                .andExpect(jsonPath("$.missingForPublish", contains("photos")));
+                .andExpect(jsonPath("$.missingForPublish", contains("gender", "seeking", "photos")));
     }
 
     // ------------------------------------------------------------------ photos

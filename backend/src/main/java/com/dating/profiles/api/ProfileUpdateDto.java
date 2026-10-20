@@ -1,5 +1,9 @@
 package com.dating.profiles.api;
 
+import com.dating.profiles.domain.Gender;
+
+import java.time.LocalDate;
+
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
@@ -14,6 +18,7 @@ public record ProfileUpdateDto(
         @Size(max = 50, message = "Имя должно быть от 2 до 50 символов")
         String displayName,
 
+        /** Legacy: sets an approximate birth date when birthDate is absent. */
         @Min(value = 18, message = "Возраст должен быть не менее 18 лет")
         @Max(value = 100, message = "Некорректный возраст")
         Integer age,
@@ -38,5 +43,25 @@ public record ProfileUpdateDto(
         List<String> goalCodes,
 
         /** true removes the height from the profile; cannot be combined with heightCm. */
-        Boolean clearHeight
+        Boolean clearHeight,
+
+        /** Locked once the profile was published (changed by support). */
+        Gender gender,
+
+        /** Who I look for; may change any time. */
+        Gender seeking,
+
+        /** ISO date (yyyy-MM-dd), 18..100 years; locked once the profile was published. */
+        LocalDate birthDate,
+
+        @Min(value = 18, message = "Возраст должен быть от 18 до 100")
+        @Max(value = 100, message = "Возраст должен быть от 18 до 100")
+        Integer ageFrom,
+
+        @Min(value = 18, message = "Возраст должен быть от 18 до 100")
+        @Max(value = 100, message = "Возраст должен быть от 18 до 100")
+        Integer ageTo,
+
+        /** true removes the upper age limit; cannot be combined with ageTo. */
+        Boolean clearAgeTo
 ) {}

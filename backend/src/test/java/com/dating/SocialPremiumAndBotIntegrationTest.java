@@ -121,7 +121,7 @@ class SocialPremiumAndBotIntegrationTest extends IntegrationTestBase {
 
     private String createSeed(String tester, String city) throws Exception {
         MvcResult created = mvc.perform(withJson(post("/api/v1/testing/profiles"),
-                        "{\"profile\": {\"displayName\": \"Сид\", \"age\": 26, \"city\": \"" + city + "\"}}")
+                        "{\"profile\": {\"gender\": \"MALE\", \"seeking\": \"MALE\", \"displayName\": \"Сид\", \"age\": 26, \"city\": \"" + city + "\"}}")
                         .header("Authorization", bearer(tester)))
                 .andExpect(status().isCreated()).andReturn();
         String seedId = JsonPath.read(body(created), "$.accountId");

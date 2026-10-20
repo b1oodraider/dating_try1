@@ -344,6 +344,7 @@ class BoostIntegrationTest extends IntegrationTestBase {
     }
 
     private ResultActions page(String token, String city, int page, int limit) throws Exception {
+        canSearch(token);
         return mvc.perform(get("/api/v1/discovery/profiles")
                         .header("Authorization", bearer(token))
                         .queryParam("city", city)
@@ -371,7 +372,7 @@ class BoostIntegrationTest extends IntegrationTestBase {
     /** Creates and publishes a seed profile (visible to test accounts only); returns its account id. */
     private String seedProfile(String tester, String name, String city) throws Exception {
         MvcResult created = testing(tester, post("/api/v1/testing/profiles"),
-                "{\"profile\": {\"displayName\": \"" + name + "\", \"age\": 30, \"city\": \"" + city + "\"}}", 201)
+                "{\"profile\": {\"gender\": \"MALE\", \"seeking\": \"MALE\", \"displayName\": \"" + name + "\", \"age\": 30, \"city\": \"" + city + "\"}}", 201)
                 .andReturn();
         String seedId = JsonPath.read(body(created), "$.accountId");
         mvc.perform(multipart("/api/v1/testing/profiles/" + seedId + "/photos")

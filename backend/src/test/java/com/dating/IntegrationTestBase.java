@@ -129,7 +129,7 @@ public abstract class IntegrationTestBase {
 
     protected String publishWith(String token, String name, String city, List<String> tags) throws Exception {
         String tagJson = tags.stream().map(t -> "\"" + t + "\"").reduce((a, b) -> a + "," + b).orElse("");
-        putProfile(token, "{\"displayName\":\"" + name + "\",\"age\":30,\"city\":\"" + city + "\",\"tagCodes\":[" + tagJson + "]}")
+        putProfile(token, "{\"gender\":\"MALE\",\"seeking\":\"MALE\",\"displayName\":\"" + name + "\",\"age\":30,\"city\":\"" + city + "\",\"tagCodes\":[" + tagJson + "]}")
                 .andExpect(status().isOk());
         String photoId = uploadPng(token);
         mvc.perform(post("/api/v1/me/profile/publish").header("Authorization", bearer(token)))
@@ -147,7 +147,18 @@ public abstract class IntegrationTestBase {
         return JsonPath.read(body(result), "$.id");
     }
 
+    /**
+     * The feed needs the viewer's gender, who they look for and birth date. Test viewers get the same pair as
+     * {@link #publishWith} (man looking for men), so every test user sees every other one.
+     */
+    protected void canSearch(String token) throws Exception {
+        if (json(get("/api/v1/me/profile"), token, "$.gender") == null) {
+            putProfile(token, "{\"gender\":\"MALE\",\"seeking\":\"MALE\",\"age\":30}").andExpect(status().isOk());
+        }
+    }
+
     protected ResultActions discovery(String token, String city, String tagCodes, String tagLogic, int limit) throws Exception {
+        canSearch(token);
         var request = get("/api/v1/discovery/profiles")
                 .header("Authorization", bearer(token))
                 .queryParam("city", city)

@@ -236,16 +236,20 @@ paths:
   /discovery/profiles:
     get:
       summary: Лента анкет
-      description: Только для авторизованных. Только опубликованные анкеты активных аккаунтов, без собственной. Все фильтры применяются в БД до пагинации.
+      description: |
+        Только для авторизованных. Только опубликованные анкеты активных аккаунтов, без собственной. Все фильтры применяются в БД до пагинации.
+        Двусторонние жёсткие фильтры (docs/matching.md): пол кандидата = кого ищу я и наоборот; возраст кандидата в моём диапазоне
+        (ageFrom..ageTo из анкеты) и мой — в его; цели пересекаются (нет целей или NOT_SURE совпадает со всеми).
+        Без своих gender, seeking и birthDate — 400 PROFILE_INCOMPLETE (fieldErrors по недостающим).
       parameters:
         - { name: city, in: query, schema: { type: string }, description: Без учёта регистра; ALL или пусто — любой город }
-        - { name: minAge, in: query, schema: { type: integer } }
-        - { name: maxAge, in: query, schema: { type: integer } }
+        - { name: minAge, in: query, schema: { type: integer }, description: Сужает сохранённый диапазон на этот запрос }
+        - { name: maxAge, in: query, schema: { type: integer }, description: Сужает сохранённый диапазон на этот запрос }
         - { name: tagCodes, in: query, schema: { type: string }, description: Коды карточек через запятую (до 10) }
         - { name: tagLogic, in: query, schema: { type: string, enum: [AND, OR], default: OR } }
         - { name: minHeight, in: query, schema: { type: integer }, description: 'Премиум ADVANCED_FILTERS; анкеты без роста не подходят' }
         - { name: maxHeight, in: query, schema: { type: integer }, description: Премиум ADVANCED_FILTERS }
-        - { name: goalCodes, in: query, schema: { type: string }, description: 'Премиум ADVANCED_FILTERS; коды целей через запятую, достаточно одной' }
+        - { name: goalCodes, in: query, schema: { type: string }, description: 'Бесплатно; коды целей через запятую, достаточно одной' }
         - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
       responses:
@@ -2830,7 +2834,12 @@ components:
               requiredToPublish: { type: boolean }
         missingForPublish:
           type: array
-          items: { type: string, enum: [displayName, age, city, photos] }
+          items: { type: string, enum: [displayName, birthDate, gender, seeking, city, photos] }
+        gender: { type: [string, 'null'], enum: [MALE, FEMALE, null], description: После первой публикации меняется только через поддержку }
+        seeking: { type: [string, 'null'], enum: [MALE, FEMALE, null], description: Кого ищу }
+        birthDate: { type: [string, 'null'], format: date, description: 'Возраст (age) считается из неё; после первой публикации — через поддержку' }
+        ageFrom: { type: integer, minimum: 18, maximum: 100, description: 'Какой возраст принимаю (по умолчанию 18); двусторонний фильтр' }
+        ageTo: { type: [integer, 'null'], minimum: 18, maximum: 100, description: null — без верхней границы }
         decorations: { $ref: '#/components/schemas/Decorations' }
         heightCm: { type: [integer, 'null'] }
         goals: { type: array, items: { $ref: '#/components/schemas/Goal' } }
@@ -2869,7 +2878,13 @@ components:
       type: object
       properties:
         displayName: { type: string, minLength: 2, maxLength: 50, description: После trim }
-        age: { type: integer, minimum: 18, maximum: 100 }
+        age: { type: integer, minimum: 18, maximum: 100, description: 'Устаревшее: ставит примерную дату рождения, если нет birthDate' }
+        birthDate: { type: string, format: date, description: '18..100 лет; после первой публикации — 400 fieldErrors.birthDate' }
+        gender: { type: string, enum: [MALE, FEMALE], description: 'После первой публикации — 400 fieldErrors.gender' }
+        seeking: { type: string, enum: [MALE, FEMALE] }
+        ageFrom: { type: integer, minimum: 18, maximum: 100 }
+        ageTo: { type: integer, minimum: 18, maximum: 100, description: 'Не меньше ageFrom (иначе 400 fieldErrors.ageTo)' }
+        clearAgeTo: { type: boolean, description: 'true снимает верхнюю границу; вместе с ageTo — 400' }
         city: { type: string, minLength: 1, maxLength: 60 }
         aboutText: { type: string, maxLength: 1000, description: Пустая строка очищает }
         tagCodes: { type: array, maxItems: 10, items: { type: string } }

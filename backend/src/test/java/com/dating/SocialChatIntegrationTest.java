@@ -595,7 +595,7 @@ class SocialChatIntegrationTest extends IntegrationTestBase {
     /** A published seed profile (phone-less test account), created through the testing API. */
     protected User seed(User tester, String city, String name) throws Exception {
         MvcResult created = testing(tester, post("/api/v1/testing/profiles"),
-                "{\"profile\": {\"displayName\": \"" + name + "\", \"age\": 27, \"city\": \"" + city + "\"}}", 201)
+                "{\"profile\": {\"gender\": \"MALE\", \"seeking\": \"MALE\", \"displayName\": \"" + name + "\", \"age\": 27, \"city\": \"" + city + "\"}}", 201)
                 .andReturn();
         String seedId = JsonPath.read(body(created), "$.accountId");
         String profileId = JsonPath.read(body(created), "$.profile.id");

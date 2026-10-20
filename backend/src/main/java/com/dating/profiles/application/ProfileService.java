@@ -24,6 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.Period;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -34,6 +36,8 @@ public class ProfileService {
     static final int MIN_NAME_LENGTH = 2;
     static final int MAX_NAME_LENGTH = 50;
     static final int MAX_CITY_LENGTH = 60;
+    static final int MIN_AGE = 18;
+    static final int MAX_AGE = 100;
 
     private final ProfileRepository profileRepository;
     private final CommunicationTagRepository tagRepository;
@@ -136,6 +140,32 @@ public class ProfileService {
         if (clearHeight && dto.heightCm() != null) {
             errors.put("heightCm", "Нельзя одновременно указать и удалить рост");
         }
+        // shortcut: legacy clients send a plain age; it becomes a mid-year birth date. Drop once clients send birthDate.
+        LocalDate birthDate = dto.birthDate() != null ? dto.birthDate()
+                : dto.age() != null ? LocalDate.now().minusYears(dto.age()).minusDays(183) : null;
+        if (birthDate != null) {
+            int years = Period.between(birthDate, LocalDate.now()).getYears();
+            if (years < MIN_AGE || years > MAX_AGE) {
+                errors.put("birthDate", "Возраст должен быть от 18 до 100 лет");
+            }
+        }
+        boolean everPublished = profile.getPublicationStatus() != PublicationStatus.DRAFT;
+        if (everPublished && dto.gender() != null && profile.getGender() != null && dto.gender() != profile.getGender()) {
+            errors.put("gender", "Пол после публикации меняется только через поддержку");
+        }
+        if (everPublished && birthDate != null && profile.getBirthDate() != null
+                && !birthDate.equals(profile.getBirthDate()) && dto.birthDate() != null) {
+            errors.put("birthDate", "Дату рождения после публикации можно изменить только через поддержку");
+        }
+        boolean clearAgeTo = Boolean.TRUE.equals(dto.clearAgeTo());
+        if (clearAgeTo && dto.ageTo() != null) {
+            errors.put("ageTo", "Нельзя одновременно указать и убрать верхнюю границу возраста");
+        }
+        int ageFrom = dto.ageFrom() != null ? dto.ageFrom() : profile.getPrefAgeMin();
+        Integer ageTo = clearAgeTo ? null : dto.ageTo() != null ? dto.ageTo() : profile.getPrefAgeMax();
+        if (ageTo != null && ageTo < ageFrom) {
+            errors.put("ageTo", "Верхняя граница возраста меньше нижней");
+        }
         if (!errors.isEmpty()) {
             String code = errors.containsKey("tagCodes") ? "UNKNOWN_TAG"
                     : errors.containsKey("goalCodes") ? "UNKNOWN_GOAL" : "VALIDATION_ERROR";
@@ -153,8 +183,17 @@ public class ProfileService {
         if (displayName != null) {
             profile.setDisplayName(displayName);
         }
-        if (dto.age() != null) {
-            profile.setAge(dto.age());
+        if (birthDate != null && (dto.birthDate() != null || !everPublished || profile.getBirthDate() == null)) {
+            profile.setBirthDate(birthDate);
+        }
+        if (dto.gender() != null) {
+            profile.setGender(dto.gender());
+        }
+        if (dto.seeking() != null) {
+            profile.setSeeking(dto.seeking());
+        }
+        if (dto.ageFrom() != null || dto.ageTo() != null || clearAgeTo) {
+            profile.setPrefAgeRange(ageFrom, ageTo);
         }
         if (city != null) {
             profile.setCity(city);
@@ -291,6 +330,11 @@ public class ProfileService {
                 goalsOf(profile),
                 !featureAccess.premiumAmong(List.of(profile.getAccountId())).isEmpty(),
                 profile.isVerified(),
+                profile.getGender(),
+                profile.getSeeking(),
+                profile.getBirthDate(),
+                profile.getPrefAgeMin(),
+                profile.getPrefAgeMax(),
                 profile.getCreatedAt(),
                 profile.getUpdatedAt()
         );
@@ -304,8 +348,14 @@ public class ProfileService {
         if (isBlank(profile.getDisplayName())) {
             missing.put("displayName", "Укажите имя");
         }
-        if (profile.getAge() == null) {
-            missing.put("age", "Укажите возраст (18+)");
+        if (profile.getBirthDate() == null) {
+            missing.put("birthDate", "Укажите дату рождения (18+)");
+        }
+        if (profile.getGender() == null) {
+            missing.put("gender", "Укажите пол");
+        }
+        if (profile.getSeeking() == null) {
+            missing.put("seeking", "Укажите, кого вы ищете");
         }
         if (isBlank(profile.getCity())) {
             missing.put("city", "Укажите город");

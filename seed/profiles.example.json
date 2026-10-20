@@ -2,125 +2,250 @@
   {
     "folder": "01-anna",
     "displayName": "Анна",
+    "gender": "FEMALE",
+    "seeking": "MALE",
     "age": 27,
     "city": "Москва",
     "heightCm": 168,
     "aboutText": "Продуктовый дизайнер. По выходным катаюсь на велосипеде по набережным и ищу новые кофейни. Люблю, когда в переписке есть юмор.",
-    "tagCodes": ["PACE_FAST_CHAT", "FORMAT_COFFEE_SHORT", "CALLS_VOICE_WELCOME", "BOUND_DIRECT_COMMUNICATION"],
-    "goalCodes": ["SERIOUS_RELATIONSHIP", "DATING"],
+    "tagCodes": [
+      "PACE_FAST_CHAT",
+      "FORMAT_COFFEE_SHORT",
+      "CALLS_VOICE_WELCOME",
+      "BOUND_DIRECT_COMMUNICATION"
+    ],
+    "goalCodes": [
+      "SERIOUS_RELATIONSHIP",
+      "DATING"
+    ],
     "premiumDays": 30,
-    "cosmetics": ["FRAME_STUB_GOLD", "STATUS_STUB_EARLY_BIRD"]
+    "cosmetics": [
+      "FRAME_STUB_GOLD",
+      "STATUS_STUB_EARLY_BIRD"
+    ]
   },
   {
     "folder": "02-maxim",
     "displayName": "Максим",
+    "gender": "MALE",
+    "seeking": "FEMALE",
     "age": 31,
     "city": "Санкт-Петербург",
     "heightCm": 184,
     "aboutText": "Инженер-проектировщик мостов, как ни странно для Петербурга. Хожу в походы по Карелии, готовлю плов и читаю нон-фикшн.",
-    "tagCodes": ["PACE_ASYNCHRONOUS", "FORMAT_WALK_FIRST", "CALLS_PRE_CALL_CHECK", "SOC_DEEP_TALKS"],
-    "goalCodes": ["SERIOUS_RELATIONSHIP", "FAMILY"]
+    "tagCodes": [
+      "PACE_ASYNCHRONOUS",
+      "FORMAT_WALK_FIRST",
+      "CALLS_PRE_CALL_CHECK",
+      "SOC_DEEP_TALKS"
+    ],
+    "goalCodes": [
+      "SERIOUS_RELATIONSHIP",
+      "FAMILY"
+    ]
   },
   {
     "folder": "03-alina",
     "displayName": "Алина",
+    "gender": "FEMALE",
+    "seeking": "MALE",
     "age": 22,
     "city": "Казань",
     "heightCm": 160,
     "aboutText": "Студентка-филолог, подрабатываю в книжном. Хожу на стендапы и в театр, мечтаю выучить турецкий.",
-    "tagCodes": ["PACE_FAST_CHAT", "FORMAT_SHARED_ACTIVITY", "CALLS_TEXT_ONLY"],
-    "goalCodes": ["FRIENDSHIP", "CHAT"],
+    "tagCodes": [
+      "PACE_FAST_CHAT",
+      "FORMAT_SHARED_ACTIVITY",
+      "CALLS_TEXT_ONLY"
+    ],
+    "goalCodes": [
+      "FRIENDSHIP",
+      "CHAT"
+    ],
     "dailyStatusText": "Сегодня вечером иду на открытый микрофон — кто со мной?"
   },
   {
     "folder": "04-dmitry",
     "displayName": "Дмитрий",
+    "gender": "MALE",
+    "seeking": "FEMALE",
     "age": 38,
     "city": "Новосибирск",
     "aboutText": "Врач-кардиолог. Свободное время провожу на лыжне в Академгородке или за шахматами. Ценю честность и спокойный темп.",
-    "tagCodes": ["PACE_LOW_BATTERY", "FORMAT_TEXT_BEFORE_MEET", "BOUND_RESPECT_LIMITS", "SOC_QUIET_SPACES"],
-    "goalCodes": ["SERIOUS_RELATIONSHIP"]
+    "tagCodes": [
+      "PACE_LOW_BATTERY",
+      "FORMAT_TEXT_BEFORE_MEET",
+      "BOUND_RESPECT_LIMITS",
+      "SOC_QUIET_SPACES"
+    ],
+    "goalCodes": [
+      "SERIOUS_RELATIONSHIP"
+    ]
   },
   {
     "folder": "05-ekaterina",
     "displayName": "Екатерина",
+    "gender": "FEMALE",
+    "seeking": "MALE",
     "age": 34,
     "city": "Москва",
     "heightCm": 172,
     "aboutText": "Юрист в IT-компании, дома живёт рыжий кот Борис. Люблю йогу по утрам, грузинскую кухню и долгие разговоры о жизни.",
-    "tagCodes": ["PACE_ASYNCHRONOUS", "FORMAT_COFFEE_SHORT", "BOUND_NO_SMALLTALK", "SOC_DEEP_TALKS"],
-    "goalCodes": ["FAMILY", "SERIOUS_RELATIONSHIP"],
+    "tagCodes": [
+      "PACE_ASYNCHRONOUS",
+      "FORMAT_COFFEE_SHORT",
+      "BOUND_NO_SMALLTALK",
+      "SOC_DEEP_TALKS"
+    ],
+    "goalCodes": [
+      "FAMILY",
+      "SERIOUS_RELATIONSHIP"
+    ],
     "premiumDays": 90,
-    "cosmetics": ["FRAME_STUB_NEON", "STATUS_STUB_BOOKWORM", "WALLPAPER_STUB_SUNSET", "STICKERS_STUB_CATS"]
+    "cosmetics": [
+      "FRAME_STUB_NEON",
+      "STATUS_STUB_BOOKWORM",
+      "WALLPAPER_STUB_SUNSET",
+      "STICKERS_STUB_CATS"
+    ]
   },
   {
     "folder": "06-artem",
     "displayName": "Артём",
+    "gender": "MALE",
+    "seeking": "FEMALE",
     "age": 25,
     "city": "Казань",
     "heightCm": 178,
     "aboutText": "Бэкенд-разработчик, играю в волейбол и собираю виниловые пластинки. Могу посоветовать хороший джаз.",
-    "tagCodes": ["PACE_FAST_CHAT", "FORMAT_SHARED_ACTIVITY", "CALLS_VOICE_WELCOME"],
-    "goalCodes": ["DATING", "NOT_SURE"]
+    "tagCodes": [
+      "PACE_FAST_CHAT",
+      "FORMAT_SHARED_ACTIVITY",
+      "CALLS_VOICE_WELCOME"
+    ],
+    "goalCodes": [
+      "DATING",
+      "NOT_SURE"
+    ]
   },
   {
     "folder": "07-olga",
     "displayName": "Ольга",
+    "gender": "FEMALE",
+    "seeking": "MALE",
     "age": 41,
     "city": "Санкт-Петербург",
     "heightCm": 165,
     "aboutText": "Преподаю историю искусства. Обожаю Эрмитаж в будни, когда там тихо, и белые ночи на Крестовском. Взрослая дочь, свободные выходные.",
-    "tagCodes": ["PACE_ASYNCHRONOUS", "FORMAT_WALK_FIRST", "CALLS_PRE_CALL_CHECK", "SOC_QUIET_SPACES", "SOC_DEEP_TALKS"],
-    "goalCodes": ["SERIOUS_RELATIONSHIP", "CHAT"]
+    "tagCodes": [
+      "PACE_ASYNCHRONOUS",
+      "FORMAT_WALK_FIRST",
+      "CALLS_PRE_CALL_CHECK",
+      "SOC_QUIET_SPACES",
+      "SOC_DEEP_TALKS"
+    ],
+    "goalCodes": [
+      "SERIOUS_RELATIONSHIP",
+      "CHAT"
+    ]
   },
   {
     "folder": "08-ivan",
     "displayName": "Иван",
+    "gender": "MALE",
+    "seeking": "FEMALE",
     "age": 29,
     "city": "Москва",
     "aboutText": "Звукорежиссёр, пишу музыку для подкастов. Бегаю по утрам, по вечерам — настолки с друзьями.",
-    "tagCodes": ["PACE_LOW_BATTERY", "FORMAT_SHARED_ACTIVITY", "CALLS_TEXT_ONLY", "BOUND_DIRECT_COMMUNICATION"],
-    "goalCodes": ["DATING", "FRIENDSHIP"]
+    "tagCodes": [
+      "PACE_LOW_BATTERY",
+      "FORMAT_SHARED_ACTIVITY",
+      "CALLS_TEXT_ONLY",
+      "BOUND_DIRECT_COMMUNICATION"
+    ],
+    "goalCodes": [
+      "DATING",
+      "FRIENDSHIP"
+    ]
   },
   {
     "folder": "09-mariya",
     "displayName": "Мария",
+    "gender": "FEMALE",
+    "seeking": "MALE",
     "age": 20,
     "city": "Новосибирск",
     "heightCm": 158,
     "aboutText": "Учусь на биолога в НГУ, волонтёрю в приюте для собак. Люблю горы, Алтай и фотографировать закаты.",
-    "tagCodes": ["PACE_FAST_CHAT", "FORMAT_WALK_FIRST", "BOUND_RESPECT_LIMITS"],
-    "goalCodes": ["NOT_SURE", "FRIENDSHIP", "CHAT"]
+    "tagCodes": [
+      "PACE_FAST_CHAT",
+      "FORMAT_WALK_FIRST",
+      "BOUND_RESPECT_LIMITS"
+    ],
+    "goalCodes": [
+      "NOT_SURE",
+      "FRIENDSHIP",
+      "CHAT"
+    ]
   },
   {
     "folder": "10-sergey",
     "displayName": "Сергей",
+    "gender": "MALE",
+    "seeking": "FEMALE",
     "age": 45,
     "city": "Москва",
     "heightCm": 180,
     "aboutText": "Свой небольшой бизнес по ремонту квартир. Двое детей-подростков, рыбалка, баня по субботам. Ищу человека для спокойной жизни вместе.",
-    "tagCodes": ["PACE_ASYNCHRONOUS", "FORMAT_TEXT_BEFORE_MEET", "CALLS_VOICE_WELCOME", "BOUND_DIRECT_COMMUNICATION"],
-    "goalCodes": ["SERIOUS_RELATIONSHIP", "FAMILY"]
+    "tagCodes": [
+      "PACE_ASYNCHRONOUS",
+      "FORMAT_TEXT_BEFORE_MEET",
+      "CALLS_VOICE_WELCOME",
+      "BOUND_DIRECT_COMMUNICATION"
+    ],
+    "goalCodes": [
+      "SERIOUS_RELATIONSHIP",
+      "FAMILY"
+    ]
   },
   {
     "folder": "11-polina",
     "displayName": "Полина",
+    "gender": "FEMALE",
+    "seeking": "MALE",
     "age": 30,
     "city": "Санкт-Петербург",
     "heightCm": 175,
     "aboutText": "Маркетолог и немного иллюстратор. Плаваю, рисую скетчи в метро и знаю все бары с настолками на Рубинштейна.",
-    "tagCodes": ["PACE_FAST_CHAT", "FORMAT_COFFEE_SHORT", "BOUND_NO_SMALLTALK", "SOC_DEEP_TALKS"],
-    "goalCodes": ["DATING"]
+    "tagCodes": [
+      "PACE_FAST_CHAT",
+      "FORMAT_COFFEE_SHORT",
+      "BOUND_NO_SMALLTALK",
+      "SOC_DEEP_TALKS"
+    ],
+    "goalCodes": [
+      "DATING"
+    ]
   },
   {
     "folder": "12-ruslan",
     "displayName": "Руслан",
+    "gender": "MALE",
+    "seeking": "FEMALE",
     "age": 35,
     "city": "Казань",
     "heightCm": 190,
     "aboutText": "Архитектор, проектирую частные дома. Играю на гитаре, катаюсь на сноуборде и неплохо готовлю эчпочмаки.",
-    "tagCodes": ["PACE_LOW_BATTERY", "FORMAT_WALK_FIRST", "CALLS_PRE_CALL_CHECK", "SOC_QUIET_SPACES"],
-    "goalCodes": ["SERIOUS_RELATIONSHIP", "NOT_SURE"],
+    "tagCodes": [
+      "PACE_LOW_BATTERY",
+      "FORMAT_WALK_FIRST",
+      "CALLS_PRE_CALL_CHECK",
+      "SOC_QUIET_SPACES"
+    ],
+    "goalCodes": [
+      "SERIOUS_RELATIONSHIP",
+      "NOT_SURE"
+    ],
     "publish": true
   }
 ]

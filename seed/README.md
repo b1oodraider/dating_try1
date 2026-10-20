@@ -78,6 +78,8 @@ Copy-Item seed\profiles.example.json seed\profiles.json
   {
     "folder": "01-anna",
     "displayName": "Анна",
+    "gender": "FEMALE",
+    "seeking": "MALE",
     "age": 27,
     "city": "Москва",
     "heightCm": 168,
@@ -178,7 +180,7 @@ node scripts/seed-profiles.mjs --api https://staging.example.com/api/v1 --phone 
 Как работает скрипт:
 
 1. Читает `profiles.json` (или `profiles.example.json` с уведомлением) и проверяет **все** анкеты до отправки:
-   обязательные `displayName`, `age`, `city`, допустимые значения полей, коды карточек и целей
+   обязательные `displayName`, `gender`, `seeking` (`MALE`/`FEMALE`), `age`, `city`, допустимые значения полей, коды карточек и целей
    (сверяет с `GET /tags` и `GET /goals`). При ошибках ничего не отправляет.
 2. Входит под тестовым номером (`/auth/otp/request` → `/auth/otp/verify`) и проверяет доступ к Testing API.
 3. Для каждой анкеты: создаёт её → загружает фото по одному → публикует (если `publish` не `false`

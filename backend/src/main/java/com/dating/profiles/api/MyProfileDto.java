@@ -1,5 +1,9 @@
 package com.dating.profiles.api;
 
+import com.dating.profiles.domain.Gender;
+
+import java.time.LocalDate;
+
 import com.dating.profiles.application.ProfileTips;
 import com.dating.profiles.domain.PublicationStatus;
 
@@ -13,6 +17,7 @@ import java.util.UUID;
  *
  * @param missingForPublish fields still required before publishing; empty means the profile can be published
  * @param decorations       equipped public cosmetics, i.e. how others see the profile
+ * @param ageFrom           youngest age I accept; ageTo null = no upper limit (both hard filters, both ways)
  */
 public record MyProfileDto(
         UUID id,
@@ -33,6 +38,11 @@ public record MyProfileDto(
         List<GoalDto> goals,
         boolean premium,
         boolean verified,
+        Gender gender,
+        Gender seeking,
+        LocalDate birthDate,
+        int ageFrom,
+        Integer ageTo,
         Instant createdAt,
         Instant updatedAt
 ) {}

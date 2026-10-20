@@ -43,7 +43,7 @@ const KNOWN_COSMETICS = new Set([
 ]);
 
 /** Fields of PUT /me/profile that an entry may carry. */
-const PROFILE_FIELDS = ['displayName', 'age', 'city', 'aboutText', 'tagCodes', 'heightCm', 'goalCodes', 'dailyStatusText'];
+const PROFILE_FIELDS = ['displayName', 'gender', 'seeking', 'age', 'city', 'aboutText', 'tagCodes', 'heightCm', 'goalCodes', 'dailyStatusText'];
 const ENTRY_FIELDS = new Set(['folder', ...PROFILE_FIELDS, 'premiumDays', 'cosmetics', 'publish']);
 
 const HELP = `Массовая загрузка тестовых анкет (seed profiles) с фотографиями.
@@ -318,6 +318,10 @@ async function validateEntry(entry, index, photosDir, dictionaries) {
   }
   if (entry.age === undefined) errors.push('нет age (возраст)');
   else if (!isInt(entry.age) || entry.age < 18 || entry.age > 100) errors.push('age: целое число от 18 до 100');
+  for (const field of ['gender', 'seeking']) {
+    if (entry[field] === undefined) errors.push(`нет ${field} (MALE или FEMALE)`);
+    else if (entry[field] !== 'MALE' && entry[field] !== 'FEMALE') errors.push(`${field}: MALE или FEMALE`);
+  }
   if (entry.city === undefined) errors.push('нет city (город)');
   else if (typeof entry.city !== 'string' || entry.city.trim().length < 1 || entry.city.trim().length > 60) {
     errors.push('city: строка от 1 до 60 символов');
