@@ -24,12 +24,20 @@ import 'swipe_deck.dart';
 /// feed request. Height and goals (premium) stay saved while premium is
 /// off but are not sent until it is back.
 class DiscoveryScreen extends StatefulWidget {
-  const DiscoveryScreen({super.key, required this.session, this.onOpenChat});
+  const DiscoveryScreen({
+    super.key,
+    required this.session,
+    this.onOpenChat,
+    this.onOpenProfile,
+  });
 
   final SessionController session;
 
   /// Opens the chat of a new match (from the "It's a match" dialog).
   final void Function(String matchId)? onOpenChat;
+
+  /// The feed needs my gender, who I look for and birth date first.
+  final VoidCallback? onOpenProfile;
 
   @override
   State<DiscoveryScreen> createState() => _DiscoveryScreenState();
@@ -41,6 +49,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   static const int _viewsBatch = 10;
 
   final List<PublicProfile> _items = <PublicProfile>[];
+
+  /// The feed refused: my gender, who I look for or birth date are missing.
+  bool _needsProfile = false;
 
   /// The server had nothing beyond the cards already in the deck.
   bool _exhausted = false;
@@ -139,6 +150,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           _loading = false;
           _loadingMore = false;
           _error = message;
+          _needsProfile = e is ApiException && e.code == 'PROFILE_INCOMPLETE';
         });
       }
     }
@@ -456,6 +468,27 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
     final error = _error;
     if (error != null) {
+      if (_needsProfile) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.person_search, size: 56),
+                const SizedBox(height: 12),
+                Text(error, textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: widget.onOpenProfile,
+                  child: const Text('Заполнить анкету'),
+                ),
+                TextButton(onPressed: _retry, child: const Text('Обновить')),
+              ],
+            ),
+          ),
+        );
+      }
       return _ErrorView(message: error, onRetry: _retry);
     }
 

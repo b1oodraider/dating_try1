@@ -62,7 +62,11 @@ class _HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(
         index: _tab,
         children: [
-          DiscoveryScreen(session: widget.session, onOpenChat: _openChat),
+          DiscoveryScreen(
+            session: widget.session,
+            onOpenChat: _openChat,
+            onOpenProfile: () => setState(() => _tab = 4),
+          ),
           LikesScreen(api: api, events: _realtime.events, onOpenChat: _openChat),
           // Own navigator: the bottom bar stays visible inside a chat.
           Navigator(

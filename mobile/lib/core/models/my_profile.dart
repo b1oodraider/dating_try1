@@ -34,6 +34,11 @@ class MyProfile {
     required this.id,
     required this.displayName,
     this.age,
+    this.gender,
+    this.seeking,
+    this.birthDate,
+    this.ageFrom = 18,
+    this.ageTo,
     this.city,
     this.aboutText,
     this.dailyStatusText,
@@ -57,7 +62,25 @@ class MyProfile {
 
   final String id;
   final String? displayName;
+
+  /// Full years, computed by the server from [birthDate].
   final int? age;
+
+  /// MALE or FEMALE; locked after the first publish.
+  final String? gender;
+
+  /// Who I look for: MALE or FEMALE.
+  final String? seeking;
+
+  /// Date only; locked after the first publish.
+  final DateTime? birthDate;
+
+  /// Ages I accept (both ways); [ageTo] null = no upper limit.
+  final int ageFrom;
+  final int? ageTo;
+
+  /// Gender and birth date can no longer be changed in the app.
+  bool get identityLocked => publicationStatus != 'DRAFT';
   final String? city;
   final String? aboutText;
   final String? dailyStatusText;
@@ -93,6 +116,11 @@ class MyProfile {
       id: asString(json['id']),
       displayName: asStringOrNull(json['displayName']),
       age: asIntOrNull(json['age']),
+      gender: asStringOrNull(json['gender']),
+      seeking: asStringOrNull(json['seeking']),
+      birthDate: asDateTimeOrNull(json['birthDate']),
+      ageFrom: asInt(json['ageFrom'], 18),
+      ageTo: asIntOrNull(json['ageTo']),
       city: asStringOrNull(json['city']),
       aboutText: asStringOrNull(json['aboutText']),
       dailyStatusText: asStringOrNull(json['dailyStatusText']),

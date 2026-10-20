@@ -136,6 +136,12 @@ class DatingApiClient {
     String? aboutText,
     List<String>? tagCodes,
     String? dailyStatusText,
+    String? gender,
+    String? seeking,
+    DateTime? birthDate,
+    int? ageFrom,
+    int? ageTo,
+    bool clearAgeTo = false,
     int? heightCm,
     bool clearHeight = false,
     List<String>? goalCodes,
@@ -153,6 +159,12 @@ class DatingApiClient {
         if (aboutText != null) 'aboutText': aboutText,
         if (tagCodes != null) 'tagCodes': List<String>.of(tagCodes),
         if (dailyStatusText != null) 'dailyStatusText': dailyStatusText,
+        if (gender != null) 'gender': gender,
+        if (seeking != null) 'seeking': seeking,
+        if (birthDate != null) 'birthDate': _isoDate(birthDate),
+        if (ageFrom != null) 'ageFrom': ageFrom,
+        if (ageTo != null) 'ageTo': ageTo,
+        if (clearAgeTo) 'clearAgeTo': true,
         if (heightCm != null) 'heightCm': heightCm,
         if (clearHeight) 'clearHeight': true,
         if (goalCodes != null) 'goalCodes': List<String>.of(goalCodes),
@@ -716,6 +728,9 @@ class DatingApiClient {
     throw ApiException.fromResponse(response.statusCode, decoded,
         traceIdHeader: response.headers['x-trace-id']);
   }
+
+  static String _isoDate(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   /// Encodes a value (item code, slot) used as a single path segment.
   static String _segment(String value) => Uri.encodeComponent(value);

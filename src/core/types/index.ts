@@ -32,12 +32,24 @@ export interface Goal {
 export type PublicationStatus = 'DRAFT' | 'PUBLISHED' | 'HIDDEN';
 
 /** Fields that must be filled before the profile can be published. */
-export type PublishRequirement = 'displayName' | 'age' | 'city' | 'photos';
+export type PublishRequirement = 'displayName' | 'birthDate' | 'gender' | 'seeking' | 'city' | 'photos';
+
+export type Gender = 'MALE' | 'FEMALE';
 
 export interface MyProfile {
   id: string;
   displayName: string | null;
+  /** Computed by the server from birthDate. */
   age: number | null;
+  /** Locked after the first publish. */
+  gender: Gender | null;
+  /** Who I look for. */
+  seeking: Gender | null;
+  /** yyyy-MM-dd; locked after the first publish. */
+  birthDate: string | null;
+  /** Ages I accept (both ways); ageTo null = no upper limit. */
+  ageFrom: number;
+  ageTo: number | null;
   city: string | null;
   aboutText: string | null;
   publicationStatus: PublicationStatus;
@@ -140,7 +152,15 @@ export interface DiscoveryQuery {
 /** PUT /me/profile body: every field optional, omitted = unchanged. */
 export interface ProfileUpdate {
   displayName?: string;
+  /** Legacy: an approximate birth date when birthDate is absent. */
   age?: number;
+  gender?: Gender;
+  seeking?: Gender;
+  /** yyyy-MM-dd, 18..100 years. */
+  birthDate?: string;
+  ageFrom?: number;
+  ageTo?: number;
+  clearAgeTo?: boolean;
   city?: string;
   /** "" clears. */
   aboutText?: string;

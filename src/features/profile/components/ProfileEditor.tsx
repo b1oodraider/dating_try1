@@ -45,7 +45,11 @@ export const ProfileEditor: React.FC = () => {
 
   // All hooks must run before any early return (Rules of Hooks).
   const [displayName, setDisplayName] = useState(profile?.displayName ?? '');
-  const [age, setAge] = useState(profile?.age != null ? String(profile.age) : '');
+  const [birthDate, setBirthDate] = useState(profile?.birthDate ?? '');
+  const [gender, setGender] = useState(profile?.gender ?? '');
+  const [seeking, setSeeking] = useState(profile?.seeking ?? '');
+  const [ageFrom, setAgeFrom] = useState(String(profile?.ageFrom ?? AGE_MIN));
+  const [ageTo, setAgeTo] = useState(profile?.ageTo != null ? String(profile.ageTo) : '');
   const [city, setCity] = useState(profile?.city ?? '');
   const [aboutText, setAboutText] = useState(profile?.aboutText ?? '');
   const [height, setHeight] = useState(profile?.heightCm != null ? String(profile.heightCm) : '');
@@ -64,7 +68,7 @@ export const ProfileEditor: React.FC = () => {
 
   // Re-sync the form whenever the server copy of these fields changes (other account, reload, save).
   const serverDisplayName = profile?.displayName ?? '';
-  const serverAge = profile?.age != null ? String(profile.age) : '';
+  const serverIdentity = `${profile?.birthDate ?? ''}|${profile?.gender ?? ''}|${profile?.seeking ?? ''}|${profile?.ageFrom ?? AGE_MIN}|${profile?.ageTo ?? ''}`;
   const serverCity = profile?.city ?? '';
   const serverAbout = profile?.aboutText ?? '';
   const serverHeight = profile?.heightCm != null ? String(profile.heightCm) : '';
@@ -73,14 +77,19 @@ export const ProfileEditor: React.FC = () => {
   const profileId = profile?.id;
   useEffect(() => {
     setDisplayName(serverDisplayName);
-    setAge(serverAge);
+    const [b, g, s, from, to] = serverIdentity.split('|');
+    setBirthDate(b);
+    setGender(g);
+    setSeeking(s);
+    setAgeFrom(from);
+    setAgeTo(to);
     setCity(serverCity);
     setAboutText(serverAbout);
     setHeight(serverHeight);
     setGoalCodes(serverGoalKey ? serverGoalKey.split(',') : []);
     setFieldErrors({});
     setFormError(null);
-  }, [profileId, serverDisplayName, serverAge, serverCity, serverAbout, serverHeight, serverGoalKey]);
+  }, [profileId, serverDisplayName, serverIdentity, serverCity, serverAbout, serverHeight, serverGoalKey]);
 
   // Once the server says nothing is missing, drop the stale "cannot publish" hint.
   const missingCount = profile?.missingForPublish?.length ?? 0;
@@ -120,16 +129,28 @@ export const ProfileEditor: React.FC = () => {
       errors.displayName = 'Имя нельзя оставить пустым';
     }
 
-    const ageText = age.trim();
-    if (ageText) {
-      const parsed = Number(ageText);
-      if (!Number.isInteger(parsed) || parsed < AGE_MIN || parsed > AGE_MAX) {
-        errors.age = `Возраст — целое число от ${AGE_MIN} до ${AGE_MAX}`;
+    // Gender and birth date lock after the first publish (support changes them).
+    const identityLocked = profile.publicationStatus !== 'DRAFT';
+    if (!identityLocked) {
+      if (birthDate) update.birthDate = birthDate;
+      if (gender) update.gender = gender as 'MALE' | 'FEMALE';
+    }
+    if (seeking) update.seeking = seeking as 'MALE' | 'FEMALE';
+    const from = Number(ageFrom);
+    if (!Number.isInteger(from) || from < AGE_MIN || from > AGE_MAX) {
+      errors.ageFrom = `Возраст — от ${AGE_MIN} до ${AGE_MAX}`;
+    } else {
+      update.ageFrom = from;
+    }
+    if (ageTo.trim()) {
+      const to = Number(ageTo);
+      if (!Number.isInteger(to) || to < from || to > AGE_MAX) {
+        errors.ageTo = `Не меньше нижней границы и не больше ${AGE_MAX}`;
       } else {
-        update.age = parsed;
+        update.ageTo = to;
       }
-    } else if (profile.age != null) {
-      errors.age = 'Возраст нельзя оставить пустым';
+    } else if (profile.ageTo != null) {
+      update.clearAgeTo = true;
     }
 
     const cityValue = city.trim();
@@ -392,21 +413,68 @@ export const ProfileEditor: React.FC = () => {
 
           <div>
             <label className="block text-xs font-semibold text-zinc-700 mb-1">
-              Возраст (18+)
+              Дата рождения (18+){profile.age != null ? ` — ${profile.age}` : ''}
             </label>
             <input
+              type="date"
+              value={birthDate}
+              disabled={profile.publicationStatus !== 'DRAFT'}
+              onChange={(e) => setBirthDate(e.target.value)}
+              aria-invalid={!!fieldErrors.birthDate}
+              className={inputClass('birthDate')}
+            />
+            <FieldError message={fieldErrors.birthDate} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-zinc-700 mb-1">Я</label>
+            <select
+              value={gender}
+              disabled={profile.publicationStatus !== 'DRAFT'}
+              onChange={(e) => setGender(e.target.value)}
+              className={inputClass('gender')}
+            >
+              <option value="">—</option>
+              <option value="FEMALE">Женщина</option>
+              <option value="MALE">Мужчина</option>
+            </select>
+            <FieldError message={fieldErrors.gender} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-zinc-700 mb-1">Ищу</label>
+            <select value={seeking} onChange={(e) => setSeeking(e.target.value)} className={inputClass('seeking')}>
+              <option value="">—</option>
+              <option value="MALE">Мужчину</option>
+              <option value="FEMALE">Женщину</option>
+            </select>
+            <FieldError message={fieldErrors.seeking} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-zinc-700 mb-1">Возраст от</label>
+            <input
               type="number"
-              inputMode="numeric"
               min={AGE_MIN}
               max={AGE_MAX}
-              step={1}
-              value={age}
-              onChange={(e) => setAge(e.target.value)}
-              placeholder="—"
-              aria-invalid={!!fieldErrors.age}
-              className={`${inputClass('age')} font-mono`}
+              value={ageFrom}
+              onChange={(e) => setAgeFrom(e.target.value)}
+              className={`${inputClass('ageFrom')} font-mono`}
             />
-            <FieldError message={fieldErrors.age} />
+            <FieldError message={fieldErrors.ageFrom} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-zinc-700 mb-1">до (пусто — любой)</label>
+            <input
+              type="number"
+              min={AGE_MIN}
+              max={AGE_MAX}
+              value={ageTo}
+              onChange={(e) => setAgeTo(e.target.value)}
+              placeholder="—"
+              className={`${inputClass('ageTo')} font-mono`}
+            />
+            <FieldError message={fieldErrors.ageTo} />
           </div>
         </div>
 

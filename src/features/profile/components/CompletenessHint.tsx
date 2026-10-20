@@ -4,7 +4,9 @@ import { CheckCircle2, CircleDashed, ChevronDown, ChevronUp, Sparkles, AlertCirc
 
 export const PUBLISH_REQUIREMENT_LABELS: Record<PublishRequirement, string> = {
   displayName: 'имя или псевдоним',
-  age: 'возраст',
+  birthDate: 'дата рождения',
+  gender: 'пол',
+  seeking: 'кого вы ищете',
   city: 'город',
   photos: 'хотя бы одна фотография',
 };

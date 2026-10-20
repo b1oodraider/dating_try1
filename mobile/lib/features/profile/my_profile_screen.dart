@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/api/api_exception.dart';
@@ -24,7 +25,9 @@ const Map<String, String> _restrictionText = {
 
 const Map<String, String> _missingText = {
   'displayName': 'имя',
-  'age': 'возраст',
+  'birthDate': 'дата рождения',
+  'gender': 'пол',
+  'seeking': 'кого ищете',
   'city': 'город',
   'photos': 'фото',
 };
@@ -43,7 +46,7 @@ class MyProfileScreen extends StatefulWidget {
 
 class _MyProfileScreenState extends State<MyProfileScreen> {
   final TextEditingController _name = TextEditingController();
-  final TextEditingController _age = TextEditingController();
+  final TextEditingController _birth = TextEditingController();
   final TextEditingController _city = TextEditingController();
   final TextEditingController _about = TextEditingController();
   final TextEditingController _status = TextEditingController();
@@ -53,6 +56,12 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   List<Tag> _allTags = const <Tag>[];
   Set<String> _tagCodes = <String>{};
   List<Restriction> _restrictions = const <Restriction>[];
+  /// The right end of the age slider means «no upper limit».
+  static const int _maxAgeSlider = 70;
+
+  String? _gender;
+  String? _seeking;
+  RangeValues _ages = const RangeValues(18, 70);
   bool _loading = true;
   bool _saving = false;
   bool _uploading = false;
@@ -67,7 +76,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
 
   @override
   void dispose() {
-    for (final c in [_name, _age, _city, _about, _status]) {
+    for (final c in [_name, _birth, _city, _about, _status]) {
       c.dispose();
     }
     super.dispose();
@@ -102,15 +111,37 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   void _apply(MyProfile profile) {
     _profile = profile;
     _name.text = profile.displayName ?? '';
-    _age.text = profile.age?.toString() ?? '';
+    final born = profile.birthDate;
+    _birth.text = born == null
+        ? ''
+        : '${born.day.toString().padLeft(2, '0')}.${born.month.toString().padLeft(2, '0')}.${born.year}';
+    _gender = profile.gender;
+    _seeking = profile.seeking;
+    _ages = RangeValues(profile.ageFrom.toDouble(),
+        (profile.ageTo ?? _maxAgeSlider).toDouble());
     _city.text = profile.city ?? '';
     _about.text = profile.aboutText ?? '';
     _status.text = profile.dailyStatusText ?? '';
     _tagCodes = profile.tags.map((t) => t.code).toSet();
   }
 
+  /// `ДД.ММ.ГГГГ` → date; null when incomplete or not a real date.
+  static DateTime? _parseBirth(String text) {
+    final m = RegExp(r'^(\d{2})\.(\d{2})\.(\d{4})$').firstMatch(text.trim());
+    if (m == null) return null;
+    final d = DateTime(int.parse(m[3]!), int.parse(m[2]!), int.parse(m[1]!));
+    return d.day == int.parse(m[1]!) && d.month == int.parse(m[2]!) ? d : null;
+  }
+
   Future<void> _save() async {
-    final age = int.tryParse(_age.text.trim());
+    final profile = _profile;
+    final birth = _parseBirth(_birth.text);
+    if (_birth.text.trim().isNotEmpty && birth == null) {
+      setState(() => _fieldErrors = {'birthDate': 'Формат ДД.ММ.ГГГГ'});
+      return;
+    }
+    final locked = profile?.identityLocked ?? false;
+    final noUpperLimit = _ages.end >= _maxAgeSlider;
     setState(() {
       _saving = true;
       _fieldErrors = const <String, String>{};
@@ -118,7 +149,12 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     try {
       final saved = await widget.session.api.updateMyProfile(
         displayName: _name.text.trim().isEmpty ? null : _name.text.trim(),
-        age: age,
+        birthDate: locked ? null : birth,
+        gender: locked ? null : _gender,
+        seeking: _seeking,
+        ageFrom: _ages.start.round(),
+        ageTo: noUpperLimit ? null : _ages.end.round(),
+        clearAgeTo: noUpperLimit,
         city: _city.text.trim().isEmpty ? null : _city.text.trim(),
         aboutText: _about.text.trim(),
         tagCodes: _tagCodes.toList(),
@@ -375,7 +411,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           ),
           const SizedBox(height: 16),
           _field(_name, 'Имя', 'displayName'),
-          _field(_age, 'Возраст', 'age', number: true),
+          _buildIdentity(profile, theme),
           _field(_city, 'Город', 'city'),
           _field(_about, 'О себе', 'aboutText', lines: 4, maxLength: 1000),
           _field(_status, 'Статус на сегодня (24 часа)', 'dailyStatusText',
@@ -441,6 +477,89 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     );
   }
 
+  /// Gender, birth date (locked after the first publish), who I look for and the ages I accept.
+  Widget _buildIdentity(MyProfile profile, ThemeData theme) {
+    final locked = profile.identityLocked;
+    final lockedHint = locked ? 'Изменить можно через поддержку' : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Я', style: theme.textTheme.titleSmall),
+        const SizedBox(height: 6),
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'FEMALE', label: Text('Женщина')),
+            ButtonSegment(value: 'MALE', label: Text('Мужчина')),
+          ],
+          selected: {if (_gender != null) _gender!},
+          emptySelectionAllowed: true,
+          onSelectionChanged: locked
+              ? null
+              : (v) => setState(() => _gender = v.isEmpty ? null : v.first),
+        ),
+        if (_fieldErrors['gender'] != null || lockedHint != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(_fieldErrors['gender'] ?? lockedHint!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                    color: _fieldErrors['gender'] != null
+                        ? theme.colorScheme.error
+                        : null)),
+          ),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: TextField(
+            controller: _birth,
+            enabled: !locked,
+            keyboardType: TextInputType.number,
+            inputFormatters: [_DateMask()],
+            decoration: InputDecoration(
+              labelText: 'Дата рождения',
+              hintText: 'ДД.ММ.ГГГГ',
+              helperText: locked
+                  ? lockedHint
+                  : 'Покажем только возраст${profile.age == null ? '' : ' (${profile.age})'}',
+              errorText: _fieldErrors['birthDate'],
+              border: const OutlineInputBorder(),
+            ),
+          ),
+        ),
+        Text('Ищу', style: theme.textTheme.titleSmall),
+        const SizedBox(height: 6),
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'MALE', label: Text('Мужчину')),
+            ButtonSegment(value: 'FEMALE', label: Text('Женщину')),
+          ],
+          selected: {if (_seeking != null) _seeking!},
+          emptySelectionAllowed: true,
+          onSelectionChanged: (v) =>
+              setState(() => _seeking = v.isEmpty ? null : v.first),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Возраст: ${_ages.start.round()}–'
+          '${_ages.end >= _maxAgeSlider ? 'без ограничения' : _ages.end.round()}',
+          style: theme.textTheme.titleSmall,
+        ),
+        RangeSlider(
+          values: _ages,
+          min: 18,
+          max: _maxAgeSlider.toDouble(),
+          divisions: _maxAgeSlider - 18,
+          labels: RangeLabels('${_ages.start.round()}',
+              _ages.end >= _maxAgeSlider ? '∞' : '${_ages.end.round()}'),
+          onChanged: (v) => setState(() => _ages = v),
+        ),
+        if (_fieldErrors['ageTo'] != null)
+          Text(_fieldErrors['ageTo']!,
+              style: TextStyle(color: theme.colorScheme.error)),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
   Widget _field(
     TextEditingController controller,
     String label,
@@ -464,4 +583,19 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           ),
         ),
       );
+}
+
+/// Types digits as `ДД.ММ.ГГГГ`, adding the dots.
+class _DateMask extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    final buffer = StringBuffer();
+    for (var i = 0; i < digits.length && i < 8; i++) {
+      if (i == 2 || i == 4) buffer.write('.');
+      buffer.write(digits[i]);
+    }
+    final text = buffer.toString();
+    return TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+  }
 }
