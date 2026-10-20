@@ -79,7 +79,7 @@ class MyProfile {
   final int ageFrom;
   final int? ageTo;
 
-  /// Gender and birth date can no longer be changed in the app.
+  /// Gender can no longer be changed in the app, the age neither (the exact date can be refined).
   bool get identityLocked => publicationStatus != 'DRAFT';
   final String? city;
   final String? aboutText;

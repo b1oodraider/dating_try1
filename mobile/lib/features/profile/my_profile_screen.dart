@@ -149,7 +149,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     try {
       final saved = await widget.session.api.updateMyProfile(
         displayName: _name.text.trim().isEmpty ? null : _name.text.trim(),
-        birthDate: locked ? null : birth,
+        birthDate: birth,
         gender: locked ? null : _gender,
         seeking: _seeking,
         ageFrom: _ages.start.round(),
@@ -511,14 +511,13 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           padding: const EdgeInsets.only(bottom: 12),
           child: TextField(
             controller: _birth,
-            enabled: !locked,
             keyboardType: TextInputType.number,
             inputFormatters: [_DateMask()],
             decoration: InputDecoration(
               labelText: 'Дата рождения',
               hintText: 'ДД.ММ.ГГГГ',
               helperText: locked
-                  ? lockedHint
+                  ? 'Можно уточнить дату, но не возраст'
                   : 'Покажем только возраст${profile.age == null ? '' : ' (${profile.age})'}',
               errorText: _fieldErrors['birthDate'],
               border: const OutlineInputBorder(),

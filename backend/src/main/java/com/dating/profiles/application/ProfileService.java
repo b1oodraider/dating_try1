@@ -153,9 +153,11 @@ public class ProfileService {
         if (everPublished && dto.gender() != null && profile.getGender() != null && dto.gender() != profile.getGender()) {
             errors.put("gender", "Пол после публикации меняется только через поддержку");
         }
-        if (everPublished && birthDate != null && profile.getBirthDate() != null
-                && !birthDate.equals(profile.getBirthDate()) && dto.birthDate() != null) {
-            errors.put("birthDate", "Дату рождения после публикации можно изменить только через поддержку");
+        // After publishing the exact date may still be refined (dates migrated from a plain age are approximate),
+        // but not to a different age.
+        if (everPublished && dto.birthDate() != null && profile.getBirthDate() != null
+                && !Objects.equals(Period.between(dto.birthDate(), LocalDate.now()).getYears(), profile.getAge())) {
+            errors.put("birthDate", "Возраст после публикации можно изменить только через поддержку");
         }
         boolean clearAgeTo = Boolean.TRUE.equals(dto.clearAgeTo());
         if (clearAgeTo && dto.ageTo() != null) {

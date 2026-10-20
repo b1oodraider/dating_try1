@@ -2879,7 +2879,7 @@ components:
       properties:
         displayName: { type: string, minLength: 2, maxLength: 50, description: После trim }
         age: { type: integer, minimum: 18, maximum: 100, description: 'Устаревшее: ставит примерную дату рождения, если нет birthDate' }
-        birthDate: { type: string, format: date, description: '18..100 лет; после первой публикации — 400 fieldErrors.birthDate' }
+        birthDate: { type: string, format: date, description: '18..100 лет; после первой публикации — только уточнение без смены возраста (иначе 400 fieldErrors.birthDate)' }
         gender: { type: string, enum: [MALE, FEMALE], description: 'После первой публикации — 400 fieldErrors.gender' }
         seeking: { type: string, enum: [MALE, FEMALE] }
         ageFrom: { type: integer, minimum: 18, maximum: 100 }

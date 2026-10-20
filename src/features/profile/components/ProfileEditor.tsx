@@ -131,10 +131,9 @@ export const ProfileEditor: React.FC = () => {
 
     // Gender and birth date lock after the first publish (support changes them).
     const identityLocked = profile.publicationStatus !== 'DRAFT';
-    if (!identityLocked) {
-      if (birthDate) update.birthDate = birthDate;
-      if (gender) update.gender = gender as 'MALE' | 'FEMALE';
-    }
+    // After publishing the exact birth date may still be refined, but not to another age.
+    if (birthDate) update.birthDate = birthDate;
+    if (!identityLocked && gender) update.gender = gender as 'MALE' | 'FEMALE';
     if (seeking) update.seeking = seeking as 'MALE' | 'FEMALE';
     const from = Number(ageFrom);
     if (!Number.isInteger(from) || from < AGE_MIN || from > AGE_MAX) {
@@ -418,7 +417,6 @@ export const ProfileEditor: React.FC = () => {
             <input
               type="date"
               value={birthDate}
-              disabled={profile.publicationStatus !== 'DRAFT'}
               onChange={(e) => setBirthDate(e.target.value)}
               aria-invalid={!!fieldErrors.birthDate}
               className={inputClass('birthDate')}

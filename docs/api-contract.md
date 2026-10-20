@@ -84,7 +84,8 @@ PUT  /me/profile           body (all optional; omitted = unchanged):
          dailyStatusText?: string (<=200; "" clears; sets 24h expiry),
          gender?: 'MALE'|'FEMALE', seeking?: 'MALE'|'FEMALE', birthDate?: 'yyyy-MM-dd' (18..100),
          ageFrom?: 18..100, ageTo?: 18..100 (>= ageFrom), clearAgeTo?: true }
-       gender and birthDate are locked after the first publish (400 fieldErrors.gender|birthDate; support changes them).
+       After the first publish gender is locked (400 fieldErrors.gender) and birthDate may only be refined within the same
+       age (400 fieldErrors.birthDate); support changes them.
        age (18..100) is legacy: sets an approximate birthDate when birthDate is absent.
        200 MyProfile ; 400 VALIDATION_ERROR (fieldErrors) | UNKNOWN_TAG
 POST /me/profile/publish   200 MyProfile ; 400 PROFILE_INCOMPLETE with fieldErrors keyed by missing fields

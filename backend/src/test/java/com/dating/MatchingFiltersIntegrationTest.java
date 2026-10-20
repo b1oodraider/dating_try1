@@ -71,6 +71,11 @@ class MatchingFiltersIntegrationTest extends IntegrationTestBase {
         putProfile(token, "{\"clearAgeTo\":true}").andExpect(jsonPath("$.ageTo").value(org.hamcrest.Matchers.nullValue()));
         putProfile(token, "{\"ageFrom\":30,\"ageTo\":20}").andExpect(status().isBadRequest());
         putProfile(token, "{\"birthDate\":\"" + LocalDate.now().minusYears(17) + "\"}").andExpect(status().isBadRequest());
+        // The exact date may be refined after publishing, the age may not change.
+        putProfile(token, "{\"birthDate\":\"" + LocalDate.now().minusYears(25).minusDays(3) + "\"}").andExpect(status().isOk());
+        putProfile(token, "{\"birthDate\":\"" + LocalDate.now().minusYears(30) + "\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.birthDate").exists());
     }
 
     // ------------------------------------------------------------------ helpers
