@@ -39,6 +39,9 @@ class MyProfile {
     this.birthDate,
     this.ageFrom = 18,
     this.ageTo,
+    this.cityId,
+    this.searchRadiusKm,
+    this.locationShared = false,
     this.city,
     this.aboutText,
     this.dailyStatusText,
@@ -82,6 +85,15 @@ class MyProfile {
   /// Gender can no longer be changed in the app, the age neither (the exact date can be refined).
   bool get identityLocked => publicationStatus != 'DRAFT';
   final String? city;
+
+  /// Dictionary city; [city] is its official name.
+  final int? cityId;
+
+  /// Search radius in km; null = no radius.
+  final int? searchRadiusKm;
+
+  /// An approximate device location is shared (distances in the feed).
+  final bool locationShared;
   final String? aboutText;
   final String? dailyStatusText;
 
@@ -122,6 +134,9 @@ class MyProfile {
       ageFrom: asInt(json['ageFrom'], 18),
       ageTo: asIntOrNull(json['ageTo']),
       city: asStringOrNull(json['city']),
+      cityId: asIntOrNull(json['cityId']),
+      searchRadiusKm: asIntOrNull(json['searchRadiusKm']),
+      locationShared: asBool(json['locationShared']),
       aboutText: asStringOrNull(json['aboutText']),
       dailyStatusText: asStringOrNull(json['dailyStatusText']),
       publicationStatus: asString(json['publicationStatus'], 'DRAFT'),

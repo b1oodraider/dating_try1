@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/api/api_exception.dart';
@@ -13,6 +14,7 @@ import '../collection/collection_screen.dart';
 import '../discovery/profile_card.dart';
 import '../safety/verification_screen.dart';
 import '../testing/test_panel_screen.dart';
+import 'city_picker.dart';
 import 'height_goals_screen.dart';
 
 const Map<String, String> _restrictionText = {
@@ -47,7 +49,6 @@ class MyProfileScreen extends StatefulWidget {
 class _MyProfileScreenState extends State<MyProfileScreen> {
   final TextEditingController _name = TextEditingController();
   final TextEditingController _birth = TextEditingController();
-  final TextEditingController _city = TextEditingController();
   final TextEditingController _about = TextEditingController();
   final TextEditingController _status = TextEditingController();
 
@@ -56,6 +57,14 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   List<Tag> _allTags = const <Tag>[];
   Set<String> _tagCodes = <String>{};
   List<Restriction> _restrictions = const <Restriction>[];
+  /// The right end of the radius slider means «no radius».
+  static const int _noRadius = 300;
+
+  int? _cityId;
+  String? _cityName;
+  double _radius = 300;
+  bool _locating = false;
+
   /// The right end of the age slider means «no upper limit».
   static const int _maxAgeSlider = 70;
 
@@ -76,7 +85,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
 
   @override
   void dispose() {
-    for (final c in [_name, _birth, _city, _about, _status]) {
+    for (final c in [_name, _birth, _about, _status]) {
       c.dispose();
     }
     super.dispose();
@@ -119,7 +128,9 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     _seeking = profile.seeking;
     _ages = RangeValues(profile.ageFrom.toDouble(),
         (profile.ageTo ?? _maxAgeSlider).toDouble());
-    _city.text = profile.city ?? '';
+    _cityId = profile.cityId;
+    _cityName = profile.city;
+    _radius = (profile.searchRadiusKm ?? _noRadius).toDouble().clamp(5, _noRadius.toDouble());
     _about.text = profile.aboutText ?? '';
     _status.text = profile.dailyStatusText ?? '';
     _tagCodes = profile.tags.map((t) => t.code).toSet();
@@ -155,7 +166,9 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         ageFrom: _ages.start.round(),
         ageTo: noUpperLimit ? null : _ages.end.round(),
         clearAgeTo: noUpperLimit,
-        city: _city.text.trim().isEmpty ? null : _city.text.trim(),
+        cityId: _cityId,
+        searchRadiusKm: _radius >= _noRadius ? null : _radius.round(),
+        clearSearchRadius: _radius >= _noRadius,
         aboutText: _about.text.trim(),
         tagCodes: _tagCodes.toList(),
         dailyStatusText: _status.text.trim(),
@@ -412,7 +425,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           const SizedBox(height: 16),
           _field(_name, 'Имя', 'displayName'),
           _buildIdentity(profile, theme),
-          _field(_city, 'Город', 'city'),
+          _buildPlace(profile, theme),
           _field(_about, 'О себе', 'aboutText', lines: 4, maxLength: 1000),
           _field(_status, 'Статус на сегодня (24 часа)', 'dailyStatusText',
               maxLength: 200),
@@ -475,6 +488,91 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         ],
       ),
     );
+  }
+
+  /// City from the dictionary, the search radius and sharing an approximate location.
+  Widget _buildPlace(MyProfile profile, ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: InputDecorator(
+            decoration: InputDecoration(
+              labelText: 'Город',
+              errorText: _fieldErrors['cityId'] ?? _fieldErrors['city'],
+              border: const OutlineInputBorder(),
+              suffixIcon: const Icon(Icons.search),
+            ),
+            child: InkWell(
+              onTap: () async {
+                final city = await pickCity(context, widget.session.api);
+                if (city != null && mounted) {
+                  setState(() {
+                    _cityId = city.id;
+                    _cityName = city.name;
+                  });
+                }
+              },
+              child: Text(_cityName?.isNotEmpty == true ? _cityName! : 'Выбрать город'),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Искать в радиусе: '
+          '${_radius >= _noRadius ? 'без ограничения' : '${_radius.round()} км'}',
+          style: theme.textTheme.titleSmall,
+        ),
+        Slider(
+          value: _radius,
+          min: 5,
+          max: _noRadius.toDouble(),
+          divisions: (_noRadius - 5) ~/ 5,
+          label: _radius >= _noRadius ? '∞' : '${_radius.round()} км',
+          onChanged: (v) => setState(() => _radius = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Учитывать моё местоположение'),
+          subtitle: const Text('Приблизительно, до ~1 км. Без него расстояния '
+              'считаются от центра города'),
+          value: profile.locationShared,
+          onChanged: _locating ? null : (on) => _toggleLocation(on),
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  Future<void> _toggleLocation(bool on) async {
+    setState(() => _locating = true);
+    try {
+      final MyProfile updated;
+      if (on) {
+        var permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+        }
+        if (permission == LocationPermission.denied ||
+            permission == LocationPermission.deniedForever) {
+          _snack('Нет доступа к местоположению — расстояния будут от центра города');
+          return;
+        }
+        final position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.low),
+        );
+        updated = await widget.session.api
+            .updateLocation(position.latitude, position.longitude);
+      } else {
+        updated = await widget.session.api.clearLocation();
+      }
+      if (mounted) setState(() => _profile = updated);
+    } catch (e) {
+      if (mounted) _snack(e is ApiException ? e.message : 'Не удалось определить местоположение');
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
   }
 
   /// Gender, birth date (locked after the first publish), who I look for and the ages I accept.

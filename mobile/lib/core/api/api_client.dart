@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../models/account.dart';
 import '../models/achievement.dart';
 import '../models/auth.dart';
+import '../models/city.dart';
 import '../models/discovery_filters.dart';
 import '../models/discovery_page.dart';
 import '../models/excluded_goals.dart';
@@ -142,6 +143,9 @@ class DatingApiClient {
     int? ageFrom,
     int? ageTo,
     bool clearAgeTo = false,
+    int? cityId,
+    int? searchRadiusKm,
+    bool clearSearchRadius = false,
     int? heightCm,
     bool clearHeight = false,
     List<String>? goalCodes,
@@ -165,6 +169,9 @@ class DatingApiClient {
         if (ageFrom != null) 'ageFrom': ageFrom,
         if (ageTo != null) 'ageTo': ageTo,
         if (clearAgeTo) 'clearAgeTo': true,
+        if (cityId != null) 'cityId': cityId,
+        if (searchRadiusKm != null) 'searchRadiusKm': searchRadiusKm,
+        if (clearSearchRadius) 'clearSearchRadius': true,
         if (heightCm != null) 'heightCm': heightCm,
         if (clearHeight) 'clearHeight': true,
         if (goalCodes != null) 'goalCodes': List<String>.of(goalCodes),
@@ -195,6 +202,25 @@ class DatingApiClient {
   Future<void> deletePhoto(String photoId) async {
     await _send('DELETE', '/me/profile/photos/${_segment(photoId)}');
   }
+
+  /// Public. City suggestions for any spelling («Питер», «Мск», typos).
+  Future<List<CitySuggestion>> searchCities(String query) async {
+    final json = await _send('GET', '/cities',
+        query: {'query': query, 'limit': '10'}, authenticated: false);
+    if (json is! List) throw _badResponse();
+    return json
+        .whereType<Map<String, dynamic>>()
+        .map(CitySuggestion.fromJson)
+        .toList();
+  }
+
+  /// Shares an approximate location (the server rounds it to ~1 km).
+  Future<MyProfile> updateLocation(double latitude, double longitude) async =>
+      MyProfile.fromJson(_expectMap(await _send('PUT', '/me/location',
+          body: {'latitude': latitude, 'longitude': longitude})));
+
+  Future<MyProfile> clearLocation() async =>
+      MyProfile.fromJson(_expectMap(await _send('DELETE', '/me/location')));
 
   // ---------------------------------------------------------------- Tags
 

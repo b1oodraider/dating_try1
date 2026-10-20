@@ -262,7 +262,10 @@ class _CardFace extends StatelessWidget {
         ? null
         : photos[math.min(photoIndex, photos.length - 1)];
     final details = [
-      if ((profile.city ?? '').isNotEmpty) profile.city!,
+      if (profile.distanceKm != null)
+        '~${profile.distanceKm} км'
+      else if ((profile.city ?? '').isNotEmpty)
+        profile.city!,
       if (profile.heightCm != null) '${profile.heightCm} см',
     ].join(' · ');
 

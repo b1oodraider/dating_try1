@@ -22,6 +22,7 @@ class PublicProfile {
     this.premium = false,
     this.verified = false,
     this.compatibility,
+    this.distanceKm,
   });
 
   final String id;
@@ -54,6 +55,9 @@ class PublicProfile {
   /// 0..100 match with me by cards; null when there is too little to compare.
   final int? compatibility;
 
+  /// Whole km; only in the feed and only when both share their location.
+  final int? distanceKm;
+
   Photo? get primaryPhoto {
     if (photos.isEmpty) return null;
     for (final photo in photos) {
@@ -80,6 +84,7 @@ class PublicProfile {
       premium: asBool(json['premium']),
       verified: asBool(json['verified']),
       compatibility: asIntOrNull(json['compatibility']),
+      distanceKm: asIntOrNull(json['distanceKm']),
     );
   }
 }
