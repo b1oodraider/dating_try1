@@ -233,6 +233,49 @@ paths:
             image/webp: {}
         '404': { $ref: '#/components/responses/Error' }
 
+  /cities:
+    get:
+      summary: Подсказки городов (справочник GeoNames)
+      security: []
+      parameters:
+        - { name: query, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 20, default: 10 } }
+      responses:
+        '200':
+          description: Точное совпадение, затем начало слова, затем похожие; крупные города выше
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: integer }
+                    name: { type: string }
+                    region: { type: string }
+                    matchedName: { type: [string, 'null'], description: 'Синоним, по которому нашлось («Питер»)' }
+
+  /me/location:
+    put:
+      summary: Приблизительное местоположение (округляется до ~1 км)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [latitude, longitude]
+              properties:
+                latitude: { type: number, minimum: -90, maximum: 90 }
+                longitude: { type: number, minimum: -180, maximum: 180 }
+      responses:
+        '200': { description: MyProfile, content: { application/json: { schema: { $ref: '#/components/schemas/MyProfile' } } } }
+        '400': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: Перестать делиться местоположением (расстояния — от центра города)
+      responses:
+        '200': { description: MyProfile, content: { application/json: { schema: { $ref: '#/components/schemas/MyProfile' } } } }
+
   /discovery/profiles:
     get:
       summary: Лента анкет
@@ -242,7 +285,9 @@ paths:
         (ageFrom..ageTo из анкеты) и мой — в его; цели пересекаются (нет целей или NOT_SURE совпадает со всеми).
         Без своих gender, seeking и birthDate — 400 PROFILE_INCOMPLETE (fieldErrors по недостающим).
       parameters:
-        - { name: city, in: query, schema: { type: string }, description: Без учёта регистра; ALL или пусто — любой город }
+        - { name: city, in: query, schema: { type: string }, description: 'Устаревшее: текст через справочник городов; ALL или пусто — любой город' }
+        - { name: cityId, in: query, schema: { type: integer }, description: Только этот город (GET /cities) }
+        - { name: radiusKm, in: query, schema: { type: integer, minimum: 1, maximum: 20000 }, description: 'Вместо сохранённого радиуса; лайкнувшие меня проходят сквозь радиус' }
         - { name: minAge, in: query, schema: { type: integer }, description: Сужает сохранённый диапазон на этот запрос }
         - { name: maxAge, in: query, schema: { type: integer }, description: Сужает сохранённый диапазон на этот запрос }
         - { name: tagCodes, in: query, schema: { type: string }, description: Коды карточек через запятую (до 10) }
@@ -2840,6 +2885,9 @@ components:
         birthDate: { type: [string, 'null'], format: date, description: 'Возраст (age) считается из неё; после первой публикации — через поддержку' }
         ageFrom: { type: integer, minimum: 18, maximum: 100, description: 'Какой возраст принимаю (по умолчанию 18); двусторонний фильтр' }
         ageTo: { type: [integer, 'null'], minimum: 18, maximum: 100, description: null — без верхней границы }
+        cityId: { type: [integer, 'null'], description: Город из справочника }
+        searchRadiusKm: { type: [integer, 'null'], description: Радиус поиска; null — без радиуса }
+        locationShared: { type: boolean, description: Поделился приблизительным местоположением }
         decorations: { $ref: '#/components/schemas/Decorations' }
         heightCm: { type: [integer, 'null'] }
         goals: { type: array, items: { $ref: '#/components/schemas/Goal' } }
@@ -2873,6 +2921,7 @@ components:
             шкала — 1 − |среднее место A − среднее место B| / длина шкалы; остальные — общие карточки / меньший выбор.
             null, если общих категорий меньше двух.
         boosted: { type: boolean, description: 'Только при app.boost.public-badge=true и активном бусте; иначе поля нет' }
+        distanceKm: { type: integer, minimum: 1, description: 'Только в ленте и когда оба поделились местоположением; иначе поля нет' }
 
     ProfileUpdate:
       type: object
@@ -2885,6 +2934,9 @@ components:
         ageFrom: { type: integer, minimum: 18, maximum: 100 }
         ageTo: { type: integer, minimum: 18, maximum: 100, description: 'Не меньше ageFrom (иначе 400 fieldErrors.ageTo)' }
         clearAgeTo: { type: boolean, description: 'true снимает верхнюю границу; вместе с ageTo — 400' }
+        cityId: { type: integer, description: 'Город из GET /cities; неизвестный — 400 fieldErrors.cityId' }
+        searchRadiusKm: { type: integer, minimum: 1, maximum: 20000 }
+        clearSearchRadius: { type: boolean }
         city: { type: string, minLength: 1, maxLength: 60 }
         aboutText: { type: string, maxLength: 1000, description: Пустая строка очищает }
         tagCodes: { type: array, maxItems: 10, items: { type: string } }

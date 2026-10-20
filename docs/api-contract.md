@@ -30,6 +30,8 @@ Photo      = { id, url, mimeType, sizeBytes, sortOrder, isPrimary, createdAt }
 MyProfile  = { id, displayName: string|null, age: number|null (computed from birthDate), city: string|null, aboutText: string|null,
                gender: 'MALE'|'FEMALE'|null, seeking: 'MALE'|'FEMALE'|null, birthDate: 'yyyy-MM-dd'|null,
                ageFrom: number (default 18), ageTo: number|null (no upper limit),
+               cityId: number|null (dictionary city; city = its official name), searchRadiusKm: number|null,
+               locationShared: boolean,
                publicationStatus: 'DRAFT'|'PUBLISHED'|'HIDDEN',
                dailyStatusText: string|null, dailyStatusExpiresAt: string|null,   // already null when expired
                tags: Tag[], photos: Photo[] (sorted by sortOrder),
@@ -76,6 +78,15 @@ DELETE /me   (auth) 204 — wipes profile, photos, sessions; token becomes inval
 ## Tags
 GET /tags  (public) 200 Tag[] sorted by sortOrder
 
+## Cities (public) — dictionary (GeoNames, CC BY 4.0: show «Данные о городах: GeoNames» in the app)
+GET /cities?query=пит&limit=10 (1..20)  200 [ { id, name, region, matchedName: string|null } ]
+  Exact name first, then prefix, then similar (typos); bigger cities first. matchedName = the alias that matched
+  when it is not the official name («Питер», «Ленинград», «СПб», «Мск»). Empty query → [].
+
+## Location (auth) — approximate, for distances; never shown to others as coordinates
+PUT    /me/location   body { latitude, longitude }  200 MyProfile (rounded to 0.01°, ~1 km) ; 400 VALIDATION_ERROR
+DELETE /me/location   200 MyProfile — distances fall back to the city centre
+
 ## My profile (auth)
 GET  /me/profile           200 MyProfile (created empty on first access: displayName/age/city null, DRAFT)
 PUT  /me/profile           body (all optional; omitted = unchanged):
@@ -83,7 +94,11 @@ PUT  /me/profile           body (all optional; omitted = unchanged):
          aboutText?: string (<=1000, "" clears), tagCodes?: string[] (<=10, must be known active codes, else 400 UNKNOWN_TAG),
          dailyStatusText?: string (<=200; "" clears; sets 24h expiry),
          gender?: 'MALE'|'FEMALE', seeking?: 'MALE'|'FEMALE', birthDate?: 'yyyy-MM-dd' (18..100),
-         ageFrom?: 18..100, ageTo?: 18..100 (>= ageFrom), clearAgeTo?: true }
+         ageFrom?: 18..100, ageTo?: 18..100 (>= ageFrom), clearAgeTo?: true,
+         cityId?: number (from GET /cities; 400 fieldErrors.cityId if unknown), searchRadiusKm?: 1..20000,
+         clearSearchRadius?: true }
+       city (free text) is legacy: resolved through the dictionary («Питер» → Санкт-Петербург); unknown text is kept
+       without an id (no distances).
        After the first publish gender is locked (400 fieldErrors.gender) and birthDate may only be refined within the same
        age (400 fieldErrors.birthDate); support changes them.
        age (18..100) is legacy: sets an approximate birthDate when birthDate is absent.
@@ -107,6 +122,10 @@ GET /discovery/profiles?city=&minAge=&maxAge=&tagCodes=A,B&tagLogic=AND|OR&page=
   Two-way hard filters (docs/matching.md): the candidate's gender is who I look for and vice versa; the candidate's
   age is in my ageFrom..ageTo and mine is in theirs (minAge/maxAge only narrow mine for this request); goals meet
   (none set or NOT_SURE matches all). Without my gender, seeking and birthDate: 400 PROFILE_INCOMPLETE (fieldErrors).
+  cityId=… (or legacy city text, resolved through the dictionary) keeps one city. radiusKm=… (or my saved
+  searchRadiusKm) keeps profiles within that many km: points are the shared location, else the city centre;
+  profiles without either are left out. A profile whose owner liked me passes through my radius.
+  PublicProfile.distanceKm (whole km, >= 1) is present only when both of us share our location.
   200 { items: PublicProfile[], page, limit, totalElements, totalPages }
 
 ## Exclusion words (auth) — private hard filter for the caller's feed, never shown to anyone else

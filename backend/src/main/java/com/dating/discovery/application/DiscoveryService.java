@@ -21,6 +21,7 @@ import com.dating.profiles.domain.CommunicationTag;
 import com.dating.profiles.domain.Profile;
 import com.dating.profiles.domain.PublicationStatus;
 import com.dating.profiles.domain.VisibilityStatus;
+import com.dating.profiles.persistence.CityRepository;
 import com.dating.profiles.persistence.ProfileRepository;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.Order;
@@ -56,12 +57,14 @@ public class DiscoveryService {
     private final DiscoveryBoosts boosts;
     private final BehaviorService behavior;
     private final CompatibilityService compatibilityService;
+    private final CityRepository cities;
 
     public DiscoveryService(ProfileRepository profileRepository, ProfilePhotoQuery photoQuery,
                             ExclusionWordsService exclusionWords, ProfileDecorationQuery decorationQuery,
                             AccountService accountService, ExcludedGoalsService excludedGoals,
                             FeatureAccess featureAccess, DiscoveryBoosts boosts, BehaviorService behavior,
-                            CompatibilityService compatibilityService) {
+                            CompatibilityService compatibilityService, CityRepository cities) {
+        this.cities = cities;
         this.behavior = behavior;
         this.compatibilityService = compatibilityService;
         this.profileRepository = profileRepository;
@@ -91,8 +94,21 @@ public class DiscoveryService {
                 .and(notOwnedBy(callerAccountId))
                 .and(mutualMatch(viewer, query));
         spec = spec.and(contributedExclusions(callerAccountId));
-        if (query.city() != null) {
-            spec = spec.and(cityEquals(query.city()));
+        Integer cityId = query.cityId();
+        if (cityId == null && query.city() != null) {
+            cityId = cities.resolve(query.city()).map(CityRepository.City::id).orElse(null);
+            if (cityId == null) {
+                spec = spec.and(cityEquals(query.city())); // shortcut: unknown free text; drop with the legacy param
+            }
+        }
+        if (cityId != null) {
+            Integer id = cityId;
+            spec = spec.and((root, q, cb) -> cb.equal(root.get("cityId"), id));
+        }
+        double[] viewerPoint = pointOf(viewer);
+        Integer radius = query.radiusKm() != null ? query.radiusKm() : viewer.getSearchRadiusKm();
+        if (radius != null && viewerPoint != null) {
+            spec = spec.and(withinRadius(viewerPoint, radius, callerAccountId));
         }
         if (!query.tagCodes().isEmpty()) {
             spec = spec.and(hasTags(query.tagCodes(), query.tagLogic()));
@@ -134,7 +150,8 @@ public class DiscoveryService {
                 .map(p -> PublicProfileDto.from(p, photos.getOrDefault(p.getId(), List.of()),
                         decorations.getOrDefault(p.getAccountId(), Map.of()), premiumOwners.contains(p.getAccountId()),
                         compatibility.get(p.getAccountId()),
-                        boostBadges.contains(p.getAccountId()) ? Boolean.TRUE : null))
+                        boostBadges.contains(p.getAccountId()) ? Boolean.TRUE : null)
+                        .withDistanceKm(sharedDistanceKm(viewer, p)))
                 .toList();
 
         return new DiscoveryPageResponseDto(items, query.page(), query.limit(),
@@ -212,6 +229,40 @@ public class DiscoveryService {
     }
 
     static final String NOT_SURE_GOAL = "NOT_SURE";
+
+    /** The shared location, else the centre of the city; null when neither is known. */
+    private double[] pointOf(Profile profile) {
+        if (profile.hasLocation()) {
+            return new double[]{profile.getLatitude(), profile.getLongitude()};
+        }
+        return profile.getCityId() == null ? null
+                : cities.findById(profile.getCityId()).map(c -> new double[]{c.latitude(), c.longitude()}).orElse(null);
+    }
+
+    /**
+     * Within the viewer's radius (own location or city centre on both sides), or the candidate already liked the
+     * viewer: such a like must not go unanswered just because the radii differ (docs/matching.md, part 1).
+     * shortcut: distance is computed per candidate row without a spatial index; add one (earthdistance/PostGIS)
+     * when a city has tens of thousands of profiles.
+     */
+    private static Specification<Profile> withinRadius(double[] point, int radiusKm, UUID viewerAccountId) {
+        return (root, q, cb) -> cb.or(
+                cb.lessThanOrEqualTo(cb.function("profile_distance_km", Double.class,
+                        cb.literal(point[0]), cb.literal(point[1]), root.get("id")), (double) radiusKm),
+                cb.isTrue(cb.function("has_liked", Boolean.class, root.get("accountId"), cb.literal(viewerAccountId))));
+    }
+
+    /** Whole km, at least 1; only when both share their location. */
+    static Integer sharedDistanceKm(Profile a, Profile b) {
+        if (!a.hasLocation() || !b.hasLocation()) {
+            return null;
+        }
+        double dLat = Math.toRadians(b.getLatitude() - a.getLatitude());
+        double dLon = Math.toRadians(b.getLongitude() - a.getLongitude());
+        double h = Math.pow(Math.sin(dLat / 2), 2) + Math.cos(Math.toRadians(a.getLatitude()))
+                * Math.cos(Math.toRadians(b.getLatitude())) * Math.pow(Math.sin(dLon / 2), 2);
+        return (int) Math.max(1, Math.round(2 * 6371 * Math.asin(Math.sqrt(h))));
+    }
 
     // ---------------------------------------------------------------- filters contributed by other modules
 

@@ -43,6 +43,9 @@ public record MyProfileDto(
         LocalDate birthDate,
         int ageFrom,
         Integer ageTo,
+        Integer cityId,
+        Integer searchRadiusKm,
+        boolean locationShared,
         Instant createdAt,
         Instant updatedAt
 ) {}

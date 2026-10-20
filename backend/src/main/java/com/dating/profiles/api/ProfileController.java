@@ -3,6 +3,7 @@ package com.dating.profiles.api;
 import com.dating.common.security.AuthenticatedUser;
 import com.dating.profiles.application.ProfileService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -30,6 +31,21 @@ public class ProfileController {
             @Valid @RequestBody ProfileUpdateDto dto
     ) {
         return ResponseEntity.ok(profileService.updateProfile(user.accountId(), dto));
+    }
+
+    /** Approximate device location (rounded to ~1 km); distances in the feed come from it. */
+    public record LocationDto(@NotNull Double latitude, @NotNull Double longitude) {
+    }
+
+    @PutMapping("/me/location")
+    public MyProfileDto updateLocation(@AuthenticationPrincipal AuthenticatedUser user,
+                                       @Valid @RequestBody LocationDto location) {
+        return profileService.updateLocation(user.accountId(), location.latitude(), location.longitude());
+    }
+
+    @DeleteMapping("/me/location")
+    public MyProfileDto clearLocation(@AuthenticationPrincipal AuthenticatedUser user) {
+        return profileService.clearLocation(user.accountId());
     }
 
     @PostMapping("/me/profile/publish")

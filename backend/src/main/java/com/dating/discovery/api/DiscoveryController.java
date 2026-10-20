@@ -28,6 +28,8 @@ public class DiscoveryController {
     public ResponseEntity<DiscoveryPageResponseDto> getProfiles(
             @AuthenticationPrincipal AuthenticatedUser user,
             @RequestParam(required = false) String city,
+            @RequestParam(required = false) Integer cityId,
+            @RequestParam(required = false) Integer radiusKm,
             @RequestParam(required = false) Integer minAge,
             @RequestParam(required = false) Integer maxAge,
             @RequestParam(required = false) Set<String> tagCodes,
@@ -39,7 +41,7 @@ public class DiscoveryController {
             @RequestParam(required = false, defaultValue = "20") int limit
     ) {
         DiscoveryQueryDto query = new DiscoveryQueryDto(city, minAge, maxAge, tagCodes, TagLogic.parse(tagLogic),
-                minHeight, maxHeight, goalCodes, page, limit);
+                minHeight, maxHeight, goalCodes, page, limit, cityId, radiusKm);
         return ResponseEntity.ok(discoveryService.searchProfiles(user.accountId(), query));
     }
 }

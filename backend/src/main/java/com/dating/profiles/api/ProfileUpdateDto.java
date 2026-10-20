@@ -63,5 +63,15 @@ public record ProfileUpdateDto(
         Integer ageTo,
 
         /** true removes the upper age limit; cannot be combined with ageTo. */
-        Boolean clearAgeTo
+        Boolean clearAgeTo,
+
+        /** City from GET /cities (wins over the free-text city). */
+        Integer cityId,
+
+        @Min(value = 1, message = "Радиус поиска — от 1 км")
+        @Max(value = 20000, message = "Радиус поиска слишком большой")
+        Integer searchRadiusKm,
+
+        /** true removes the radius (search the city / the whole country). */
+        Boolean clearSearchRadius
 ) {}

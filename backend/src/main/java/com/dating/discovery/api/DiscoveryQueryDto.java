@@ -9,6 +9,9 @@ import java.util.stream.Collectors;
 
 /**
  * @param minAge    narrows the viewer's saved age range for this request (the saved range always applies)
+ * @param city      legacy free text, resolved to a dictionary city when possible; prefer cityId
+ * @param cityId    only profiles of this city (GET /cities)
+ * @param radiusKm  overrides the saved search radius for this request
  * @param minHeight premium (ADVANCED_FILTERS): height in cm, profiles without height do not match
  * @param goalCodes profile has at least one of these goals (free)
  */
@@ -22,7 +25,9 @@ public record DiscoveryQueryDto(
         Integer maxHeight,
         Set<String> goalCodes,
         int page,
-        int limit
+        int limit,
+        Integer cityId,
+        Integer radiusKm
 ) {
     public static final int DEFAULT_LIMIT = 20;
     public static final int MAX_LIMIT = 50;
@@ -37,6 +42,9 @@ public record DiscoveryQueryDto(
         goalCodes = clean(goalCodes);
         if (tagCodes.size() > MAX_TAGS) {
             throw ApiException.badRequest("VALIDATION_ERROR", "Можно выбрать не более " + MAX_TAGS + " карточек в фильтре");
+        }
+        if (radiusKm != null && (radiusKm < 1 || radiusKm > 20000)) {
+            throw ApiException.badRequest("VALIDATION_ERROR", "Радиус поиска — от 1 до 20000 км");
         }
         if (minAge != null && maxAge != null && minAge > maxAge) {
             throw ApiException.badRequest("VALIDATION_ERROR", "Минимальный возраст больше максимального");

@@ -1,0 +1,126 @@
+databaseChangeLog:
+  # Cities as a dictionary (docs/matching.md, part 3): one id per city whatever it is called («Питер», «СПб»,
+  # «Ленинград»), with coordinates for the radius search. Data: GeoNames (CC BY 4.0), Russian populated places
+  # with >= 1000 people, rebuilt by scripts/build-cities (see db/data/README.md).
+  - changeSet:
+      id: 023-cities
+      author: dating-team
+      changes:
+        - sql:
+            sql: CREATE EXTENSION IF NOT EXISTS pg_trgm
+        - sql:
+            sql: >
+              CREATE TABLE cities (
+                id         INT PRIMARY KEY,
+                name       VARCHAR(120) NOT NULL,
+                region     VARCHAR(120) NOT NULL DEFAULT '',
+                latitude   DOUBLE PRECISION NOT NULL,
+                longitude  DOUBLE PRECISION NOT NULL,
+                population INT NOT NULL DEFAULT 0,
+                timezone   VARCHAR(40) NOT NULL DEFAULT ''
+              )
+        - sql:
+            sql: >
+              CREATE TABLE city_names (
+                city_id INT NOT NULL REFERENCES cities (id) ON DELETE CASCADE,
+                name    VARCHAR(120) NOT NULL,
+                norm    VARCHAR(120) NOT NULL,
+                kind    VARCHAR(12) NOT NULL CHECK (kind IN ('OFFICIAL', 'ALT', 'COLLOQUIAL', 'HISTORIC')),
+                PRIMARY KEY (city_id, norm)
+              )
+        - loadData:
+            tableName: cities
+            file: db/data/cities_ru.csv
+            encoding: UTF-8
+            separator: ','
+            columns:
+              - { column: { name: id, type: NUMERIC } }
+              - { column: { name: name, type: STRING } }
+              - { column: { name: region, type: STRING } }
+              - { column: { name: latitude, type: NUMERIC } }
+              - { column: { name: longitude, type: NUMERIC } }
+              - { column: { name: population, type: NUMERIC } }
+              - { column: { name: timezone, type: STRING } }
+        - loadData:
+            tableName: city_names
+            file: db/data/city_names_ru.csv
+            encoding: UTF-8
+            separator: ','
+            columns:
+              - { column: { name: city_id, type: NUMERIC } }
+              - { column: { name: name, type: STRING } }
+              - { column: { name: norm, type: STRING } }
+              - { column: { name: kind, type: STRING } }
+        - sql:
+            sql: CREATE INDEX idx_city_names_trgm ON city_names USING gin (norm gin_trgm_ops)
+        - sql:
+            sql: CREATE INDEX idx_city_names_prefix ON city_names (norm text_pattern_ops)
+      rollback:
+        - sql:
+            sql: DROP TABLE city_names; DROP TABLE cities
+
+  - changeSet:
+      id: 023-profiles-geo
+      author: dating-team
+      changes:
+        # city stays as the display name; city_id is what filters and distances use.
+        - sql:
+            sql: >
+              ALTER TABLE profiles
+                ADD COLUMN city_id INT REFERENCES cities (id),
+                ADD COLUMN latitude DOUBLE PRECISION,
+                ADD COLUMN longitude DOUBLE PRECISION,
+                ADD COLUMN location_updated_at TIMESTAMPTZ,
+                ADD COLUMN search_radius_km INT CHECK (search_radius_km BETWEEN 1 AND 20000),
+                ADD CONSTRAINT chk_profiles_location CHECK ((latitude IS NULL) = (longitude IS NULL))
+        - sql:
+            sql: CREATE INDEX idx_profiles_city ON profiles (city_id)
+        # Existing free-text cities: the most populous city with exactly that name (any kind of name).
+        - sql:
+            splitStatements: false
+            sql: |
+              UPDATE profiles p SET city_id = m.city_id, city = m.name
+                FROM (SELECT DISTINCT ON (p2.id) p2.id, c.id AS city_id, c.name
+                        FROM profiles p2
+                        JOIN city_names n ON n.norm = btrim(regexp_replace(replace(lower(p2.city), 'ё', 'е'), '[^0-9a-zа-я]+', ' ', 'g'))
+                        JOIN cities c ON c.id = n.city_id
+                       WHERE p2.city IS NOT NULL
+                       ORDER BY p2.id, c.population DESC) m
+               WHERE p.id = m.id
+        # Great-circle distance in km (haversine).
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE FUNCTION geo_distance_km(lat1 DOUBLE PRECISION, lon1 DOUBLE PRECISION,
+                                              lat2 DOUBLE PRECISION, lon2 DOUBLE PRECISION)
+              RETURNS DOUBLE PRECISION LANGUAGE sql IMMUTABLE AS $$
+                SELECT 2 * 6371 * asin(sqrt(power(sin(radians(lat2 - lat1) / 2), 2)
+                       + cos(radians(lat1)) * cos(radians(lat2)) * power(sin(radians(lon2 - lon1) / 2), 2)))
+              $$
+        # Distance from a point to a profile: its own location if shared, else the centre of its city; NULL if neither.
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE FUNCTION profile_distance_km(lat DOUBLE PRECISION, lon DOUBLE PRECISION, profile UUID)
+              RETURNS DOUBLE PRECISION LANGUAGE sql STABLE AS $$
+                SELECT geo_distance_km(lat, lon, coalesce(p.latitude, c.latitude), coalesce(p.longitude, c.longitude))
+                  FROM profiles p LEFT JOIN cities c ON c.id = p.city_id
+                 WHERE p.id = profile
+              $$
+        # Whether owner liked (or super liked) viewer: such a profile passes through the viewer's radius.
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE FUNCTION has_liked(owner UUID, viewer UUID)
+              RETURNS BOOLEAN LANGUAGE sql STABLE AS $$
+                SELECT EXISTS (SELECT 1 FROM profile_reactions r
+                                WHERE r.actor_account_id = owner AND r.target_account_id = viewer AND r.type <> 'PASS')
+              $$
+      rollback:
+        - sql:
+            sql: >
+              DROP FUNCTION has_liked(UUID, UUID);
+              DROP FUNCTION profile_distance_km(DOUBLE PRECISION, DOUBLE PRECISION, UUID);
+              DROP FUNCTION geo_distance_km(DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION);
+              ALTER TABLE profiles DROP CONSTRAINT chk_profiles_location, DROP COLUMN search_radius_km,
+                DROP COLUMN location_updated_at, DROP COLUMN longitude, DROP COLUMN latitude, DROP COLUMN city_id

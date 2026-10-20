@@ -32,8 +32,15 @@ public record PublicProfileDto(
         boolean premium,
         boolean verified,
         Integer compatibility,
-        @JsonInclude(JsonInclude.Include.NON_NULL) Boolean boosted
+        @JsonInclude(JsonInclude.Include.NON_NULL) Boolean boosted,
+        @JsonInclude(JsonInclude.Include.NON_NULL) Integer distanceKm
 ) {
+    /** @param distanceKm shown only when both people share their location (city centres would mislead) */
+    public PublicProfileDto withDistanceKm(Integer distanceKm) {
+        return new PublicProfileDto(id, displayName, age, city, aboutText, dailyStatusText, tags, photos, decorations,
+                heightCm, goals, premium, verified, compatibility, boosted, distanceKm);
+    }
+
     /** @param compatibility percent match by cards with the viewer, null when there is too little to compare */
     public static PublicProfileDto from(Profile profile, List<PhotoDto> photos, Map<String, DecorationDto> decorations,
                                         boolean premium, Integer compatibility, Boolean boosted) {
@@ -57,7 +64,8 @@ public record PublicProfileDto(
                 premium,
                 profile.isVerified(),
                 compatibility,
-                boosted
+                boosted,
+                null
         );
     }
 }

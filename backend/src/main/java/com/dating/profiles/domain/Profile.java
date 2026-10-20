@@ -44,8 +44,26 @@ public class Profile extends AssignedIdEntity {
     @Column(name = "pref_age_max")
     private Integer prefAgeMax;
 
+    /** Display name of the city; city_id is what filters and distances use. */
     @Column(name = "city", length = 60)
     private String city;
+
+    @Column(name = "city_id")
+    private Integer cityId;
+
+    /** Approximate location (rounded to ~1 km) when the person shares it; else the city centre is used. */
+    @Column(name = "latitude")
+    private Double latitude;
+
+    @Column(name = "longitude")
+    private Double longitude;
+
+    @Column(name = "location_updated_at")
+    private Instant locationUpdatedAt;
+
+    /** Search radius in km; null = no radius (city filter or the whole country). */
+    @Column(name = "search_radius_km")
+    private Integer searchRadiusKm;
 
     @Column(name = "about_text", length = 1000)
     private String aboutText;
@@ -175,6 +193,45 @@ public class Profile extends AssignedIdEntity {
 
     public void setCity(String city) {
         this.city = city;
+        touch();
+    }
+
+    public Integer getCityId() {
+        return cityId;
+    }
+
+    /** A city from the dictionary: its id and official name. */
+    public void setCity(int cityId, String name) {
+        this.cityId = cityId;
+        this.city = name;
+        touch();
+    }
+
+    public Double getLatitude() {
+        return latitude;
+    }
+
+    public Double getLongitude() {
+        return longitude;
+    }
+
+    public boolean hasLocation() {
+        return latitude != null;
+    }
+
+    /** Both null clears the shared location. Location updates do not count as profile edits. */
+    public void setLocation(Double latitude, Double longitude) {
+        this.latitude = latitude;
+        this.longitude = longitude;
+        this.locationUpdatedAt = latitude == null ? null : Instant.now();
+    }
+
+    public Integer getSearchRadiusKm() {
+        return searchRadiusKm;
+    }
+
+    public void setSearchRadiusKm(Integer searchRadiusKm) {
+        this.searchRadiusKm = searchRadiusKm;
         touch();
     }
 

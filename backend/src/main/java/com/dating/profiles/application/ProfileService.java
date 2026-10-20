@@ -14,6 +14,7 @@ import com.dating.profiles.api.TagResponseDto;
 import com.dating.profiles.domain.CommunicationTag;
 import com.dating.profiles.domain.Profile;
 import com.dating.profiles.domain.PublicationStatus;
+import com.dating.profiles.persistence.CityRepository;
 import com.dating.profiles.persistence.CommunicationTagRepository;
 import com.dating.profiles.persistence.ProfileRepository;
 import org.springframework.context.ApplicationEventPublisher;
@@ -47,6 +48,7 @@ public class ProfileService {
     private final ProfileDecorationQuery decorationQuery;
     private final RelationshipGoalRepository goalRepository;
     private final FeatureAccess featureAccess;
+    private final CityRepository cityRepository;
 
     public ProfileService(ProfileRepository profileRepository,
                           CommunicationTagRepository tagRepository,
@@ -55,7 +57,9 @@ public class ProfileService {
                           ApplicationEventPublisher eventPublisher,
                           ProfileDecorationQuery decorationQuery,
                           RelationshipGoalRepository goalRepository,
-                          FeatureAccess featureAccess) {
+                          FeatureAccess featureAccess,
+                          CityRepository cityRepository) {
+        this.cityRepository = cityRepository;
         this.profileRepository = profileRepository;
         this.tagRepository = tagRepository;
         this.photoQuery = photoQuery;
@@ -122,11 +126,23 @@ public class ProfileService {
             }
         }
         String city = null;
-        if (dto.city() != null) {
+        CityRepository.City dictionaryCity = null;
+        if (dto.cityId() != null) {
+            dictionaryCity = cityRepository.findById(dto.cityId()).orElse(null);
+            if (dictionaryCity == null) {
+                errors.put("cityId", "Выберите город из списка");
+            }
+        } else if (dto.city() != null) {
             city = dto.city().trim();
             if (city.isEmpty() || city.length() > MAX_CITY_LENGTH) {
                 errors.put("city", "Укажите город (до 60 символов)");
+            } else {
+                // Older clients send text: «Питер» and «Санкт-Петербург» become the same city.
+                dictionaryCity = cityRepository.resolve(city).orElse(null);
             }
+        }
+        if (Boolean.TRUE.equals(dto.clearSearchRadius()) && dto.searchRadiusKm() != null) {
+            errors.put("searchRadiusKm", "Нельзя одновременно указать и убрать радиус");
         }
         Set<CommunicationTag> tags = null;
         if (dto.tagCodes() != null) {
@@ -197,8 +213,15 @@ public class ProfileService {
         if (dto.ageFrom() != null || dto.ageTo() != null || clearAgeTo) {
             profile.setPrefAgeRange(ageFrom, ageTo);
         }
-        if (city != null) {
-            profile.setCity(city);
+        if (dictionaryCity != null) {
+            profile.setCity(dictionaryCity.id(), dictionaryCity.name());
+        } else if (city != null) {
+            profile.setCity(city); // shortcut: unknown free-text city keeps no id (no distance); drop when clients send cityId
+        }
+        if (Boolean.TRUE.equals(dto.clearSearchRadius())) {
+            profile.setSearchRadiusKm(null);
+        } else if (dto.searchRadiusKm() != null) {
+            profile.setSearchRadiusKm(dto.searchRadiusKm());
         }
         if (dto.aboutText() != null) {
             String about = dto.aboutText().trim();
@@ -253,6 +276,28 @@ public class ProfileService {
             errors.put("goalCodes", "Неизвестные цели: " + String.join(", ", unknown));
         }
         return new HashSet<>(found);
+    }
+
+    /**
+     * Shares the device location, rounded to 0.01° (~1 km) so nobody can work out an address from distances.
+     */
+    @Transactional
+    public MyProfileDto updateLocation(UUID accountId, double latitude, double longitude) {
+        if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+            throw ApiException.validation("VALIDATION_ERROR", "Некорректные координаты",
+                    Map.of("latitude", "Широта −90..90, долгота −180..180"));
+        }
+        Profile profile = lockOrCreateProfile(accountId);
+        profile.setLocation(Math.round(latitude * 100) / 100.0, Math.round(longitude * 100) / 100.0);
+        return toMyProfileDto(profile);
+    }
+
+    /** Stops sharing the location: distances fall back to the city centre. */
+    @Transactional
+    public MyProfileDto clearLocation(UUID accountId) {
+        Profile profile = lockOrCreateProfile(accountId);
+        profile.setLocation(null, null);
+        return toMyProfileDto(profile);
     }
 
     @Transactional(readOnly = true)
@@ -337,6 +382,9 @@ public class ProfileService {
                 profile.getBirthDate(),
                 profile.getPrefAgeMin(),
                 profile.getPrefAgeMax(),
+                profile.getCityId(),
+                profile.getSearchRadiusKm(),
+                profile.hasLocation(),
                 profile.getCreatedAt(),
                 profile.getUpdatedAt()
         );
