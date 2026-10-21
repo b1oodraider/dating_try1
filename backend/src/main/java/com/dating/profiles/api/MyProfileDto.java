@@ -46,6 +46,8 @@ public record MyProfileDto(
         Integer cityId,
         Integer searchRadiusKm,
         boolean locationShared,
+        /** Gender and birth date can only be changed via support (published, not a test account). */
+        boolean identityLocked,
         boolean invisible,
         boolean showPremiumBadge,
         Instant createdAt,

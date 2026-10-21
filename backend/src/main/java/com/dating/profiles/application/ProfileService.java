@@ -49,6 +49,7 @@ public class ProfileService {
     private final ProfileDecorationQuery decorationQuery;
     private final RelationshipGoalRepository goalRepository;
     private final FeatureAccess featureAccess;
+    private final com.dating.accounts.application.AccountService accounts;
     private final CityRepository cityRepository;
 
     public ProfileService(ProfileRepository profileRepository,
@@ -59,7 +60,9 @@ public class ProfileService {
                           ProfileDecorationQuery decorationQuery,
                           RelationshipGoalRepository goalRepository,
                           FeatureAccess featureAccess,
-                          CityRepository cityRepository) {
+                          CityRepository cityRepository,
+                          com.dating.accounts.application.AccountService accounts) {
+        this.accounts = accounts;
         this.cityRepository = cityRepository;
         this.profileRepository = profileRepository;
         this.tagRepository = tagRepository;
@@ -166,13 +169,13 @@ public class ProfileService {
                 errors.put("birthDate", "Возраст должен быть от 18 до 100 лет");
             }
         }
-        boolean everPublished = profile.getPublicationStatus() != PublicationStatus.DRAFT;
-        if (everPublished && dto.gender() != null && profile.getGender() != null && dto.gender() != profile.getGender()) {
+        boolean identityLocked = identityLocked(profile);
+        if (identityLocked && dto.gender() != null && profile.getGender() != null && dto.gender() != profile.getGender()) {
             errors.put("gender", "Пол после публикации меняется только через поддержку");
         }
         // After publishing the exact date may still be refined (dates migrated from a plain age are approximate),
         // but not to a different age.
-        if (everPublished && dto.birthDate() != null && profile.getBirthDate() != null
+        if (identityLocked && dto.birthDate() != null && profile.getBirthDate() != null
                 && !Objects.equals(Period.between(dto.birthDate(), LocalDate.now()).getYears(), profile.getAge())) {
             errors.put("birthDate", "Возраст после публикации можно изменить только через поддержку");
         }
@@ -202,7 +205,7 @@ public class ProfileService {
         if (displayName != null) {
             profile.setDisplayName(displayName);
         }
-        if (birthDate != null && (dto.birthDate() != null || !everPublished || profile.getBirthDate() == null)) {
+        if (birthDate != null && (dto.birthDate() != null || !identityLocked || profile.getBirthDate() == null)) {
             profile.setBirthDate(birthDate);
         }
         if (dto.gender() != null) {
@@ -395,11 +398,21 @@ public class ProfileService {
                 profile.getCityId(),
                 profile.getSearchRadiusKm(),
                 profile.hasLocation(),
+                identityLocked(profile),
                 profile.isInvisible(),
                 profile.isShowPremiumBadge(),
                 profile.getCreatedAt(),
                 profile.getUpdatedAt()
         );
+    }
+
+    /**
+     * Gender and age are fixed after the first publication (changes go through support); test accounts may
+     * change them freely, so testers can try both sides of the feed.
+     */
+    private boolean identityLocked(Profile profile) {
+        return profile.getPublicationStatus() != PublicationStatus.DRAFT
+                && !accounts.isTestAccount(profile.getAccountId());
     }
 
     /**

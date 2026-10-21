@@ -45,6 +45,7 @@ MyProfile  = { id, displayName: string|null, age: number|null (computed from bir
                missingForPublish: string[]   // subset of 'displayName','birthDate','gender','seeking','city','photos'; empty => can publish
                decorations: Decorations,     // how others see my profile
                verified: boolean,            // selfie checked by a moderator; kept when photos are added
+               identityLocked: boolean,      // gender and birth date change only via support (never for test accounts)
                createdAt, updatedAt }
 PublicProfile = { id, displayName, age, city, aboutText: string|null, dailyStatusText: string|null, tags: Tag[], photos: Photo[],
                   decorations: Decorations, verified: boolean (selfie checked by a moderator, see Selfie verification),

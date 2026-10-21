@@ -39,6 +39,23 @@ class MatchingFiltersIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void testAccountsChangeGenderAndAgeAfterPublishing() throws Exception {
+        String challenge = com.jayway.jsonpath.JsonPath.read(body(mvc.perform(post("/api/v1/auth/otp/request")
+                .contentType("application/json").content(phoneBody("+78000000001")))
+                .andExpect(status().isOk()).andReturn()), "$.challengeId");
+        String token = com.jayway.jsonpath.JsonPath.read(body(verify(challenge, "654321")
+                .andExpect(status().isOk()).andReturn()), "$.token");
+        publishWith(token, "Тестер", uniqueCity(), java.util.List.of());
+
+        putProfile(token, "{\"gender\":\"FEMALE\",\"seeking\":\"MALE\"}").andExpect(status().isOk())
+                .andExpect(jsonPath("$.gender").value("FEMALE"))
+                .andExpect(jsonPath("$.identityLocked").value(false));
+        putProfile(token, "{\"birthDate\":\"" + LocalDate.now().minusYears(40) + "\"}").andExpect(status().isOk())
+                .andExpect(jsonPath("$.age").value(40));
+        putProfile(token, "{\"gender\":\"MALE\",\"seeking\":\"MALE\"}").andExpect(status().isOk());
+    }
+
+    @Test
     void feedNeedsOwnGenderAndBirthDateAndGenderLocksAfterPublishing() throws Exception {
         String token = login(newPhone());
         mvc.perform(get("/api/v1/discovery/profiles").header("Authorization", bearer(token)))
@@ -64,6 +81,8 @@ class MatchingFiltersIntegrationTest extends IntegrationTestBase {
         putProfile(token, "{\"gender\":\"MALE\"}")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.gender").exists());
+        mvc.perform(get("/api/v1/me/profile").header("Authorization", bearer(token)))
+                .andExpect(jsonPath("$.identityLocked").value(true));
         putProfile(token, "{\"seeking\":\"FEMALE\",\"ageFrom\":25,\"ageTo\":35}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.seeking").value("FEMALE"))

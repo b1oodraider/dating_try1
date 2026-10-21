@@ -42,6 +42,7 @@ class MyProfile {
     this.cityId,
     this.searchRadiusKm,
     this.locationShared = false,
+    this.identityLocked = false,
     this.invisible = false,
     this.showPremiumBadge = true,
     this.city,
@@ -85,7 +86,8 @@ class MyProfile {
   final int? ageTo;
 
   /// Gender can no longer be changed in the app, the age neither (the exact date can be refined).
-  bool get identityLocked => publicationStatus != 'DRAFT';
+  /// Gender and birth date are changed only via support (test accounts: never locked).
+  final bool identityLocked;
   final String? city;
 
   /// Dictionary city; [city] is its official name.
@@ -145,6 +147,7 @@ class MyProfile {
       cityId: asIntOrNull(json['cityId']),
       searchRadiusKm: asIntOrNull(json['searchRadiusKm']),
       locationShared: asBool(json['locationShared']),
+      identityLocked: asBool(json['identityLocked'], asString(json['publicationStatus'], 'DRAFT') != 'DRAFT'),
       invisible: asBool(json['invisible']),
       showPremiumBadge: json['showPremiumBadge'] != false,
       aboutText: asStringOrNull(json['aboutText']),
