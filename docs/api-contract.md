@@ -126,6 +126,12 @@ GET /discovery/profiles?city=&minAge=&maxAge=&tagCodes=A,B&tagLogic=AND|OR&page=
   searchRadiusKm) keeps profiles within that many km: points are the shared location, else the city centre;
   profiles without either are left out. A profile whose owner liked me passes through my radius.
   PublicProfile.distanceKm (whole km, >= 1) is present only when both of us share our location.
+  Order: best score first (docs/matching.md, part 2; SQL feed_score_parts in migration 024): distance (up to 30;
+  a city centre on either side = 15), shared goals (up to 25), profile quality (up to 20), −0.15 per day without a
+  visit (premium −0.1), boost +12, newcomer week +15, outside the candidate's own radius −20, shown 10 min–3 h ago
+  without a swipe −10, people who liked me get a random 0..25 (stable for a day). Never by the date of an edit.
+GET /admin/discovery/score?viewerAccountId=&candidateProfileId=   (MODERATOR|ADMIN) 200 { distance, goals, quality,
+  recency, boost, newcomer, outside_their_radius, recently_shown, liked_me, total } — why a profile stands where it does
   200 { items: PublicProfile[], page, limit, totalElements, totalPages }
 
 ## Exclusion words (auth) — private hard filter for the caller's feed, never shown to anyone else
@@ -306,8 +312,8 @@ DELETE /testing/gacha/pity                    reset all counters
 DELETE /testing/gacha/history                 delete pull history (wallet and counters are kept)
 Tickets: POST /testing/wallet/items/GACHA_TICKET { quantity }. End of a limited banner: POST /testing/clock/advance { days }.
 ## Boost (auth) — see docs/boost.md
-For `app.boost.duration` (default 30 min) the caller's PUBLISHED profile goes first in other users' discovery,
-ONLY among profiles that already match their filters (city/age/tags/premium filters/exclusion words/excluded goals/
+For `app.boost.duration` (default 30 min) the caller's PUBLISHED profile gets +12 to its feed score (it is shown more
+often, but a clearly better match stays above it), ONLY among profiles that already match their filters (city/age/tags/premium filters/exclusion words/excluded goals/
 test-real isolation all still apply). Costs 1 BOOST consumable (premium: 1 per week, TOP_UP).
 BoostStatus = { active: boolean,
                 startsAt: string|null, endsAt: string|null,   // current boost; null when not active

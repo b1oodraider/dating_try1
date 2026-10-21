@@ -159,16 +159,18 @@ public class DiscoveryService {
     }
 
     /**
-     * Boosted profiles first (they only reorder profiles that matched the filters), then the newest updates.
+     * Best score first (SQL feed_score, migration 024: distance, goals, quality, recency, boost, newcomer, the
+     * candidate's radius, recently shown, liked me at random places); never by the date of the last edit.
      * Sets ORDER BY only on the page query, not on the count query.
+     * shortcut: the score is computed per candidate row on every page; precompute when a city has tens of
+     * thousands of matching profiles.
      */
     private Specification<Profile> feedOrder(UUID viewerAccountId) {
         return (root, q, cb) -> {
             if (!Long.class.equals(q.getResultType())) {
-                List<Order> orders = new ArrayList<>(boosts.leadingOrders(root, cb, viewerAccountId));
-                orders.add(cb.desc(root.get("updatedAt")));
-                orders.add(cb.desc(root.get("id")));
-                q.orderBy(orders);
+                q.orderBy(List.<Order>of(
+                        cb.desc(cb.function("feed_score", Double.class, cb.literal(viewerAccountId), root.get("id"))),
+                        cb.asc(root.get("id"))));
             }
             return cb.conjunction();
         };

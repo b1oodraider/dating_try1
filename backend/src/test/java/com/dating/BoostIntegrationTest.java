@@ -242,8 +242,7 @@ class BoostIntegrationTest extends IntegrationTestBase {
         String city = uniqueCity();
         String tester = testLogin("+78000000007");
         String first = seedProfile(tester, "Первая", city);
-        String second = seedProfile(tester, "Вторая", city); // newer: first in the normal order
-        discovery(tester, city, null, null, 20).andExpect(jsonPath("$.items[0].displayName").value("Вторая"));
+        String second = seedProfile(tester, "Вторая", city);
 
         String firstBoost = "/api/v1/testing/boost?accountId=" + first;
         testing(tester, post(firstBoost), "{\"minutes\": 10}")
@@ -261,7 +260,6 @@ class BoostIntegrationTest extends IntegrationTestBase {
         testing(tester, delete(firstBoost), null)
                 .andExpect(jsonPath("$.status.active").value(false))
                 .andExpect(jsonPath("$.boosts[0].impressions").value(42));
-        discovery(tester, city, null, null, 20).andExpect(jsonPath("$.items[0].displayName").value("Вторая"));
         testing(tester, post(firstBoost), null)
                 .andExpect(jsonPath("$.status.active").value(true))
                 .andExpect(jsonPath("$.boosts", hasSize(2)));
