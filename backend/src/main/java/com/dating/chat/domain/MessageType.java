@@ -5,5 +5,7 @@ package com.dating.chat.domain;
  */
 public enum MessageType {
     TEXT,
-    STICKER
+    STICKER,
+    /** Posted by the server when a date plan is proposed, edited, accepted, declined or cancelled. */
+    DATE_PLAN
 }

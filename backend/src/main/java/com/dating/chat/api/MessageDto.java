@@ -14,6 +14,7 @@ import java.util.UUID;
  * @param text            TEXT messages only
  * @param stickerPackCode STICKER messages only (catalog code of the pack, e.g. STICKERS_STUB_CATS)
  * @param sticker         STICKER messages only (code from the pack's attributes.stickers)
+ * @param datePlanId      DATE_PLAN messages only: the plan (GET /date-plans/{id}); text is its one-line summary
  */
 public record MessageDto(
         UUID id,
@@ -24,12 +25,13 @@ public record MessageDto(
         String stickerPackCode,
         String sticker,
         String clientMessageId,
-        Instant createdAt
+        Instant createdAt,
+        UUID datePlanId
 ) {
     public static MessageDto of(ChatMessage message, UUID viewerAccountId) {
         boolean mine = message.senderAccountId().equals(viewerAccountId);
         return new MessageDto(message.id(), message.matchId(), mine, message.type(), message.text(),
                 message.stickerPackCode(), message.sticker(), mine ? message.clientMessageId() : null,
-                message.createdAt());
+                message.createdAt(), message.datePlanId());
     }
 }

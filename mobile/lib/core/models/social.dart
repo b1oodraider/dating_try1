@@ -32,14 +32,18 @@ class ChatMessage {
     this.sticker,
     this.clientMessageId,
     this.createdAt,
+    this.datePlanId,
   });
 
   final String id;
   final String matchId;
   final bool mine;
 
-  /// TEXT or STICKER.
+  /// TEXT, STICKER or DATE_PLAN (posted by the server for a plan change; [text] is its summary).
   final String type;
+
+  /// DATE_PLAN messages only.
+  final String? datePlanId;
   final String? text;
   final String? stickerPackCode;
   final String? sticker;
@@ -47,6 +51,8 @@ class ChatMessage {
   final DateTime? createdAt;
 
   bool get isSticker => type == 'STICKER';
+
+  bool get isDatePlan => type == 'DATE_PLAN';
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
         id: asString(json['id']),
@@ -58,6 +64,7 @@ class ChatMessage {
         sticker: asStringOrNull(json['sticker']),
         clientMessageId: asStringOrNull(json['clientMessageId']),
         createdAt: asDateTimeOrNull(json['createdAt']),
+        datePlanId: asStringOrNull(json['datePlanId']),
       );
 }
 

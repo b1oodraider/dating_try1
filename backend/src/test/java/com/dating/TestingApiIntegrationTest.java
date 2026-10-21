@@ -61,6 +61,8 @@ class TestingApiIntegrationTest extends IntegrationTestBase {
                 .andExpect(jsonPath(item("TEST_SUPERLIKE", "periodicQuantity"), contains(3)));
         testing(token, put("/api/v1/testing/wallet/items/TEST_SUPERLIKE"), "{\"quantity\": 5, \"total\": true}")
                 .andExpect(jsonPath(item("TEST_SUPERLIKE", "quantity"), contains(5)));
+        testing(token, put("/api/v1/testing/wallet/items/TEST_SUPERLIKE"), "{\"quantity\": 0}") // bought part back to 0
+                .andExpect(jsonPath(item("TEST_SUPERLIKE", "quantity"), contains(3)));
 
         // "Next week": the 7-day premium has run out, so no new allowance.
         testing(token, post("/api/v1/testing/clock/advance"), "{\"days\": 7}")

@@ -1,0 +1,97 @@
+databaseChangeLog:
+  # Date plan in chat (docs/date-plan.md): a premium user proposes a meeting of 1..5 points (place on the map,
+  # time, kind of activity, comment); the other side accepts or declines, a premium user may edit it (a counter
+  # proposal). Every change is kept in date_plan_history and posted to the chat as a DATE_PLAN message.
+  # Venues: places curated by staff; sponsored ones carry the advertising label data (38-FZ: advertiser, ERID).
+  - changeSet:
+      id: 034-date-plans
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE venues (
+                id          UUID PRIMARY KEY,
+                name        VARCHAR(120) NOT NULL,
+                address     VARCHAR(200),
+                latitude    DOUBLE PRECISION NOT NULL CHECK (latitude BETWEEN -90 AND 90),
+                longitude   DOUBLE PRECISION NOT NULL CHECK (longitude BETWEEN -180 AND 180),
+                category    VARCHAR(20) NOT NULL
+                            CHECK (category IN ('COFFEE', 'WALK', 'FOOD', 'CINEMA', 'CULTURE', 'ACTIVE', 'OTHER')),
+                description VARCHAR(300),
+                sponsored   BOOLEAN NOT NULL DEFAULT FALSE,
+                advertiser  VARCHAR(160),
+                erid        VARCHAR(64),
+                test_only   BOOLEAN NOT NULL DEFAULT FALSE,
+                active      BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                updated_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                CHECK (NOT sponsored OR advertiser IS NOT NULL)
+              )
+        - sql:
+            sql: CREATE INDEX idx_venues_geo ON venues (latitude, longitude) WHERE active
+        - sql:
+            sql: >
+              CREATE TABLE date_plans (
+                id                     UUID PRIMARY KEY,
+                match_id               UUID NOT NULL REFERENCES matches (id) ON DELETE CASCADE,
+                proposer_account_id    UUID NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+                last_editor_account_id UUID NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+                status                 VARCHAR(12) NOT NULL
+                                       CHECK (status IN ('PROPOSED', 'ACCEPTED', 'DECLINED', 'CANCELLED')),
+                version                INT NOT NULL DEFAULT 1,
+                created_at             TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                updated_at             TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+        - sql:
+            # At most one plan in play per match (proposed or agreed).
+            sql: >
+              CREATE UNIQUE INDEX uq_date_plans_open ON date_plans (match_id)
+              WHERE status IN ('PROPOSED', 'ACCEPTED')
+        - sql:
+            sql: >
+              CREATE TABLE date_plan_items (
+                plan_id    UUID NOT NULL REFERENCES date_plans (id) ON DELETE CASCADE,
+                position   INT NOT NULL,
+                place_name VARCHAR(120) NOT NULL,
+                address    VARCHAR(200),
+                latitude   DOUBLE PRECISION NOT NULL CHECK (latitude BETWEEN -90 AND 90),
+                longitude  DOUBLE PRECISION NOT NULL CHECK (longitude BETWEEN -180 AND 180),
+                starts_at  TIMESTAMP WITH TIME ZONE NOT NULL,
+                activity   VARCHAR(20) NOT NULL
+                           CHECK (activity IN ('COFFEE', 'WALK', 'FOOD', 'CINEMA', 'CULTURE', 'ACTIVE', 'OTHER')),
+                comment    VARCHAR(300),
+                venue_id   UUID REFERENCES venues (id) ON DELETE SET NULL,
+                PRIMARY KEY (plan_id, position)
+              )
+        - sql:
+            sql: >
+              CREATE TABLE date_plan_history (
+                id                UUID PRIMARY KEY,
+                plan_id           UUID NOT NULL REFERENCES date_plans (id) ON DELETE CASCADE,
+                version           INT NOT NULL,
+                editor_account_id UUID REFERENCES accounts (id) ON DELETE SET NULL,
+                action            VARCHAR(12) NOT NULL
+                                  CHECK (action IN ('PROPOSE', 'EDIT', 'ACCEPT', 'DECLINE', 'CANCEL')),
+                items             JSONB NOT NULL,
+                created_at        TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+        - sql:
+            sql: CREATE INDEX idx_date_plan_history_plan ON date_plan_history (plan_id, created_at)
+        # Chat: a DATE_PLAN message points at the plan; its text is the short line for the chat list and pushes.
+        - sql:
+            sql: ALTER TABLE chat_messages ADD COLUMN date_plan_id UUID REFERENCES date_plans (id) ON DELETE CASCADE
+        - sql:
+            sql: >
+              ALTER TABLE chat_messages
+                DROP CONSTRAINT chat_messages_type_check,
+                ADD CONSTRAINT chat_messages_type_check CHECK (type IN ('TEXT', 'STICKER', 'DATE_PLAN'))
+        - sql:
+            sql: ALTER TABLE chat_messages DROP CONSTRAINT chat_messages_check
+        - sql:
+            sql: >
+              ALTER TABLE chat_messages ADD CONSTRAINT chat_messages_content_check CHECK (
+                (type = 'TEXT' AND text IS NOT NULL AND sticker_pack_code IS NULL AND sticker IS NULL
+                   AND date_plan_id IS NULL)
+                OR (type = 'STICKER' AND text IS NULL AND sticker_pack_code IS NOT NULL AND sticker IS NOT NULL
+                   AND date_plan_id IS NULL)
+                OR (type = 'DATE_PLAN' AND text IS NOT NULL AND date_plan_id IS NOT NULL))

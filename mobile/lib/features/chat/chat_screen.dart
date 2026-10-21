@@ -8,6 +8,9 @@ import '../../core/api/api_exception.dart';
 import '../../core/api/realtime.dart';
 import '../../core/format.dart';
 import '../../core/models/social.dart';
+import '../../core/models/date_plan.dart';
+import '../dates/date_plan_editor.dart';
+import '../dates/date_plan_sheet.dart';
 import '../discovery/profile_details_sheet.dart';
 import '../safety/report_sheet.dart';
 import 'chats_controller.dart';
@@ -163,6 +166,23 @@ class _ChatScreenState extends State<ChatScreen> {
       _add(message);
     } else if (event.name == 'typing' && event.data['matchId'] == widget.matchId) {
       _setTyping(true);
+    }
+  }
+
+  /// The plan in play, or a new proposal (premium; the server answers 403 otherwise).
+  Future<void> _openDatePlan() async {
+    try {
+      final plan = await _chats.api.getDatePlan(widget.matchId);
+      if (!mounted) return;
+      if (plan != null) {
+        await showDatePlan(context, api: _chats.api, matchId: widget.matchId, planId: plan.id);
+        return;
+      }
+      await Navigator.of(context).push<DatePlan>(MaterialPageRoute(
+        builder: (_) => DatePlanEditorScreen(api: _chats.api, matchId: widget.matchId),
+      ));
+    } catch (e) {
+      if (mounted) _snack(describeError(e));
     }
   }
 
@@ -338,6 +358,13 @@ class _ChatScreenState extends State<ChatScreen> {
                                 );
                               }
                               final message = _messages[index];
+                              if (message.isDatePlan) {
+                                return _DatePlanCard(
+                                  message: message,
+                                  onOpen: () => showDatePlan(context,
+                                      api: _chats.api, matchId: widget.matchId, planId: message.datePlanId),
+                                );
+                              }
                               return _Bubble(
                                 message: message,
                                 read: message.mine &&
@@ -389,6 +416,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
+                    IconButton(
+                      tooltip: 'План встречи',
+                      onPressed: _openDatePlan,
+                      icon: const Icon(Icons.event_outlined),
+                    ),
                     Expanded(
                       child: TextField(
                         controller: _input,
@@ -515,6 +547,57 @@ class _Bubble extends StatelessWidget {
                 ],
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A date plan change in the chat: its summary and a way to open the plan.
+class _DatePlanCard extends StatelessWidget {
+  const _DatePlanCard({required this.message, required this.onOpen});
+
+  final ChatMessage message;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final time = message.createdAt;
+    return Align(
+      alignment: message.mine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
+        child: Card(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onOpen,
+            child: Padding(
+              padding: const EdgeInsets.all(Gaps.md),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.event_rounded, color: Brand.rose, size: 20),
+                      const SizedBox(width: Gaps.sm),
+                      Text('План встречи', style: theme.textTheme.titleSmall),
+                      const Spacer(),
+                      if (time != null)
+                        Text(formatDateTime(time).substring(11),
+                            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                    ],
+                  ),
+                  const SizedBox(height: Gaps.xs),
+                  Text(message.text ?? '', style: theme.textTheme.bodyMedium),
+                  const SizedBox(height: Gaps.xs),
+                  Text('Открыть', style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.primary)),
+                ],
+              ),
+            ),
           ),
         ),
       ),

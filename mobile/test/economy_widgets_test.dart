@@ -174,6 +174,7 @@ void main() {
     expect(find.text('Сдвиг часов: нет'), findsOneWidget);
 
     await tester.ensureVisible(find.text('Следующая неделя'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Следующая неделя'));
     await tester.pumpAndSettle();
 

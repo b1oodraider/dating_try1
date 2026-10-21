@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/api_exception.dart';
@@ -137,6 +138,19 @@ class _SocialTestCardState extends State<SocialTestCard> {
                   child: const Text('+20 и все лайкнули меня'),
                 ),
               ],
+            ),
+            const Divider(height: 24),
+            OutlinedButton.icon(
+              onPressed: _busy
+                  ? null
+                  : () => _run(() async {
+                        // Around me when the location is known, else the centre of Moscow.
+                        final last = await Geolocator.getLastKnownPosition().catchError((Object _) => null);
+                        await api.createTestVenues(last?.latitude ?? 55.7558, last?.longitude ?? 37.6173);
+                        return 'Добавлены 3 тестовых места (одно рекламное) — смотрите карту в плане встречи';
+                      }),
+              icon: const Icon(Icons.add_location_alt_outlined),
+              label: const Text('Тестовые места для плана встречи'),
             ),
             const Divider(height: 24),
             if (_seeds.isEmpty)

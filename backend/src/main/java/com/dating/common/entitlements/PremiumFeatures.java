@@ -24,6 +24,9 @@ public final class PremiumFeatures {
     /** Invisible mode: the profile is shown only to people its owner liked. */
     public static final String INVISIBLE = "INVISIBLE";
 
+    /** Propose or edit a date plan in a chat (accepting or declining one is free). */
+    public static final String DATE_PLAN = "DATE_PLAN";
+
     private PremiumFeatures() {
     }
 }

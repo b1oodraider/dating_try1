@@ -65,3 +65,5 @@ databaseChangeLog:
       file: db/changelog/changesets/032-faq.yaml
   - include:
       file: db/changelog/changesets/033-presence.yaml
+  - include:
+      file: db/changelog/changesets/034-date-plans.yaml

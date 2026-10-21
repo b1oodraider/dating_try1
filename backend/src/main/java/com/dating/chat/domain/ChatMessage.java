@@ -17,10 +17,16 @@ public record ChatMessage(
         String text,
         String stickerPackCode,
         String sticker,
-        Instant createdAt
+        Instant createdAt,
+        /** DATE_PLAN messages only. */
+        UUID datePlanId
 ) {
     /** Human-readable content for moderation snapshots. */
     public String snapshot() {
-        return type == MessageType.TEXT ? text : "[стикер " + stickerPackCode + "/" + sticker + "]";
+        return switch (type) {
+            case TEXT -> text;
+            case STICKER -> "[стикер " + stickerPackCode + "/" + sticker + "]";
+            case DATE_PLAN -> "[план встречи] " + text;
+        };
     }
 }

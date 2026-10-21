@@ -222,7 +222,58 @@ final List<Map<String, Object?>> conversation = [
     (true, 'Отлично, до субботы!', '18:21'),
   ].indexed)
     _message('m${i + 1}', 'match1', mine, text, time),
+  {
+    'id': 'm-plan',
+    'matchId': 'match1',
+    'mine': false,
+    'type': 'DATE_PLAN',
+    'text': 'Предлагаю встречу: Третьяковская галерея, 25.10 в 12:00 и ещё 1',
+    'datePlanId': 'plan1',
+    'createdAt': '2026-10-21T18:25:00Z',
+  },
 ].reversed.toList();
+
+final Map<String, Object?> sponsoredVenue = {
+  'id': 'v1',
+  'name': 'Кофейня «Зёрна»',
+  'address': 'Лаврушинский пер., 3',
+  'latitude': 55.7415,
+  'longitude': 37.6208,
+  'category': 'COFFEE',
+  'description': 'Тихий зал на втором этаже',
+  'ad': {'label': 'Реклама', 'advertiser': 'ООО «Зёрна»', 'erid': '2VtzqX5'},
+};
+
+final Map<String, Object?> datePlan = {
+  'id': 'plan1',
+  'matchId': 'match1',
+  'status': 'PROPOSED',
+  'version': 1,
+  'mine': false,
+  'lastEditMine': false,
+  'canRespond': true,
+  'canEdit': true,
+  'items': [
+    {
+      'placeName': 'Третьяковская галерея',
+      'address': 'Лаврушинский пер., 10',
+      'latitude': 55.7414,
+      'longitude': 37.6208,
+      'startsAt': '2026-10-25T09:00:00Z',
+      'activity': 'CULTURE',
+      'comment': 'Встречаемся у главного входа',
+    },
+    {
+      'placeName': 'Кофейня «Зёрна»',
+      'address': 'Лаврушинский пер., 3',
+      'latitude': 55.7415,
+      'longitude': 37.6230,
+      'startsAt': '2026-10-25T11:30:00Z',
+      'activity': 'COFFEE',
+      'venue': sponsoredVenue,
+    },
+  ],
+};
 
 final List<Map<String, Object?>> matches = [
   {
@@ -538,6 +589,9 @@ http.Response respond(http.Request request) {
     return _json({'count': likers.length});
   }
   if (path == '/matches') return _json(matches);
+  if (path.endsWith('/date-plan') && get) return _json({'plan': datePlan});
+  if (path == '/date-plans/plan1') return _json(datePlan);
+  if (path == '/venues') return _json([sponsoredVenue]);
   if (path.startsWith('/matches/') && path.endsWith('/messages') && get) {
     return _json({'items': conversation, 'nextBefore': null});
   }

@@ -482,6 +482,28 @@ Match additionally carries otherLastSeenAt: string|null (the other person's last
 minute) and otherOnline: boolean (an open event stream or activity in the last 2 minutes).
 POST /matches/{id}/typing   204 ; 404 MATCH_NOT_FOUND — relays `typing` to the other person; send at most every ~3 s while typing
 
+## Date plan (auth) — see docs/date-plan.md
+DatePlanItem = { placeName, address: string|null, latitude, longitude, startsAt, activity: COFFEE|WALK|FOOD|CINEMA|CULTURE|ACTIVE|OTHER,
+                 comment: string|null, venue: Venue|null }
+DatePlan = { id, matchId, status: PROPOSED|ACCEPTED|DECLINED|CANCELLED, version, mine (I proposed), lastEditMine,
+             canRespond (I may accept/decline), canEdit (open and premium), items: DatePlanItem[], createdAt, updatedAt }
+Venue = { id, name, address, latitude, longitude, category, description, ad: { label: 'Реклама', advertiser, erid } | null }
+GET    /matches/{id}/date-plan        200 { plan: DatePlan|null }   the plan in play (PROPOSED or ACCEPTED)
+POST   /matches/{id}/date-plan        body { items: [ { placeName?, address?, latitude?, longitude?, startsAt, activity?, comment?,
+                                      venueId? } ] (1..5; a venue fills name, coordinates, address and activity) }  201 DatePlan ;
+                                      403 PREMIUM_REQUIRED (DATE_PLAN) | ACCOUNT_RESTRICTED ; 409 PLAN_ALREADY_OPEN ;
+                                      400 VALIDATION_ERROR fieldErrors "items[i].startsAt" (future, <= 120 days) …
+GET    /date-plans/{id}               200 DatePlan (participants only, else 404 PLAN_NOT_FOUND)
+PUT    /date-plans/{id}               body { version, items }  counter proposal (premium) 200 ; 409 PLAN_CHANGED | PLAN_CLOSED
+POST   /date-plans/{id}/accept|decline   only the side it was proposed to: 200 ; 409 PLAN_NOT_YOURS_TO_ANSWER | PLAN_CLOSED
+POST   /date-plans/{id}/cancel        either side, open plans: 200 ; 409 PLAN_CLOSED
+GET    /date-plans/{id}/history       200 [ { version, mine, action: PROPOSE|EDIT|ACCEPT|DECLINE|CANCEL, items, at } ]
+Every action posts a chat Message { type: 'DATE_PLAN', text: one-line summary, datePlanId } to both (SSE `message`, push).
+GET    /venues?latitude=&longitude=   200 Venue[] (<= 50, ~30 km, sponsored first); test accounts see only test places
+GET|POST /admin/venues, PUT /admin/venues/{id}   (CONTENT_EDITOR, ADMIN) body { name, address?, latitude, longitude, category,
+                                      description?, sponsored?, advertiser? (required when sponsored), erid?, active? } ; audited (VENUE)
+POST   /testing/venues                body { latitude, longitude }  201 — 3 test-only places around the point, one sponsored
+
 ## Realtime (Server-Sent Events)
 POST /events/ticket   (auth) 200 { ticket: string, expiresAt }   one-time, valid app.realtime.ticket-ttl (60s), kept in memory
 GET  /events          text/event-stream. Auth: `Authorization: Bearer` header (mobile, fetch-based clients) OR `?ticket=<ticket>`

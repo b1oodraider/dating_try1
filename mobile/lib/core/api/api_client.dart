@@ -15,6 +15,7 @@ import '../models/gacha.dart';
 import '../models/goal.dart';
 import '../models/boost.dart';
 import '../models/catalog.dart';
+import '../models/date_plan.dart';
 import '../models/facts.dart';
 import '../models/interest.dart';
 import '../models/json_utils.dart';
@@ -431,6 +432,43 @@ class DatingApiClient {
       },
     );
     return ChatMessage.fromJson(_expectMap(json));
+  }
+
+  // ------------------------------------------------------------- Date plan
+
+  /// The plan in play in this chat, or null.
+  Future<DatePlan?> getDatePlan(String matchId) async {
+    final plan = _expectMap(await _send('GET', '/matches/${_segment(matchId)}/date-plan'))['plan'];
+    return plan is Map<String, dynamic> ? DatePlan.fromJson(plan) : null;
+  }
+
+  Future<DatePlan> getDatePlanById(String planId) async =>
+      DatePlan.fromJson(_expectMap(await _send('GET', '/date-plans/${_segment(planId)}')));
+
+  /// 403 PREMIUM_REQUIRED (DATE_PLAN), 409 PLAN_ALREADY_OPEN, 400 VALIDATION_ERROR (fieldErrors items[i].…).
+  Future<DatePlan> proposeDatePlan(String matchId, List<DatePlanItem> items) async => DatePlan.fromJson(
+      _expectMap(await _send('POST', '/matches/${_segment(matchId)}/date-plan',
+          body: {'items': [for (final item in items) item.toJson()]})));
+
+  /// A counter proposal; 409 PLAN_CHANGED when [version] is stale.
+  Future<DatePlan> editDatePlan(String planId, int version, List<DatePlanItem> items) async => DatePlan.fromJson(
+      _expectMap(await _send('PUT', '/date-plans/${_segment(planId)}',
+          body: {'version': version, 'items': [for (final item in items) item.toJson()]})));
+
+  Future<DatePlan> answerDatePlan(String planId, String action) async =>
+      DatePlan.fromJson(_expectMap(await _send('POST', '/date-plans/${_segment(planId)}/${_segment(action)}')));
+
+  /// Places around a point, sponsored first (each with its ad label).
+  Future<List<Venue>> getVenues(double latitude, double longitude) async {
+    final json = await _send('GET', '/venues',
+        query: {'latitude': '$latitude', 'longitude': '$longitude'});
+    if (json is! List) throw _badResponse();
+    return json.whereType<Map<String, dynamic>>().map(Venue.fromJson).toList();
+  }
+
+  /// Testing API: three test-only places around the point, one sponsored.
+  Future<void> createTestVenues(double latitude, double longitude) async {
+    await _send('POST', '/testing/venues', body: {'latitude': latitude, 'longitude': longitude});
   }
 
   /// «Печатает…» for the other person; call at most every few seconds while typing.

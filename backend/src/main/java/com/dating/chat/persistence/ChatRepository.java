@@ -28,7 +28,7 @@ public class ChatRepository {
 
     private static final String COLUMNS = """
             c.id, c.seq, c.match_id, c.sender_account_id, c.client_message_id, c.type, c.text,
-            c.sticker_pack_code, c.sticker, c.created_at""";
+            c.sticker_pack_code, c.sticker, c.created_at, c.date_plan_id""";
 
     private final JdbcClient jdbc;
 
@@ -41,10 +41,15 @@ public class ChatRepository {
      */
     public boolean insert(UUID id, UUID matchId, UUID sender, String clientMessageId, MessageType type,
                           String text, String stickerPackCode, String sticker) {
+        return insert(id, matchId, sender, clientMessageId, type, text, stickerPackCode, sticker, null);
+    }
+
+    public boolean insert(UUID id, UUID matchId, UUID sender, String clientMessageId, MessageType type,
+                          String text, String stickerPackCode, String sticker, UUID datePlanId) {
         return jdbc.sql("""
                         INSERT INTO chat_messages (id, match_id, sender_account_id, client_message_id, type, text,
-                                                   sticker_pack_code, sticker)
-                        VALUES (:id, :matchId, :sender, :clientId, :type, :text, :pack, :sticker)
+                                                   sticker_pack_code, sticker, date_plan_id)
+                        VALUES (:id, :matchId, :sender, :clientId, :type, :text, :pack, :sticker, :plan)
                         ON CONFLICT ON CONSTRAINT uq_chat_messages_client_id DO NOTHING
                         """)
                 .param("id", id)
@@ -55,6 +60,7 @@ public class ChatRepository {
                 .param("text", text)
                 .param("pack", stickerPackCode)
                 .param("sticker", sticker)
+                .param("plan", datePlanId)
                 .update() == 1;
     }
 
@@ -178,7 +184,8 @@ public class ChatRepository {
                 rs.getString("text"),
                 rs.getString("sticker_pack_code"),
                 rs.getString("sticker"),
-                rs.getObject("created_at", OffsetDateTime.class).toInstant());
+                rs.getObject("created_at", OffsetDateTime.class).toInstant(),
+                rs.getObject("date_plan_id", UUID.class));
     }
 
     private static Instant instant(ResultSet rs, int column) throws SQLException {

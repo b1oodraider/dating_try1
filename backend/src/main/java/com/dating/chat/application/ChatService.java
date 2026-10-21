@@ -121,6 +121,23 @@ public class ChatService {
         return new MessagePageDto(items, hasMore ? page.getLast().id() : null);
     }
 
+    /**
+     * A DATE_PLAN message from [sender] about a plan change: delivered like any message (events, push), so the
+     * other person sees the card in the chat. Called inside the plan's transaction.
+     */
+    @Transactional
+    public void postDatePlanMessage(UUID sender, UUID matchId, UUID planId, String text) {
+        MatchInfo match = matchService.requireActive(matchId, sender);
+        String clientId = "plan-" + UUID.randomUUID();
+        repository.insert(UUID.randomUUID(), matchId, sender, clientId, MessageType.DATE_PLAN, text, null, null, planId);
+        ChatMessage message = repository.findByClientId(matchId, sender, clientId)
+                .orElseThrow(() -> new IllegalStateException("Message must exist after insert"));
+        UUID recipient = match.other(sender);
+        realtime.sendAfterCommit(sender, RealtimeEvents.MESSAGE, MessageDto.of(message, sender));
+        realtime.sendAfterCommit(recipient, RealtimeEvents.MESSAGE, MessageDto.of(message, recipient));
+        eventPublisher.publishEvent(new MessageSentEvent(matchId, message.id(), sender, recipient));
+    }
+
     /** «Печатает…»: tells the other person right away; nothing is stored. */
     @Transactional(readOnly = true)
     public void typing(UUID me, UUID matchId) {
@@ -172,6 +189,9 @@ public class ChatService {
     }
 
     private static Content validate(SendMessageRequest request) {
+        if (request.type() == MessageType.DATE_PLAN) {
+            throw invalid("type", "План встречи создаётся через /matches/{id}/date-plan");
+        }
         if (request.type() == MessageType.TEXT) {
             String text = request.text() == null ? "" : request.text().trim();
             if (text.isEmpty()) {

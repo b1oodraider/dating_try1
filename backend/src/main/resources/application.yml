@@ -61,7 +61,7 @@ app:
     # ADVANCED_FILTERS: search by height/goals + excluded goals; EXCLUSION_WORDS: saved exclusion words.
     # Remove a code to make the feature free. The premium badge is shown for any active premium.
     # UNDO_SWIPE: back to the last swiped profiles; PASS_REFRESH: passed profiles back any time; INVISIBLE: invisible mode.
-    premium-features: [ADVANCED_FILTERS, EXCLUSION_WORDS, UNDO_SWIPE, PASS_REFRESH, INVISIBLE]
+    premium-features: [ADVANCED_FILTERS, EXCLUSION_WORDS, UNDO_SWIPE, PASS_REFRESH, INVISIBLE, DATE_PLAN]
     # Consumables granted to premium users every period (into the PERIODIC bucket, spent first).
     #   period: DAILY | WEEKLY | MONTHLY (UTC calendar)
     #   mode:   TOP_UP refills up to quantity (unused units do not pile up); ADD adds quantity every period

@@ -16,7 +16,9 @@ import 'package:dating_mobile/core/theme/app_theme.dart';
 import 'package:dating_mobile/features/auth/otp_screen.dart';
 import 'package:dating_mobile/features/auth/phone_screen.dart';
 import 'package:dating_mobile/features/auth/session_controller.dart';
+import 'package:dating_mobile/core/models/date_plan.dart';
 import 'package:dating_mobile/core/models/discovery_filters.dart';
+import 'package:dating_mobile/features/dates/date_plan_editor.dart';
 import 'package:dating_mobile/features/discovery/discovery_filters_screen.dart';
 import 'package:dating_mobile/features/discovery/discovery_screen.dart';
 import 'package:dating_mobile/core/models/my_profile.dart';
@@ -265,6 +267,18 @@ void main() {
     await tester.tap(find.text('Анна'));
     await _settle(tester);
     await _shot(tester, 'chat');
+    await tester.tap(find.text('Открыть'));
+    await _settle(tester);
+    await _shot(tester, 'date_plan');
+  });
+
+  testWidgets('date plan editor', skip: skip, (tester) async {
+    final session = _session();
+    await _pump(
+        tester,
+        DatePlanEditorScreen(
+            api: session.api, matchId: 'match1', plan: DatePlan.fromJson(fx.datePlan)));
+    await _shot(tester, 'date_plan_editor');
   });
 
   testWidgets('gacha', skip: skip, (tester) async {

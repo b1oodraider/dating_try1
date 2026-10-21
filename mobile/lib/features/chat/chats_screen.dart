@@ -183,6 +183,8 @@ class _MatchTile extends StatelessWidget {
             ? 'Взаимная симпатия! Напишите первым'
             : last.isSticker
                 ? 'Стикер'
+                : last.isDatePlan
+                    ? 'План встречи: ${last.text ?? ''}'
                 : (last.mine ? 'Вы: ' : '') + (last.text ?? ''),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,

@@ -11,7 +11,7 @@ app:
   cors:
     allowed-origins: http://localhost:3000
   economy:
-    premium-features: [TEST_PREMIUM_FEATURE, ADVANCED_FILTERS, EXCLUSION_WORDS, UNDO_SWIPE, PASS_REFRESH, INVISIBLE]
+    premium-features: [TEST_PREMIUM_FEATURE, ADVANCED_FILTERS, EXCLUSION_WORDS, UNDO_SWIPE, PASS_REFRESH, INVISIBLE, DATE_PLAN]
     premium-allowances:
       - item-code: TEST_SUPERLIKE
         quantity: 5
