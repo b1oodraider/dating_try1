@@ -279,8 +279,10 @@ class BoostIntegrationTest extends IntegrationTestBase {
         String tester = testLogin("+78000000008");
         publishWith(tester, "Тестер", city, List.of());
         String viewer = testLogin("+78000000009");
-        seedProfile(viewer, "Соседка", city); // newer than the tester's profile
-        discovery(viewer, city, null, null, 20).andExpect(jsonPath("$.items[0].displayName").value("Соседка"));
+        seedProfile(viewer, "Соседка", city);
+        // Equal scores before the boost: the order is the id tie-break, so only check both are there.
+        discovery(viewer, city, null, null, 20)
+                .andExpect(jsonPath("$.items[*].displayName", containsInAnyOrder("Тестер", "Соседка")));
 
         testing(tester, post("/api/v1/testing/boost"), null).andExpect(jsonPath("$.status.active").value(true));
         discovery(viewer, city, null, null, 20).andExpect(jsonPath("$.items[0].displayName").value("Тестер"));
@@ -288,7 +290,8 @@ class BoostIntegrationTest extends IntegrationTestBase {
         // A day later on the owner's clock the boost is over for the owner and in everyone's feed.
         testing(tester, post("/api/v1/testing/clock/advance"), "{\"days\": 1}");
         boostStatus(tester).andExpect(jsonPath("$.active").value(false));
-        discovery(viewer, city, null, null, 20).andExpect(jsonPath("$.items[0].displayName").value("Соседка"));
+        discovery(viewer, city, null, null, 20) // no boost points: back to the id tie-break
+                .andExpect(jsonPath("$.items[*].displayName", containsInAnyOrder("Тестер", "Соседка")));
 
         // Back to real time: still within the 30 minutes, the boost is active again.
         testing(tester, delete("/api/v1/testing/clock"), null);

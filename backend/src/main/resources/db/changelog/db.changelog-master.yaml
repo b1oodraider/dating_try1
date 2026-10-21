@@ -53,3 +53,5 @@ databaseChangeLog:
       file: db/changelog/changesets/026-verification-gate.yaml
   - include:
       file: db/changelog/changesets/027-photo-face-review.yaml
+  - include:
+      file: db/changelog/changesets/028-boost-clock-skew.yaml

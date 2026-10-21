@@ -1,0 +1,41 @@
+databaseChangeLog:
+  # A boost's starts_at comes from the application clock, the check uses the database clock: when the database
+  # clock lags by a moment, a just-started boost was ignored. A 2-second tolerance on the start fixes that (a
+  # queued boost may start 2 s early, which nobody notices).
+  - changeSet:
+      id: 028-boost-clock-skew
+      author: dating-team
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE FUNCTION active_boost_order_key(p_account uuid, p_viewer text)
+              RETURNS text
+              LANGUAGE sql
+              STABLE
+              AS $$
+                SELECT md5(b.id::text || ':' || p_viewer)
+                FROM profile_boosts b
+                WHERE b.account_id = p_account
+                  AND b.starts_at <= boost_owner_now(p_account) + interval '2 seconds'
+                  AND b.ends_at > boost_owner_now(p_account)
+                ORDER BY b.ends_at DESC
+                LIMIT 1
+              $$
+      rollback:
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE FUNCTION active_boost_order_key(p_account uuid, p_viewer text)
+              RETURNS text
+              LANGUAGE sql
+              STABLE
+              AS $$
+                SELECT md5(b.id::text || ':' || p_viewer)
+                FROM profile_boosts b
+                WHERE b.account_id = p_account
+                  AND b.starts_at <= boost_owner_now(p_account)
+                  AND b.ends_at > boost_owner_now(p_account)
+                ORDER BY b.ends_at DESC
+                LIMIT 1
+              $$
