@@ -21,7 +21,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Photos must show a face; a verified person's new photo that does not match the reference photos waits for a
- * moderator. The analyzer is stubbed: the PNG width is «who» is on it (1 = nobody). Real models: FaceAnalyzerTest.
+ * moderator. The analyzer is stubbed: the PNG width is «who» is on it (1 = nobody, 2 = a person with the face hidden).
+ * Real models: FaceAnalyzerTest.
  */
 class PhotoFaceCheckIntegrationTest extends AdminTestSupport {
 
@@ -37,7 +38,10 @@ class PhotoFaceCheckIntegrationTest extends AdminTestSupport {
             byte[] png = call.getArgument(0);
             int width = ((png[16] & 0xFF) << 24) | ((png[17] & 0xFF) << 16) | ((png[18] & 0xFF) << 8) | (png[19] & 0xFF);
             if (width == 1) {
-                return new FaceAnalyzer.Scan(List.of());
+                return new FaceAnalyzer.Scan(List.of(), false); // nobody
+            }
+            if (width == 2) {
+                return new FaceAnalyzer.Scan(List.of(), true); // a person, face hidden
             }
             float[] person = new float[128];
             person[width % 128] = 1;
@@ -46,9 +50,11 @@ class PhotoFaceCheckIntegrationTest extends AdminTestSupport {
     }
 
     @Test
-    void aPhotoWithoutAFaceIsRefused() throws Exception {
+    void aPhotoWithoutAPersonIsRefusedAndAHiddenFaceWaitsForVerification() throws Exception {
         String token = login(newPhone());
         upload(token, 1).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("NO_PERSON_ON_PHOTO"));
+        upload(token, 2).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("NO_FACE_ON_PHOTO"));
         upload(token, 3).andExpect(status().isOk()).andExpect(jsonPath("$.underReview").value(false));
     }
@@ -68,14 +74,16 @@ class PhotoFaceCheckIntegrationTest extends AdminTestSupport {
         User viewer = user(city, "Зритель");
 
         upload(anna.token(), 3).andExpect(status().isOk()).andExpect(jsonPath("$.underReview").value(false));
+        upload(anna.token(), 2).andExpect(status().isOk()).andExpect(jsonPath("$.underReview").value(false));
+        upload(anna.token(), 1).andExpect(jsonPath("$.code").value("NO_PERSON_ON_PHOTO"));
         String stranger = id(upload(anna.token(), 5).andExpect(jsonPath("$.underReview").value(true)));
         String another = id(upload(anna.token(), 6).andExpect(jsonPath("$.underReview").value(true)));
 
         // Hidden from others, shown to her with the mark.
         as(anna.token(), get("/api/v1/me/profile"), null)
-                .andExpect(jsonPath("$.photos", hasSize(4)))
+                .andExpect(jsonPath("$.photos", hasSize(5)))
                 .andExpect(jsonPath("$.photos[?(@.underReview == true)]", hasSize(2)));
-        photosSeenBy(viewer, city).andExpect(jsonPath("$.items[0].photos", hasSize(2)));
+        photosSeenBy(viewer, city).andExpect(jsonPath("$.items[0].photos", hasSize(3)));
 
         String moderator = moderator();
         as(anna.token(), get("/api/v1/admin/photo-reviews"), null).andExpect(status().isForbidden());
@@ -87,7 +95,7 @@ class PhotoFaceCheckIntegrationTest extends AdminTestSupport {
         decide(moderator, another, true).andExpect(status().isNoContent());
         decide(moderator, another, true).andExpect(status().isConflict());
 
-        photosSeenBy(viewer, city).andExpect(jsonPath("$.items[0].photos", hasSize(3)));
+        photosSeenBy(viewer, city).andExpect(jsonPath("$.items[0].photos", hasSize(4)));
         // The approved photo is a reference now: the same «person 6» passes on its own.
         upload(anna.token(), 6).andExpect(jsonPath("$.underReview").value(false));
     }

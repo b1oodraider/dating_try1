@@ -24,7 +24,7 @@ class FaceAnalyzerTest {
 
     @Test
     void offWithoutModels() {
-        FaceAnalyzer analyzer = new FaceAnalyzer(new FaceProperties("", 0.8f, 0.363));
+        FaceAnalyzer analyzer = new FaceAnalyzer(new FaceProperties("", 0.8f, 0.363, 0.5f));
         assertFalse(analyzer.enabled());
         assertNull(analyzer.scan(TestImages.png(4, 4)));
     }
@@ -32,17 +32,18 @@ class FaceAnalyzerTest {
     @Test
     void picturesWithoutPeopleHaveNoFace() {
         assumeTrue(MODELS != null, "FACE_MODELS_DIR is not set");
-        FaceAnalyzer analyzer = new FaceAnalyzer(new FaceProperties(MODELS, 0.8f, 0.363));
+        FaceAnalyzer analyzer = new FaceAnalyzer(new FaceProperties(MODELS, 0.8f, 0.363, 0.5f));
         FaceAnalyzer.Scan scan = analyzer.scan(TestImages.png(64, 64));
         assertNotNull(scan);
         assertFalse(scan.hasFace());
+        assertFalse(scan.person());
         assertNull(analyzer.scan(new byte[]{1, 2, 3}), "undecodable is «unknown», not «no face»");
     }
 
     @Test
     void samePersonMatchesAndAnotherDoesNot() throws Exception {
         assumeTrue(MODELS != null && SAMPLES != null, "FACE_MODELS_DIR / FACE_SAMPLES_DIR are not set");
-        FaceAnalyzer analyzer = new FaceAnalyzer(new FaceProperties(MODELS, 0.8f, 0.363));
+        FaceAnalyzer analyzer = new FaceAnalyzer(new FaceProperties(MODELS, 0.8f, 0.363, 0.5f));
         byte[] lena = Files.readAllBytes(Path.of(SAMPLES, "lena.jpg"));
         byte[] messi = Files.readAllBytes(Path.of(SAMPLES, "messi5.jpg"));
 
@@ -54,6 +55,34 @@ class FaceAnalyzerTest {
         double other = FaceAnalyzer.similarity(a, c);
         assertTrue(same >= 0.363, "same person: " + same);
         assertTrue(other < 0.363, "another person: " + other);
+    }
+
+    /** person-without-face.* in FACE_SAMPLES_DIR: a person whose face is hidden (hair, back) still counts. */
+    @Test
+    void personWithoutVisibleFace() throws Exception {
+        assumeTrue(MODELS != null && SAMPLES != null, "FACE_MODELS_DIR / FACE_SAMPLES_DIR are not set");
+        Path sample;
+        try (var files = Files.list(Path.of(SAMPLES))) {
+            sample = files.filter(p -> p.getFileName().toString().startsWith("person-without-face.")).findFirst().orElse(null);
+        }
+        assumeTrue(sample != null, "no person-without-face sample");
+        FaceAnalyzer.Scan scan = new FaceAnalyzer(new FaceProperties(MODELS, 0.8f, 0.363, 0.5f))
+                .scan(Files.readAllBytes(sample));
+        System.out.println("person-without-face: faces=" + scan.features().size() + " person=" + scan.person());
+        assertTrue(scan.person());
+    }
+
+    /** no-person*.* in FACE_SAMPLES_DIR: pictures without people (food, animals, buildings) are not a person. */
+    @Test
+    void picturesOfThingsAreNotAPerson() throws Exception {
+        assumeTrue(MODELS != null && SAMPLES != null, "FACE_MODELS_DIR / FACE_SAMPLES_DIR are not set");
+        FaceAnalyzer analyzer = new FaceAnalyzer(new FaceProperties(MODELS, 0.8f, 0.363, 0.5f));
+        try (var files = Files.list(Path.of(SAMPLES))) {
+            for (Path sample : files.filter(p -> p.getFileName().toString().startsWith("no-person")).toList()) {
+                FaceAnalyzer.Scan scan = analyzer.scan(Files.readAllBytes(sample));
+                assertFalse(scan.person(), sample.getFileName() + " is not a person");
+            }
+        }
     }
 
     private static byte[] mirroredAndScaled(byte[] jpeg) throws Exception {

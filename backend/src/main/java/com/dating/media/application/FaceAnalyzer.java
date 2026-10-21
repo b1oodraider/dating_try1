@@ -1,8 +1,13 @@
 package com.dating.media.application;
 
+import org.opencv.core.Core;
+import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfByte;
+import org.opencv.core.Scalar;
 import org.opencv.core.Size;
+import org.opencv.dnn.Dnn;
+import org.opencv.dnn.Net;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.objdetect.FaceDetectorYN;
@@ -17,7 +22,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Finds faces on a photo (OpenCV YuNet) and turns each into a feature vector (SFace), on the CPU.
+ * Finds faces on a photo (OpenCV YuNet) and turns each into a feature vector (SFace); without a face, looks for a
+ * person at all (NanoDet). CPU only.
  * Vectors live only in memory for one comparison: no face templates are stored anywhere.
  */
 @Component
@@ -26,11 +32,23 @@ public class FaceAnalyzer {
     private static final Logger log = LoggerFactory.getLogger(FaceAnalyzer.class);
     static final String DETECTOR = "face_detection_yunet_2023mar.onnx";
     static final String RECOGNIZER = "face_recognition_sface_2021dec.onnx";
+    /** NanoDet-Plus (COCO): finds a person whose face is hidden (hair, back, far away). */
+    static final String PERSON_DETECTOR = "object_detection_nanodet_2022nov.onnx";
+    private static final int PERSON_INPUT = 416;
+    private static final Scalar PERSON_MEAN = new Scalar(103.53, 116.28, 123.675);
+    private static final Scalar PERSON_STD = new Scalar(57.375, 57.12, 58.395);
     /** Larger photos are scaled down first: faster, and YuNet finds faces of a profile photo at this size. */
     private static final int MAX_SIDE = 640;
 
-    /** @param features one L2-normalized vector per face found; empty = no face */
-    public record Scan(List<float[]> features) {
+    /**
+     * @param features one L2-normalized vector per face found; empty = no face
+     * @param person   a person is on the photo (a found face counts; otherwise the person detector decides)
+     */
+    public record Scan(List<float[]> features, boolean person) {
+        public Scan(List<float[]> features) {
+            this(features, !features.isEmpty());
+        }
+
         public boolean hasFace() {
             return !features.isEmpty();
         }
@@ -38,16 +56,20 @@ public class FaceAnalyzer {
 
     private final FaceDetectorYN detector;
     private final FaceRecognizerSF recognizer;
+    private final Net personDetector;
+    private final float personThreshold;
 
     public FaceAnalyzer(FaceProperties properties) {
         if (properties.modelDir().isBlank()) {
             log.warn("app.faces.model-dir is not set: photos are not checked for faces");
             detector = null;
             recognizer = null;
+            personDetector = null;
+            personThreshold = 1;
             return;
         }
         Path dir = Path.of(properties.modelDir());
-        for (String model : List.of(DETECTOR, RECOGNIZER)) {
+        for (String model : List.of(DETECTOR, RECOGNIZER, PERSON_DETECTOR)) {
             if (!Files.isRegularFile(dir.resolve(model))) {
                 throw new IllegalStateException("Face model not found: " + dir.resolve(model));
             }
@@ -56,6 +78,8 @@ public class FaceAnalyzer {
         detector = FaceDetectorYN.create(dir.resolve(DETECTOR).toString(), "", new Size(320, 320),
                 properties.scoreThreshold(), 0.3f, 50);
         recognizer = FaceRecognizerSF.create(dir.resolve(RECOGNIZER).toString(), "");
+        personDetector = Dnn.readNet(dir.resolve(PERSON_DETECTOR).toString());
+        personThreshold = properties.personThreshold();
     }
 
     public boolean enabled() {
@@ -98,10 +122,48 @@ public class FaceAnalyzer {
                     feature.release();
                 }
             }
-            return new Scan(features);
+            return new Scan(features, !features.isEmpty() || hasPerson(img));
         } finally {
             img.release();
             faces.release();
+        }
+    }
+
+    /** Best «person» score of NanoDet over the letterboxed photo (same preprocessing as the OpenCV Zoo demo). */
+    private boolean hasPerson(Mat bgr) {
+        Mat rgb = new Mat();
+        Mat boxed = new Mat();
+        Mat blob = null;
+        List<Mat> outs = new ArrayList<>();
+        try {
+            Imgproc.cvtColor(bgr, rgb, Imgproc.COLOR_BGR2RGB);
+            double k = (double) PERSON_INPUT / Math.max(rgb.cols(), rgb.rows());
+            int w = (int) (rgb.cols() * k);
+            int h = (int) (rgb.rows() * k);
+            Imgproc.resize(rgb, rgb, new Size(w, h), 0, 0, Imgproc.INTER_AREA);
+            int left = (PERSON_INPUT - w) / 2;
+            int top = (PERSON_INPUT - h) / 2;
+            Core.copyMakeBorder(rgb, boxed, top, PERSON_INPUT - h - top, left, PERSON_INPUT - w - left,
+                    Core.BORDER_CONSTANT, new Scalar(0, 0, 0));
+            boxed.convertTo(boxed, CvType.CV_32FC3);
+            Core.subtract(boxed, PERSON_MEAN, boxed);
+            Core.divide(boxed, PERSON_STD, boxed);
+            blob = Dnn.blobFromImage(boxed);
+            personDetector.setInput(blob);
+            personDetector.forward(outs, personDetector.getUnconnectedOutLayersNames());
+            double best = 0;
+            for (int i = 0; i < outs.size(); i += 2) { // class scores; odd outputs are boxes
+                Mat scores = outs.get(i).reshape(1, (int) (outs.get(i).total() / 80));
+                best = Math.max(best, Core.minMaxLoc(scores.col(0)).maxVal); // COCO class 0 = person
+            }
+            return best >= personThreshold;
+        } finally {
+            rgb.release();
+            boxed.release();
+            if (blob != null) {
+                blob.release();
+            }
+            outs.forEach(Mat::release);
         }
     }
 

@@ -96,11 +96,18 @@ public class MediaService {
         }
 
         FaceAnalyzer.Scan scan = faces.scan(cleaned);
-        if (scan != null && !scan.hasFace()) {
-            throw ApiException.badRequest("NO_FACE_ON_PHOTO",
-                    "На фото не видно лица. Загрузите фото, где хорошо видно вас");
+        if (scan != null && !scan.person()) {
+            throw ApiException.badRequest("NO_PERSON_ON_PHOTO",
+                    "На фото не видно человека. Загрузите фото, где есть вы");
         }
-        boolean toReview = profile.isVerified() && !matchesReference(profile.getId(), scan);
+        // A person whose face is hidden (hair, back, far away) is fine once the selfie is verified: the face
+        // photos already proved who it is. Before that every photo must show the face to compare with the selfie.
+        boolean faceHidden = scan != null && !scan.hasFace();
+        if (faceHidden && !profile.isVerified()) {
+            throw ApiException.badRequest("NO_FACE_ON_PHOTO", "Пока селфи не подтверждено, на каждом фото должно "
+                    + "быть видно лицо. Фото без лица можно добавить после проверки");
+        }
+        boolean toReview = profile.isVerified() && !faceHidden && !matchesReference(profile.getId(), scan);
 
         String storageKey = fileStorage.save(cleaned, format.extension());
         ProfilePhoto photo = new ProfilePhoto(
