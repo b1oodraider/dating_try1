@@ -174,10 +174,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                       ? 'text-white bg-zinc-900 border-zinc-900'
                       : 'text-zinc-700 bg-zinc-50 hover:bg-zinc-100 border-zinc-200'
                   }`}
-                  title="Кабинет модератора"
+                  title="Кабинет"
                 >
                   <Gavel className="w-3.5 h-3.5" />
-                  <span className="hidden md:inline">Кабинет модератора</span>
+                  <span className="hidden md:inline">Кабинет</span>
                 </button>
               )}
               {account.testAccount && (

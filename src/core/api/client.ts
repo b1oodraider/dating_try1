@@ -1,7 +1,23 @@
 import type {
   Account,
   Achievement,
+  AchievementDefinition,
+  AchievementReward,
   AdminAccount,
+  AdminGoal,
+  AdminTag,
+  AdminTagCategory,
+  Author,
+  AuthorInput,
+  CatalogEntry,
+  CatalogEntryCreate,
+  CatalogEntryUpdate,
+  CatalogKind,
+  DeleteResult,
+  FaqInput,
+  FaqItem,
+  PremiumAllowance,
+  PremiumView,
   AdminPage,
   AdminRestriction,
   AdminRoles,
@@ -859,6 +875,123 @@ export const api = {
       if (query.entityId) params.set('entityId', query.entityId);
       params.set('limit', String(query.limit ?? 50));
       return request(`/admin/audit?${params.toString()}`, { signal });
+    },
+
+    // --- Content editors (CONTENT_EDITOR or ADMIN) ---
+    listTags(signal?: AbortSignal): Promise<AdminTag[]> {
+      return request('/admin/tags', { signal });
+    },
+    createTag(body: { code: string; category: string; label: string; description: string; sortOrder?: number; active?: boolean }): Promise<AdminTag> {
+      return request('/admin/tags', { method: 'POST', body });
+    },
+    updateTag(code: string, body: { category: string; label: string; description: string; sortOrder?: number; active?: boolean }): Promise<AdminTag> {
+      return request(`/admin/tags/${id(code)}`, { method: 'PUT', body });
+    },
+    deleteTag(code: string): Promise<DeleteResult> {
+      return request(`/admin/tags/${id(code)}`, { method: 'DELETE' });
+    },
+    listTagCategories(signal?: AbortSignal): Promise<AdminTagCategory[]> {
+      return request('/admin/tag-categories', { signal });
+    },
+    createTagCategory(body: { code: string; label: string; sortOrder?: number }): Promise<AdminTagCategory> {
+      return request('/admin/tag-categories', { method: 'POST', body });
+    },
+    updateTagCategory(code: string, body: { label: string; sortOrder?: number }): Promise<AdminTagCategory> {
+      return request(`/admin/tag-categories/${id(code)}`, { method: 'PUT', body });
+    },
+    /** 409 CATEGORY_IN_USE while it has tags (active or not). */
+    deleteTagCategory(code: string): Promise<void> {
+      return request(`/admin/tag-categories/${id(code)}`, { method: 'DELETE' });
+    },
+    /** Replaces the whole scale; unlisted cards lose their place; scale=false clears it. */
+    setTagCategoryScale(
+      code: string,
+      body: { scale: boolean; scaleMinLabel?: string; scaleMaxLabel?: string; positions?: Record<string, number> }
+    ): Promise<AdminTagCategory> {
+      return request(`/admin/tag-categories/${id(code)}/scale`, { method: 'PUT', body });
+    },
+    listGoals(signal?: AbortSignal): Promise<AdminGoal[]> {
+      return request('/admin/goals', { signal });
+    },
+    createGoal(body: { code: string; label: string; sortOrder?: number; active?: boolean }): Promise<AdminGoal> {
+      return request('/admin/goals', { method: 'POST', body });
+    },
+    updateGoal(code: string, body: { label: string; sortOrder?: number; active?: boolean }): Promise<AdminGoal> {
+      return request(`/admin/goals/${id(code)}`, { method: 'PUT', body });
+    },
+    deleteGoal(code: string): Promise<DeleteResult> {
+      return request(`/admin/goals/${id(code)}`, { method: 'DELETE' });
+    },
+
+    listCatalogItems(query: { kind?: CatalogKind; category?: string }, signal?: AbortSignal): Promise<CatalogEntry[]> {
+      const params = new URLSearchParams();
+      if (query.kind) params.set('kind', query.kind);
+      if (query.category) params.set('category', query.category);
+      return request(`/admin/catalog/items?${params.toString()}`, { signal });
+    },
+    createCatalogItem(body: CatalogEntryCreate): Promise<CatalogEntry> {
+      return request('/admin/catalog/items', { method: 'POST', body });
+    },
+    updateCatalogItem(code: string, body: CatalogEntryUpdate): Promise<CatalogEntry> {
+      return request(`/admin/catalog/items/${id(code)}`, { method: 'PUT', body });
+    },
+    /** JPEG/PNG/WebP <= 5 MB; sets attributes.imageUrl. */
+    uploadCatalogImage(code: string, file: File): Promise<CatalogEntry> {
+      const form = new FormData();
+      form.append('file', file);
+      return request(`/admin/catalog/items/${id(code)}/image`, { method: 'POST', body: form });
+    },
+    listAuthors(signal?: AbortSignal): Promise<Author[]> {
+      return request('/admin/authors', { signal });
+    },
+    /** ADMIN only. */
+    createAuthor(body: AuthorInput): Promise<Author> {
+      return request('/admin/authors', { method: 'POST', body });
+    },
+    /** ADMIN only; full replace (absent revenueSharePercent keeps the current one). */
+    updateAuthor(authorId: string, body: AuthorInput): Promise<Author> {
+      return request(`/admin/authors/${id(authorId)}`, { method: 'PUT', body });
+    },
+    /** ADMIN only; 409 AUTHOR_IN_USE while it has catalog items. */
+    deleteAuthor(authorId: string): Promise<void> {
+      return request(`/admin/authors/${id(authorId)}`, { method: 'DELETE' });
+    },
+
+    listAchievements(signal?: AbortSignal): Promise<AchievementDefinition[]> {
+      return request('/admin/achievements', { signal });
+    },
+    updateAchievement(
+      code: string,
+      body: { title: string; description?: string; rewards: AchievementReward[]; active: boolean }
+    ): Promise<AchievementDefinition> {
+      return request(`/admin/achievements/${id(code)}`, { method: 'PUT', body });
+    },
+
+    /** ADMIN only. */
+    getPremium(signal?: AbortSignal): Promise<PremiumView> {
+      return request('/admin/premium', { signal });
+    },
+    /** ADMIN only; an absent list keeps the current one. */
+    updatePremium(body: { features?: string[]; allowances?: PremiumAllowance[] }): Promise<PremiumView> {
+      return request('/admin/premium', { method: 'PUT', body });
+    },
+    /** ADMIN only; back to the config defaults for both lists. */
+    resetPremium(): Promise<PremiumView> {
+      return request('/admin/premium', { method: 'DELETE' });
+    },
+
+    // --- FAQ (CONTENT_EDITOR, SUPPORT or ADMIN) ---
+    listFaq(signal?: AbortSignal): Promise<FaqItem[]> {
+      return request('/admin/faq', { signal });
+    },
+    createFaq(body: FaqInput): Promise<FaqItem> {
+      return request('/admin/faq', { method: 'POST', body });
+    },
+    updateFaq(faqId: string, body: FaqInput): Promise<FaqItem> {
+      return request(`/admin/faq/${id(faqId)}`, { method: 'PUT', body });
+    },
+    deleteFaq(faqId: string): Promise<void> {
+      return request(`/admin/faq/${id(faqId)}`, { method: 'DELETE' });
     },
   },
 

@@ -3,6 +3,7 @@ import { ApiError, getErrorMessage, isAbortError } from '../../../core/api/clien
 import type { ReportReason, RestrictionKind } from '../../../core/types';
 import { REPORT_REASONS } from '../../safety/components/ReportModal';
 import { Button } from '../../../shared/components/Button';
+import { useToast } from '../../../shared/components/Toast';
 
 export const inputClass =
   'w-full min-w-0 px-3 py-2 text-sm bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all';
@@ -120,5 +121,91 @@ export const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ 
   <div className="flex flex-wrap gap-x-2 text-xs min-w-0">
     <span className="text-zinc-500">{label}:</span>
     <span className="text-zinc-900 break-all min-w-0">{children}</span>
+  </div>
+);
+
+/** Runs a write: busy flag, success toast, error toast and server fieldErrors (cleared on each run). */
+export function useSubmit() {
+  const { showToast } = useToast();
+  const [busy, setBusy] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const run = async (action: () => Promise<unknown>, done?: string): Promise<boolean> => {
+    setBusy(true);
+    setErrors({});
+    try {
+      await action();
+      if (done) showToast(done, 'success');
+      return true;
+    } catch (e) {
+      if (e instanceof ApiError && e.fieldErrors) setErrors(e.fieldErrors);
+      showToast(getErrorMessage(e), 'error');
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  return { busy, errors, run, showToast };
+}
+
+/** Messages of fieldErrors whose key is `prefix` or nested under it ("rewards[0]" matches "rewards[0].quantity"). */
+export const errorsFor = (errors: Record<string, string>, prefix: string) =>
+  Object.entries(errors)
+    .filter(([k]) => k === prefix || k.startsWith(prefix + '.') || k.startsWith(prefix + '['))
+    .map(([, m]) => m)
+    .join(' ');
+
+export const Labeled: React.FC<{ label: string; error?: string; children: React.ReactNode }> = ({ label, error, children }) => (
+  <label className="block space-y-1 text-xs min-w-0">
+    <span className="text-zinc-500">{label}</span>
+    {children}
+    {error && <span className="block text-rose-600">{error}</span>}
+  </label>
+);
+
+export const Check: React.FC<{ label: string; checked: boolean; onChange: (v: boolean) => void }> = ({ label, checked, onChange }) => (
+  <label className="flex items-center gap-2 text-xs text-zinc-700">
+    <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    {label}
+  </label>
+);
+
+export function SubTabs<T extends string>({ tabs, value, onChange }: { tabs: Array<[T, string]>; value: T; onChange: (v: T) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1 bg-zinc-100/80 p-1 rounded-xl w-fit max-w-full" role="tablist">
+      {tabs.map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          role="tab"
+          aria-selected={value === id}
+          onClick={() => onChange(id)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            value === id ? 'bg-white text-zinc-900 shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** '' -> undefined (the server default), else a number. */
+export const optNum = (s: string) => (s.trim() === '' ? undefined : Number(s));
+/** '' -> undefined, else the trimmed text. */
+export const optText = (s: string) => (s.trim() === '' ? undefined : s.trim());
+
+export const Badge: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <span className="text-[10px] text-zinc-600 bg-zinc-100 px-1.5 rounded">{children}</span>
+);
+
+export const FormButtons: React.FC<{ busy: boolean; onCancel: () => void }> = ({ busy, onCancel }) => (
+  <div className="flex flex-wrap gap-2">
+    <Button type="submit" size="sm" isLoading={busy}>
+      Сохранить
+    </Button>
+    <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
+      Отмена
+    </Button>
   </div>
 );

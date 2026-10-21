@@ -715,3 +715,147 @@ export interface Behavior {
   /** BehaviorMetrics: counts and rates (rates are null when there is nothing to divide). */
   metrics: Record<string, number | null>;
 }
+
+// --- Content editors (/admin/tags, tag-categories, goals, catalog, authors, achievements, premium, faq) ---
+
+export interface AdminTag {
+  code: string;
+  category: string;
+  categoryLabel: string;
+  label: string;
+  description: string;
+  sortOrder: number;
+  active: boolean;
+  usageCount: number;
+  scalePosition: number | null;
+}
+
+export interface AdminTagCategory {
+  code: string;
+  label: string;
+  sortOrder: number;
+  tagCount: number;
+  scale: boolean;
+  scaleMinLabel: string | null;
+  scaleMaxLabel: string | null;
+}
+
+export interface AdminGoal {
+  code: string;
+  label: string;
+  sortOrder: number;
+  active: boolean;
+  usageCount: number;
+}
+
+/** DEACTIVATED: in use, hidden; show again with PUT active=true. */
+export interface DeleteResult {
+  result: 'DELETED' | 'DEACTIVATED';
+}
+
+export type CatalogKind = 'CONSUMABLE' | 'COSMETIC';
+export type CatalogRarity = 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
+export type EquipSlot = 'PHOTO_FRAME' | 'PROFILE_STATUS' | 'CHAT_WALLPAPER';
+
+export interface CatalogEntry {
+  code: string;
+  kind: CatalogKind;
+  category: string;
+  equipSlot: string | null;
+  title: string;
+  rarity: CatalogRarity | null;
+  attributes: Record<string, unknown>;
+  active: boolean;
+  availableFrom: string | null;
+  availableUntil: string | null;
+  authorId: string | null;
+  authorName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CatalogEntryCreate {
+  code: string;
+  kind: CatalogKind;
+  category: string;
+  equipSlot?: EquipSlot;
+  title: string;
+  rarity?: CatalogRarity;
+  attributes?: Record<string, unknown>;
+  active?: boolean;
+  availableFrom?: string;
+  availableUntil?: string;
+  authorId?: string;
+}
+
+export interface CatalogEntryUpdate {
+  title: string;
+  rarity?: CatalogRarity;
+  attributes: Record<string, unknown>;
+  active: boolean;
+  availableFrom?: string;
+  availableUntil?: string;
+  authorId?: string;
+}
+
+export interface Author {
+  id: string;
+  displayName: string;
+  accountId: string | null;
+  revenueSharePercent: number;
+  contactNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+  itemCount: number;
+}
+
+export interface AuthorInput {
+  displayName: string;
+  accountId?: string;
+  revenueSharePercent?: number;
+  contactNote?: string;
+}
+
+export interface AchievementDefinition {
+  code: string;
+  title: string;
+  description: string | null;
+  rewards: AchievementReward[];
+  active: boolean;
+  completionCount: number;
+}
+
+export interface PremiumAllowance {
+  itemCode: string;
+  quantity: number;
+  period: 'DAILY' | 'WEEKLY' | 'MONTHLY';
+  mode: 'TOP_UP' | 'ADD';
+}
+
+export interface PremiumComposition {
+  features: string[];
+  allowances: PremiumAllowance[];
+  featuresOverridden: boolean;
+  allowancesOverridden: boolean;
+}
+
+export interface PremiumView {
+  current: PremiumComposition;
+  defaults: PremiumComposition;
+}
+
+export interface FaqItem {
+  id: string;
+  question: string;
+  answer: string;
+  sortOrder: number;
+  active: boolean;
+  updatedAt: string;
+}
+
+export interface FaqInput {
+  question: string;
+  answer: string;
+  sortOrder?: number;
+  active?: boolean;
+}
