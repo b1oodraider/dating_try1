@@ -1,6 +1,20 @@
 import type {
   Account,
   Achievement,
+  AdminAccount,
+  AdminPage,
+  AdminRestriction,
+  AdminRoles,
+  AuditEntry,
+  Behavior,
+  ModerationReport,
+  ModerationStatus,
+  ReportDecisionRequest,
+  RestrictionKind,
+  Risk,
+  RiskQueueItem,
+  StaffRole,
+  VerificationReview,
   ApiErrorBody,
   AuthChallenge,
   AuthToken,
@@ -294,6 +308,27 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     });
   }
 }
+
+/** Binary GET with the bearer token (images that are not served by signed URLs). */
+async function requestBlob(path: string, signal?: AbortSignal): Promise<Blob> {
+  const token = getToken();
+  if (!token) throw new ApiError({ code: 'UNAUTHORIZED', message: 'Требуется авторизация.', status: 401 });
+  let res: Response;
+  try {
+    res = await fetch(API_BASE + path, { headers: { Authorization: `Bearer ${token}` }, signal, cache: 'no-store' });
+  } catch (e) {
+    if (e instanceof TypeError) throw new ApiError({ code: 'NETWORK_ERROR', message: NETWORK_ERROR_MESSAGE, status: 0 });
+    throw e;
+  }
+  if (!res.ok) {
+    const error = await parseError(res);
+    if (res.status === 401) handleUnauthorized();
+    throw error;
+  }
+  return res.blob();
+}
+
+const id = encodeURIComponent;
 
 // ---------------------------------------------------------------------------
 // API surface
@@ -700,6 +735,93 @@ export const api = {
 
   getRestrictions(): Promise<Restriction[]> {
     return request<Restriction[]>('/me/restrictions');
+  },
+
+  // --- STAFF (/admin/**; 403 ROLE_REQUIRED without the role) ---
+  admin: {
+    listReports(
+      query: { status?: ModerationStatus; sort?: 'priority' | 'oldest'; page?: number; limit?: number },
+      signal?: AbortSignal
+    ): Promise<AdminPage<ModerationReport>> {
+      const params = new URLSearchParams();
+      if (query.status) params.set('status', query.status);
+      params.set('sort', query.sort ?? 'priority');
+      params.set('page', String(query.page ?? 0));
+      params.set('limit', String(query.limit ?? 20));
+      return request(`/admin/reports?${params.toString()}`, { signal });
+    },
+    getReport(reportId: string): Promise<ModerationReport> {
+      return request(`/admin/reports/${id(reportId)}`);
+    },
+    decideReport(reportId: string, body: ReportDecisionRequest): Promise<ModerationReport> {
+      return request(`/admin/reports/${id(reportId)}/decision`, { method: 'POST', body });
+    },
+
+    listVerifications(
+      query: { status?: VerificationReview['status']; page?: number; limit?: number },
+      signal?: AbortSignal
+    ): Promise<AdminPage<VerificationReview>> {
+      const params = new URLSearchParams();
+      params.set('status', query.status ?? 'PENDING');
+      params.set('page', String(query.page ?? 0));
+      params.set('limit', String(query.limit ?? 20));
+      return request(`/admin/verifications?${params.toString()}`, { signal });
+    },
+    getVerification(requestId: string): Promise<VerificationReview> {
+      return request(`/admin/verifications/${id(requestId)}`);
+    },
+    getVerificationSelfie(requestId: string, signal?: AbortSignal): Promise<Blob> {
+      return requestBlob(`/admin/verifications/${id(requestId)}/selfie`, signal);
+    },
+    decideVerification(requestId: string, approve: boolean, reason?: string): Promise<VerificationReview> {
+      return request(`/admin/verifications/${id(requestId)}/decision`, { method: 'POST', body: { approve, reason } });
+    },
+
+    /** The API takes the phone as a query parameter (ADMIN). */
+    findAccountByPhone(phone: string): Promise<AdminAccount> {
+      return request(`/admin/accounts/by-phone?${new URLSearchParams({ phone }).toString()}`);
+    },
+    getAccount(accountId: string): Promise<AdminAccount> {
+      return request(`/admin/accounts/${id(accountId)}`);
+    },
+    grantRole(accountId: string, role: StaffRole): Promise<AdminAccount> {
+      return request(`/admin/accounts/${id(accountId)}/roles/${id(role)}`, { method: 'PUT' });
+    },
+    revokeRole(accountId: string, role: StaffRole): Promise<AdminAccount> {
+      return request(`/admin/accounts/${id(accountId)}/roles/${id(role)}`, { method: 'DELETE' });
+    },
+    getRoles(): Promise<AdminRoles> {
+      return request('/admin/roles');
+    },
+    getRestrictions(accountId: string): Promise<AdminRestriction[]> {
+      return request(`/admin/accounts/${id(accountId)}/restrictions`);
+    },
+    createRestriction(accountId: string, body: { kind: RestrictionKind; hours?: number; note?: string }): Promise<AdminRestriction> {
+      return request(`/admin/accounts/${id(accountId)}/restrictions`, { method: 'POST', body });
+    },
+    liftRestriction(restrictionId: string, note?: string): Promise<AdminRestriction> {
+      return request(`/admin/restrictions/${id(restrictionId)}/lift`, { method: 'POST', body: note ? { note } : {} });
+    },
+    getBehavior(accountId: string): Promise<Behavior> {
+      return request(`/admin/accounts/${id(accountId)}/behavior`);
+    },
+    getRisk(accountId: string): Promise<Risk> {
+      return request(`/admin/accounts/${id(accountId)}/risk`);
+    },
+    listRisk(query: { minScore?: number; page?: number; limit?: number }, signal?: AbortSignal): Promise<AdminPage<RiskQueueItem>> {
+      const params = new URLSearchParams();
+      params.set('minScore', String(query.minScore ?? 30));
+      params.set('page', String(query.page ?? 0));
+      params.set('limit', String(query.limit ?? 20));
+      return request(`/admin/risk?${params.toString()}`, { signal });
+    },
+    getAudit(query: { entityType?: string; entityId?: string; limit?: number }, signal?: AbortSignal): Promise<AuditEntry[]> {
+      const params = new URLSearchParams();
+      if (query.entityType) params.set('entityType', query.entityType);
+      if (query.entityId) params.set('entityId', query.entityId);
+      params.set('limit', String(query.limit ?? 50));
+      return request(`/admin/audit?${params.toString()}`, { signal });
+    },
   },
 
   // --- REALTIME SSE TICKET ---

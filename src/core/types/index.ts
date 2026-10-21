@@ -524,3 +524,138 @@ export interface Restriction {
   endsAt: string | null;
 }
 
+
+// ---------------------------------------------------------------------------
+// Staff (/admin/**): see docs/openapi.yaml
+// ---------------------------------------------------------------------------
+
+export type StaffRole = 'ADMIN' | 'MODERATOR' | 'CONTENT_EDITOR';
+export type RestrictionKind = Restriction['kind'];
+
+export interface AdminAccount {
+  accountId: string;
+  phoneMasked: string;
+  status: 'ACTIVE' | 'SUSPENDED' | 'DELETION_PENDING' | 'DELETED';
+  testAccount: boolean;
+  roles: string[];
+  createdAt: string;
+}
+
+export interface AdminRoles {
+  available: string[];
+  accounts: AdminAccount[];
+}
+
+export interface AuditEntry {
+  id: string;
+  actorAccountId: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  before: unknown;
+  after: unknown;
+  createdAt: string;
+}
+
+export type ModerationStatus = 'NEW' | 'IN_REVIEW' | 'RESOLVED' | 'DISMISSED';
+export type ModerationDecision = 'ACCEPTED' | 'RECLASSIFIED' | 'REJECTED';
+
+export interface ModerationReport {
+  id: string;
+  status: ModerationStatus;
+  reason: ReportReason;
+  finalReason: ReportReason | null;
+  decision: ModerationDecision | null;
+  sanctioned: boolean;
+  autoDismissed: boolean;
+  priority: number;
+  priorityReasons: string[];
+  reportedRiskScore: number | null;
+  comment: string | null;
+  messageId: string | null;
+  messageSnapshot: string | null;
+  reporterAccountId: string;
+  reportedAccountId: string;
+  reportedProfileId: string;
+  reportedDisplayName: string | null;
+  reportedConfirmedViolations: number;
+  createdAt: string;
+  moderatorAccountId: string | null;
+  moderatorNote: string | null;
+  decidedAt: string | null;
+}
+
+export interface ReportDecisionRequest {
+  decision: ModerationDecision;
+  reason?: ReportReason;
+  note?: string;
+  sanction?: boolean;
+  clearAboutText?: boolean;
+  clearDailyStatus?: boolean;
+}
+
+export interface AdminPage<T> {
+  items: T[];
+  page: number;
+  limit: number;
+  totalElements: number;
+}
+
+export interface VerificationReview {
+  id: string;
+  accountId: string;
+  profileId: string | null;
+  displayName: string | null;
+  status: VerificationRequest['status'];
+  gesture: string;
+  instruction: string;
+  selfieAvailable: boolean;
+  submittedAt: string | null;
+  decidedAt: string | null;
+  decidedBy: string | null;
+  rejectReason: string | null;
+  profilePhotos: Photo[];
+}
+
+/** /admin/accounts/{id}/restrictions item (full history row). */
+export interface AdminRestriction {
+  id: string;
+  accountId: string;
+  kind: RestrictionKind;
+  reason: string;
+  source: 'MODERATOR' | 'RULE' | 'ADMIN';
+  reportId: string | null;
+  createdBy: string | null;
+  note: string | null;
+  startsAt: string;
+  endsAt: string | null;
+  liftedAt: string | null;
+  liftedBy: string | null;
+  liftNote: string | null;
+}
+
+export interface RiskSignal {
+  code: string;
+  weight: number;
+  detail: string;
+}
+
+export interface Risk {
+  accountId: string;
+  score: number;
+  level: 'LOW' | 'MEDIUM' | 'HIGH';
+  signals: RiskSignal[];
+  computedAt: string;
+}
+
+export interface RiskQueueItem extends Risk {
+  profileId: string | null;
+  displayName: string | null;
+}
+
+export interface Behavior {
+  accountId: string;
+  computedAt: string;
+  /** BehaviorMetrics: counts and rates (rates are null when there is nothing to divide). */
+  metrics: Record<string, number | null>;
+}

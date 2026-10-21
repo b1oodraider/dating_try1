@@ -13,7 +13,7 @@ interface ReportModalProps {
   messageId?: string;
 }
 
-const REPORT_REASONS: Array<{ value: ReportReason; label: string; desc: string }> = [
+export const REPORT_REASONS: Array<{ value: ReportReason; label: string; desc: string }> = [
   { value: 'SPAM', label: 'Спам или реклама', desc: 'Ссылки, навязчивые предложения или бот-активность' },
   { value: 'FAKE_PROFILE', label: 'Фейковая анкета', desc: 'Чужие фотографии, выдает себя за другого' },
   { value: 'INAPPROPRIATE_CONTENT', label: 'Неприемлемый контент', desc: 'Оскорбления, непристойные фото или текст' },

@@ -12,10 +12,11 @@ import {
   FlaskConical,
   Crown,
   MessageCircle,
+  Gavel,
 } from 'lucide-react';
-import { api } from '../../core/api/client';
+import { isStaff } from '../../features/admin/components/AdminView';
 
-export type AppTab = 'discovery' | 'profile' | 'collection' | 'chats' | 'about';
+export type AppTab = 'discovery' | 'profile' | 'collection' | 'chats' | 'about' | 'admin';
 
 interface NavbarProps {
   currentTab: AppTab;
@@ -48,7 +49,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="w-9 h-9 rounded-xl bg-zinc-900 text-white flex items-center justify-center shadow-xs">
             <HeartHandshake className="w-5 h-5 text-rose-400" />
           </div>
-          <div>
+          {/* Hidden on phones: the extra staff / test buttons need the room. */}
+          <div className="hidden sm:block">
             <div className="font-bold text-base tracking-tight text-zinc-900 flex items-center gap-1.5">
               Dating
               <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-500 border border-zinc-200">
@@ -162,6 +164,21 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <Crown className="w-3.5 h-3.5 text-amber-500" />
                   Премиум
                 </span>
+              )}
+              {isStaff(account) && (
+                <button
+                  type="button"
+                  onClick={() => onTabChange('admin')}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-xl border transition-colors ${
+                    currentTab === 'admin'
+                      ? 'text-white bg-zinc-900 border-zinc-900'
+                      : 'text-zinc-700 bg-zinc-50 hover:bg-zinc-100 border-zinc-200'
+                  }`}
+                  title="Кабинет модератора"
+                >
+                  <Gavel className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">Кабинет модератора</span>
+                </button>
               )}
               {account.testAccount && (
                 <button

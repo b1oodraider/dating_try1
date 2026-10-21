@@ -16,6 +16,7 @@ import { api } from './core/api/client';
 import type { Match } from './core/types';
 import { RealtimeProvider, useRealtime } from './core/realtime/RealtimeContext';
 import { ToastProvider } from './shared/components/Toast';
+import { AdminView } from './features/admin/components/AdminView';
 
 const AppContent: React.FC = () => {
   const { account, isLoading, loadError, reloadSession, forgetSession, refreshProfile } = useAuth();
@@ -174,6 +175,8 @@ const AppContent: React.FC = () => {
         )}
 
         {currentTab === 'about' && <AboutView />}
+
+        {currentTab === 'admin' && <AdminView />}
       </main>
 
       {/* Footer */}

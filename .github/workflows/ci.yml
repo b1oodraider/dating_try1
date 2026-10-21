@@ -88,6 +88,10 @@ jobs:
         with: { name: backend-jar, path: jar }
       - uses: actions/download-artifact@v4
         with: { name: web, path: web }
+      # Testers download the latest build at https://<domain>/dating.apk (docs/testing.md).
+      - uses: actions/download-artifact@v4
+        with: { name: dating-apk, path: apk }
+      - run: cp apk/app-release.apk web/dating.apk
       - name: Ship to the server
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
