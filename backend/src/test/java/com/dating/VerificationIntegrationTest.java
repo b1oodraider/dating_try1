@@ -79,9 +79,9 @@ class VerificationIntegrationTest extends AdminTestSupport {
                 SELECT count(*) FROM verification_requests WHERE account_id = ? AND selfie_key IS NOT NULL""",
                 Integer.class, anna.accountId()), "no selfie is kept after decisions");
 
-        // A new photo was never compared with the selfie: the badge goes away.
+        // A new photo keeps the badge (each photo is checked for a person instead, docs/TODO.md).
         uploadPng(anna.token());
-        as(anna.token(), get("/api/v1/me/profile"), null).andExpect(jsonPath("$.verified").value(false));
+        as(anna.token(), get("/api/v1/me/profile"), null).andExpect(jsonPath("$.verified").value(true));
     }
 
     @Test

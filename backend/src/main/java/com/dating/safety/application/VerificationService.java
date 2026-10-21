@@ -11,7 +11,6 @@ import com.dating.media.application.ImageFormat;
 import com.dating.media.application.ImageMetadataStripper;
 import com.dating.media.application.MediaProperties;
 import com.dating.media.application.PhotoQueryService;
-import com.dating.media.application.ProfilePhotoAddedEvent;
 import com.dating.profiles.domain.Profile;
 import com.dating.profiles.persistence.ProfileRepository;
 import com.dating.safety.domain.Gesture;
@@ -249,12 +248,6 @@ public class VerificationService {
     }
 
     // ---------------------------------------------------------------- lifecycle
-
-    /** A new photo was not compared with the selfie: the badge must be earned again. */
-    @EventListener
-    public void onPhotoAdded(ProfilePhotoAddedEvent event) {
-        repository.setVerified(event.accountId(), false);
-    }
 
     @EventListener
     public void onAccountDeleted(AccountDeletedEvent event) {

@@ -42,7 +42,7 @@ MyProfile  = { id, displayName: string|null, age: number|null (computed from bir
                      // A hint for the owner only: the feed never ranks by it.
                missingForPublish: string[]   // subset of 'displayName','birthDate','gender','seeking','city','photos'; empty => can publish
                decorations: Decorations,     // how others see my profile
-               verified: boolean,            // selfie checked by a moderator; a new photo resets it
+               verified: boolean,            // selfie checked by a moderator; kept when photos are added
                createdAt, updatedAt }
 PublicProfile = { id, displayName, age, city, aboutText: string|null, dailyStatusText: string|null, tags: Tag[], photos: Photo[],
                   decorations: Decorations, verified: boolean (selfie checked by a moderator, see Selfie verification),
@@ -378,7 +378,7 @@ POST /me/verification/{id}/selfie           multipart `file` (JPEG/PNG/WebP, <= 
                                             200 VerificationRequest (PENDING) ; 404 VERIFICATION_NOT_FOUND ; 409 VERIFICATION_EXPIRED |
                                             VERIFICATION_NOT_AWAITING ; 400 EMPTY_FILE ; 413 FILE_TOO_LARGE ; 415 UNSUPPORTED_MEDIA_TYPE
   A moderator compares the selfie with the profile photos BY EYE (no automated face matching); the selfie is deleted right after
-  the decision. Approval sets the badge and lifts VERIFICATION_REQUIRED. Adding a photo later removes the badge (re-verify).
+  the decision. Approval sets the badge and lifts VERIFICATION_REQUIRED. Adding a photo later keeps the badge.
 
 ## Received likes (auth) — "who liked me"
 Likes I have not answered yet (no like back, no active pass of mine, no block); super likes first, then newest.
