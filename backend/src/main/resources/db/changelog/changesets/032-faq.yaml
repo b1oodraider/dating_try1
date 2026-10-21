@@ -1,0 +1,65 @@
+databaseChangeLog:
+  # FAQ in the help screen, edited from the staff cabinet (CONTENT_EDITOR, SUPPORT, ADMIN). Seeded with the
+  # answers that used to be built into the mobile app.
+  - changeSet:
+      id: 032-faq
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE faq_items (
+                id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                question   VARCHAR(200) NOT NULL,
+                answer     VARCHAR(4000) NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                active     BOOLEAN NOT NULL DEFAULT TRUE,
+                updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+        - insert:
+            tableName: faq_items
+            columns:
+              - column: {name: question, value: "Куда пропадают лайки?"}
+              - column: {name: answer, value: "В «Симпатиях» остаются только те, кому вы ещё не ответили: после ответа человек уходит из списка (при взаимности — в «Чаты»). Лайк может исчезнуть, если человек скрыл анкету, заблокировал вас, удалил аккаунт или не заходил больше 30 дней. Пока ваше селфи не подтверждено, ваши лайки ждут проверки и не видны другим (до 24 часов, время на проверке не считается)."}
+              - column: {name: sort_order, valueNumeric: 10}
+        - insert:
+            tableName: faq_items
+            columns:
+              - column: {name: question, value: "Почему мою анкету не показывают в ленте?"}
+              - column: {name: answer, value: "Анкета должна быть опубликована и с подтверждённым селфи. Её скрывают, если вы не заходили 30 дней или есть ограничение от модератора — оно видно наверху вашего профиля."}
+              - column: {name: sort_order, valueNumeric: 20}
+        - insert:
+            tableName: faq_items
+            columns:
+              - column: {name: question, value: "Как подтвердить селфи и зачем?"}
+              - column: {name: answer, value: "Профиль → «Проверка селфи»: сделайте селфи с жестом из подсказки, его сравнит модератор. После этого у анкеты появится значок «Проверен», анкету начнут показывать другим, а ваши лайки уйдут адресатам."}
+              - column: {name: sort_order, valueNumeric: 30}
+        - insert:
+            tableName: faq_items
+            columns:
+              - column: {name: question, value: "Фото не загружается или «на проверке»"}
+              - column: {name: answer, value: "На фото должен быть человек. Пока селфи не подтверждено, на каждом фото должно быть видно лицо. Если лицо на новом фото не совпало с вашими подтверждёнными фото, его посмотрит модератор — до этого другие его не видят."}
+              - column: {name: sort_order, valueNumeric: 40}
+        - insert:
+            tableName: faq_items
+            columns:
+              - column: {name: question, value: "Как вернуть пропущенные анкеты?"}
+              - column: {name: answer, value: "Когда анкеты в ленте закончатся, нажмите «Показать пропущенных снова» — бесплатно раз в сутки. С премиумом — в любой момент, а последнюю анкету можно вернуть кнопкой ↺ в левом верхнем углу ленты."}
+              - column: {name: sort_order, valueNumeric: 50}
+        - insert:
+            tableName: faq_items
+            columns:
+              - column: {name: question, value: "Как изменить пол или дату рождения?"}
+              - column: {name: answer, value: "После публикации — только через поддержку: напишите обращение в теме «Анкета и фото»."}
+              - column: {name: sort_order, valueNumeric: 60}
+        - insert:
+            tableName: faq_items
+            columns:
+              - column: {name: question, value: "Пропал чат с человеком"}
+              - column: {name: answer, value: "Человек мог отменить пару или заблокировать вас — тогда чат закрывается у обоих."}
+              - column: {name: sort_order, valueNumeric: 70}
+        - insert:
+            tableName: faq_items
+            columns:
+              - column: {name: question, value: "Что даёт премиум?"}
+              - column: {name: answer, value: "Список тех, кто вас лайкнул, расширенные фильтры (рост, слова-исключения), возврат анкет, невидимку и регулярные суперлайки и бусты."}
+              - column: {name: sort_order, valueNumeric: 80}

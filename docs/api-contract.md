@@ -545,6 +545,11 @@ through those who did not say. Feed score: + interests (3 per shared interest, u
 3 per shared artist; capped together with goals at 25) and behavior (stub, 0).
 
 ## Support (auth) — see docs/support.md
+GET    /faq          (public) 200 [ { id, question, answer, sortOrder } ]   active items, by sortOrder (the app keeps a built-in copy as fallback)
+GET    /admin/faq    (CONTENT_EDITOR, SUPPORT, ADMIN) 200 [ { id, question, answer, sortOrder, active, updatedAt } ]  all, by sortOrder
+POST   /admin/faq    body { question (1..200), answer (1..4000), sortOrder? 0..100000 (0), active? (true) }  201 ; 400 VALIDATION_ERROR
+PUT    /admin/faq/{id}  same body, full replace  200 ; 404 FAQ_NOT_FOUND
+DELETE /admin/faq/{id}  204 ; 404 FAQ_NOT_FOUND        Changes are audited (FAQ_ITEM).
 Users: POST/GET /support/tickets, GET /support/tickets/{id}, POST /support/tickets/{id}/messages.
 Staff (SUPPORT, MODERATOR, ADMIN): /admin/support/tickets… — queue, reply (push `support_reply`), close.
 

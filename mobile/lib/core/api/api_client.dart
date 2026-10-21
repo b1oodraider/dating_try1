@@ -476,6 +476,16 @@ class DatingApiClient {
   Future<SupportTicket> getSupportTicket(String id) async =>
       SupportTicket.fromJson(_expectMap(await _send('GET', '/support/tickets/${_segment(id)}')));
 
+  /// FAQ as (question, answer), in display order. Public.
+  Future<List<(String, String)>> getFaq() async {
+    final json = await _send('GET', '/faq', authenticated: false);
+    if (json is! List) throw _badResponse();
+    return [
+      for (final item in json.whereType<Map<String, dynamic>>())
+        (asString(item['question']), asString(item['answer'])),
+    ];
+  }
+
   /// 429 RATE_LIMITED after 5 new tickets a day.
   Future<SupportTicket> createSupportTicket(String category, String text) async => SupportTicket.fromJson(
       _expectMap(await _send('POST', '/support/tickets', body: {'category': category, 'text': text})));

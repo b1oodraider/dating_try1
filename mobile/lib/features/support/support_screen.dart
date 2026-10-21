@@ -7,8 +7,8 @@ import '../../core/models/support.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/empty_state.dart';
 
-/// Answers people look for most. Kept in the app (they change with the rules in docs/matching.md).
-const List<(String, String)> _faq = [
+/// Shown until GET /faq answers (offline, old server); the live list is edited in the staff cabinet.
+const List<(String, String)> _builtInFaq = [
   (
     'Куда пропадают лайки?',
     'В «Симпатиях» остаются только те, кому вы ещё не ответили: после ответа человек уходит из списка (при взаимности — '
@@ -64,6 +64,7 @@ class SupportScreen extends StatefulWidget {
 class _SupportScreenState extends State<SupportScreen> {
   List<SupportTicket>? _tickets;
   String? _error;
+  List<(String, String)> _faq = _builtInFaq;
 
   @override
   void initState() {
@@ -72,6 +73,9 @@ class _SupportScreenState extends State<SupportScreen> {
   }
 
   Future<void> _load() async {
+    widget.api.getFaq().then((faq) {
+      if (mounted && faq.isNotEmpty) setState(() => _faq = faq);
+    }, onError: (Object e) => debugPrint('Failed to load FAQ: $e'));
     try {
       final tickets = await widget.api.getSupportTickets();
       if (!mounted) return;

@@ -61,3 +61,5 @@ databaseChangeLog:
       file: db/changelog/changesets/030-support.yaml
   - include:
       file: db/changelog/changesets/031-facts-and-score.yaml
+  - include:
+      file: db/changelog/changesets/032-faq.yaml
