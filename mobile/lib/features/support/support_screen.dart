@@ -340,8 +340,7 @@ class _TicketScreenState extends State<TicketScreen> {
                               padding: const EdgeInsets.fromLTRB(14, 9, 12, 7),
                               constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
                               decoration: BoxDecoration(
-                                gradient: m.fromStaff ? null : Brand.gradient,
-                                color: m.fromStaff ? theme.colorScheme.surfaceContainerHigh : null,
+                                color: m.fromStaff ? theme.colorScheme.surfaceContainerLow : Brand.rose,
                                 borderRadius: BorderRadius.circular(18),
                               ),
                               child: Column(

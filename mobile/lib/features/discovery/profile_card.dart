@@ -339,14 +339,7 @@ class _Section extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title.toUpperCase(),
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.1,
-            ),
-          ),
+          Text(title, style: theme.textTheme.titleMedium),
           const SizedBox(height: Gaps.sm),
           child,
         ],

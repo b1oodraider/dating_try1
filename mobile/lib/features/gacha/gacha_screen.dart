@@ -144,7 +144,7 @@ class _GachaScreenState extends State<GachaScreen> {
             margin: const EdgeInsets.only(bottom: Gaps.md),
             padding: const EdgeInsets.all(Gaps.md + 4),
             decoration: BoxDecoration(
-              gradient: Brand.gradient,
+              color: Theme.of(context).colorScheme.surfaceContainerLow,
               borderRadius: BorderRadius.circular(Radii.lg),
             ),
             child: Column(
@@ -152,7 +152,7 @@ class _GachaScreenState extends State<GachaScreen> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.confirmation_number_rounded, color: Colors.white, size: 32),
+                    const Icon(Icons.confirmation_number_rounded, color: Brand.rose, size: 32),
                     const SizedBox(width: Gaps.md),
                     Expanded(
                       child: Column(
@@ -161,12 +161,11 @@ class _GachaScreenState extends State<GachaScreen> {
                           Text('Билеты: $_tickets',
                               style: Theme.of(context)
                                   .textTheme
-                                  .titleLarge
-                                  ?.copyWith(color: Colors.white)),
+                                  .headlineSmall),
                           if (shards != null)
                             Text(
                               'Осколки: ${shards.balance} · ${shards.shardsPerTicket} = 1 билет',
-                              style: const TextStyle(color: Colors.white70),
+                              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                             ),
                         ],
                       ),
@@ -178,10 +177,6 @@ class _GachaScreenState extends State<GachaScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Brand.rose,
-                      ),
                       onPressed: _exchanging ? null : _exchange,
                       child: Text('Обменять осколки на ${shards.affordableTickets} бил.'),
                     ),

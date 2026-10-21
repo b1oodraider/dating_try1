@@ -86,8 +86,7 @@ Future<ProfileDetailsResult?> showProfileDetails(
                     tooltip: 'Суперлайк',
                     onPressed: () => Navigator.of(sheetContext)
                         .pop(ProfileDetailsResult.superlike),
-                    icon:
-                        const Icon(Icons.star_rounded, color: Brand.superlike),
+                    icon: const Icon(Icons.star_rounded),
                   ),
                   const SizedBox(width: Gaps.sm),
                   Expanded(

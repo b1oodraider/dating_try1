@@ -263,7 +263,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                 for (final step in profileSteps)
                   if (step.id != 'photos')
                     ListTile(
-                      leading: Icon(step.icon, color: theme.colorScheme.primary),
+                      leading: Icon(step.icon),
                       title: Text(step.title),
                       subtitle: Text(
                         step.hasValue(profile) ? step.summary(profile) : 'Не заполнено',
@@ -315,20 +315,20 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
               children: [
                 ListTile(
                   leading: Icon(profile.verified ? Icons.verified : Icons.camera_front_outlined,
-                      color: profile.verified ? Brand.verified : theme.colorScheme.primary),
+                      color: profile.verified ? Brand.verified : null),
                   title: Text(profile.verified ? 'Селфи проверено' : 'Пройти проверку селфи'),
                   subtitle: const Text('Значок «Проверен» и показ анкеты в ленте'),
                   trailing: profile.verified ? null : const Icon(Icons.chevron_right_rounded),
                   onTap: profile.verified ? null : () => _push(VerificationScreen(api: api)),
                 ),
                 ListTile(
-                  leading: Icon(Icons.collections_bookmark_outlined, color: theme.colorScheme.primary),
+                  leading: const Icon(Icons.collections_bookmark_outlined),
                   title: const Text('Коллекция и премиум'),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => _push(CollectionScreen(session: widget.session)),
                 ),
                 ListTile(
-                  leading: Icon(Icons.support_agent_rounded, color: theme.colorScheme.primary),
+                  leading: const Icon(Icons.support_agent_rounded),
                   title: const Text('Помощь и поддержка'),
                   subtitle: const Text('Частые вопросы и обращения'),
                   trailing: const Icon(Icons.chevron_right_rounded),
@@ -337,7 +337,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                 CheckForUpdatesTile(api: api),
                 if (_account?.testAccount ?? false)
                   ListTile(
-                    leading: Icon(Icons.science_outlined, color: theme.colorScheme.primary),
+                    leading: const Icon(Icons.science_outlined),
                     title: const Text('Тест-панель'),
                     trailing: const Icon(Icons.chevron_right_rounded),
                     onTap: () => _push(TestPanelScreen(session: widget.session)),
@@ -400,15 +400,12 @@ class _PhotoStrip extends StatelessWidget {
                 return SizedBox(
                   width: 90,
                   child: Material(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.08),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(Radii.md),
-                      side: BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.35), width: 1.5),
-                    ),
+                    color: theme.colorScheme.surfaceContainer,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.md)),
                     child: InkWell(
                       customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.md)),
                       onTap: onOpen,
-                      child: Icon(Icons.add_a_photo_outlined, color: theme.colorScheme.primary),
+                      child: Icon(Icons.add_a_photo_outlined, color: theme.colorScheme.onSurfaceVariant),
                     ),
                   ),
                 );

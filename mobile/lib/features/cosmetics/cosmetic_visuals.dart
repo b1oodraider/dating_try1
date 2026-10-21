@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/models/decoration.dart';
 import '../../core/models/json_utils.dart';
 import '../../core/models/wallet.dart';
+import '../../core/theme/app_theme.dart';
 
 // Shared rendering of cosmetics and items: the feed card, the collection and
 // the test panel all draw them the same way. Everything is driven by the
@@ -13,14 +14,15 @@ import '../../core/models/wallet.dart';
 /// Color of a rarity tier; null for no / unknown rarity.
 Color? rarityColor(String? rarity) {
   switch (rarity) {
+    // One ladder inside the brand palette (docs/design-audit.md): grey, ink, rose, gold.
     case 'COMMON':
-      return const Color(0xFF78909C);
+      return const Color(0xFF8A8286);
     case 'RARE':
-      return const Color(0xFF1E88E5);
+      return const Color(0xFF4A4245);
     case 'EPIC':
-      return const Color(0xFF8E24AA);
+      return Brand.rose;
     case 'LEGENDARY':
-      return const Color(0xFFF57C00);
+      return Brand.gold;
   }
   return null;
 }

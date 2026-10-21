@@ -80,15 +80,8 @@ class _PhoneScreenState extends State<PhoneScreen> {
                 width: 88,
                 height: 88,
                 decoration: BoxDecoration(
-                  gradient: Brand.gradient,
+                  color: Brand.rose,
                   borderRadius: BorderRadius.circular(28),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Brand.rose.withValues(alpha: 0.35),
-                      blurRadius: 24,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
                 ),
                 child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 44),
               ),

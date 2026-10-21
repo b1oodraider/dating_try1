@@ -158,7 +158,7 @@ void main() {
 
     expect(find.text('Москва'), findsOneWidget);
     expect(find.text('168 см'), findsOneWidget);
-    expect(find.text('ИЩУ'), findsOneWidget);
+    expect(find.text('Ищу'), findsOneWidget);
     expect(find.text('Серьёзные'), findsOneWidget);
     expect(find.text('Семья'), findsOneWidget);
     expect(find.byType(PremiumBadge), findsOneWidget);
@@ -177,7 +177,7 @@ void main() {
     );
 
     expect(find.byType(PremiumBadge), findsNothing);
-    expect(find.text('ИЩУ'), findsNothing);
+    expect(find.text('Ищу'), findsNothing);
   });
 
   testWidgets(

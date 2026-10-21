@@ -197,7 +197,7 @@ class _NewPair extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(3),
-              decoration: const BoxDecoration(shape: BoxShape.circle, gradient: Brand.gradient),
+              decoration: const BoxDecoration(shape: BoxShape.circle, color: Brand.rose),
               child: Container(
                 padding: const EdgeInsets.all(2),
                 decoration: BoxDecoration(

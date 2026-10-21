@@ -166,8 +166,8 @@ class SwipeDeckState extends State<SwipeDeck>
                         builder: (context, child) {
                           final offset = _flying == null
                               ? _drag
-                              : Offset.lerp(
-                                  _flyFrom, _flyTo, Curves.easeIn.transform(_fly.value))!;
+                              : Offset.lerp(_flyFrom, _flyTo,
+                                  Curves.easeIn.transform(_fly.value))!;
                           return Transform.translate(
                             offset: offset,
                             child: Transform.rotate(
@@ -201,11 +201,12 @@ class SwipeDeckState extends State<SwipeDeck>
                                 text: 'НЕТ',
                                 color: Brand.pass,
                                 alignment: Alignment.topRight,
-                                opacity: ((-_drag.dx - 30) / 90).clamp(0.0, 1.0),
+                                opacity:
+                                    ((-_drag.dx - 30) / 90).clamp(0.0, 1.0),
                               ),
                               _Stamp(
                                 text: 'СУПЕРЛАЙК',
-                                color: Brand.superlike,
+                                color: Colors.white,
                                 alignment: Alignment.bottomCenter,
                                 opacity: _drag.dx.abs() < 80
                                     ? ((-_drag.dy - 40) / 90).clamp(0.0, 1.0)
@@ -222,7 +223,8 @@ class SwipeDeckState extends State<SwipeDeck>
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(Gaps.md, Gaps.md, Gaps.md, Gaps.md),
+          padding:
+              const EdgeInsets.fromLTRB(Gaps.md, Gaps.md, Gaps.md, Gaps.md),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
@@ -235,7 +237,6 @@ class SwipeDeckState extends State<SwipeDeck>
               ),
               _RoundButton(
                 icon: Icons.star_rounded,
-                color: Brand.superlike,
                 tooltip: 'Суперлайк',
                 size: 52,
                 onPressed: top == null || widget.likesBlocked
@@ -276,9 +277,8 @@ class _CardFace extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final photos = profile.photos;
-    final photo = photos.isEmpty
-        ? null
-        : photos[math.min(photoIndex, photos.length - 1)];
+    final photo =
+        photos.isEmpty ? null : photos[math.min(photoIndex, photos.length - 1)];
     final details = [
       if (profile.distanceKm != null)
         '~${profile.distanceKm} км'
@@ -288,178 +288,192 @@ class _CardFace extends StatelessWidget {
     ].join(' · ');
 
     final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(Radii.card),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.18),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(Radii.card),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Opaque base: the card below must never show through a loading photo.
-            const ColoredBox(color: Colors.black),
-            NetworkPhoto(url: photo == null ? null : photoUrl(photo.url)),
-            if (photos.length > 1)
-              Positioned(
-                top: 10,
-                left: 12,
-                right: 12,
-                child: PhotoSegments(count: photos.length, index: photoIndex),
-              ),
-            if (profile.compatibility != null)
-              Positioned(
-                top: 24,
-                left: 12,
-                child: _Pill(
-                  '${profile.compatibility}% совпадение',
-                  icon: Icons.auto_awesome,
-                  gradient: Brand.gradient,
-                ),
-              ),
+    final pace = profile.tags.where((t) => t.category == 'pace').firstOrNull;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(Radii.card),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Opaque base: the card below must never show through a loading photo.
+          const ColoredBox(color: Colors.black),
+          NetworkPhoto(url: photo == null ? null : photoUrl(photo.url)),
+          if (photos.length > 1)
             Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: DecoratedBox(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    stops: [0, 0.55, 1],
-                    colors: [Color(0xE6000000), Color(0x80000000), Colors.transparent],
-                  ),
+              top: 10,
+              left: 12,
+              right: 12,
+              child: PhotoSegments(count: photos.length, index: photoIndex),
+            ),
+          if (profile.compatibility != null)
+            Positioned(
+              top: 24,
+              left: 12,
+              child: _Pill(
+                '${profile.compatibility}% совпадение',
+                color: Brand.rose,
+              ),
+            ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  stops: [0, 0.55, 1],
+                  colors: [
+                    Color(0xE6000000),
+                    Color(0x80000000),
+                    Colors.transparent
+                  ],
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(Gaps.md + 4, 64, Gaps.sm, Gaps.md + 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Wrap(
-                              spacing: 8,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                Text.rich(
-                                  TextSpan(children: [
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    Gaps.md + 4, 64, Gaps.sm, Gaps.md + 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text.rich(
+                                TextSpan(children: [
+                                  TextSpan(
+                                    text: profile.displayName,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w700),
+                                  ),
+                                  if (profile.age != null)
                                     TextSpan(
-                                      text: profile.displayName,
-                                      style: const TextStyle(fontWeight: FontWeight.w800),
+                                      text: '  ${profile.age}',
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w400),
                                     ),
-                                    if (profile.age != null)
-                                      TextSpan(
-                                        text: '  ${profile.age}',
-                                        style: const TextStyle(fontWeight: FontWeight.w400),
-                                      ),
-                                  ]),
-                                  style: theme.textTheme.headlineMedium?.copyWith(
-                                    color: Colors.white,
-                                    fontSize: 30,
-                                  ),
-                                ),
-                                if (profile.verified)
-                                  const Tooltip(
-                                    message: 'Селфи проверено модератором',
-                                    child: Icon(Icons.verified, color: Brand.verified, size: 26),
-                                  ),
-                                if (profile.premium) const PremiumBadge(),
-                              ],
-                            ),
-                            if (details.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.place_outlined, size: 16, color: Colors.white70),
-                                    const SizedBox(width: 4),
-                                    Flexible(
-                                      child: Text(
-                                        details,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
-                                      ),
-                                    ),
-                                  ],
+                                ]),
+                                style: theme.textTheme.headlineMedium?.copyWith(
+                                  color: Colors.white,
+                                  fontSize: 30,
                                 ),
                               ),
-                            if ((profile.dailyStatusText ?? '').isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: Gaps.sm),
-                                child: Text(
-                                  '«${profile.dailyStatusText}»',
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: const Color(0xFFFFD7A8),
-                                    fontStyle: FontStyle.italic,
-                                  ),
+                              if (profile.verified)
+                                const Tooltip(
+                                  message: 'Селфи проверено модератором',
+                                  child: Icon(Icons.verified,
+                                      color: Colors.white, size: 24),
                                 ),
-                              ),
-                            if (profile.common.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: Gaps.sm + 2),
-                                child: Wrap(
-                                  spacing: 6,
-                                  runSpacing: 6,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  children: [
-                                    Text(
-                                      'Общее:',
-                                      style: theme.textTheme.labelLarge?.copyWith(color: Colors.white70),
-                                    ),
-                                    for (final thing in profile.common.take(2))
-                                      _Pill(thing, icon: Icons.favorite_rounded),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      if (onInfo != null)
-                        IconButton(
-                          tooltip: 'Подробнее',
-                          onPressed: onInfo,
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.white.withValues(alpha: 0.18),
+                              if (profile.premium) const PremiumBadge(),
+                            ],
                           ),
-                          icon: const Icon(Icons.keyboard_arrow_up_rounded, color: Colors.white, size: 28),
+                          if (details.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.place_outlined,
+                                      size: 16, color: Colors.white70),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      details,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(color: Colors.white70),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          if ((profile.dailyStatusText ?? '').isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: Gaps.sm),
+                              child: Text(
+                                '«${profile.dailyStatusText}»',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: Colors.white,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                          // The product's own thing: how this person likes to talk (the pace card).
+                          if (pace != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: Gaps.sm + 2),
+                              child: Text.rich(
+                                TextSpan(children: [
+                                  const TextSpan(
+                                      text: 'Темп  ',
+                                      style: TextStyle(color: Colors.white70)),
+                                  TextSpan(text: pace.label),
+                                ]),
+                                style: theme.textTheme.titleSmall
+                                    ?.copyWith(color: Colors.white),
+                              ),
+                            ),
+                          if (profile.common.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: Gaps.sm + 2),
+                              child: Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Text(
+                                    'Общее:',
+                                    style: theme.textTheme.labelLarge
+                                        ?.copyWith(color: Colors.white70),
+                                  ),
+                                  for (final thing in profile.common.take(2))
+                                    _Pill(thing, icon: Icons.favorite_rounded),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (onInfo != null)
+                      IconButton(
+                        tooltip: 'Подробнее',
+                        onPressed: onInfo,
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.white.withValues(alpha: 0.18),
                         ),
-                    ],
-                  ),
+                        icon: const Icon(Icons.keyboard_arrow_up_rounded,
+                            color: Colors.white, size: 28),
+                      ),
+                  ],
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
 class _Pill extends StatelessWidget {
-  const _Pill(this.text, {this.icon, this.gradient});
+  const _Pill(this.text, {this.icon, this.color});
 
   final String text;
   final IconData? icon;
-  final Gradient? gradient;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: gradient == null ? Colors.white.withValues(alpha: 0.2) : null,
-          gradient: gradient,
+          color: color ?? Colors.white.withValues(alpha: 0.2),
           borderRadius: BorderRadius.circular(100),
         ),
         child: Row(
@@ -471,7 +485,9 @@ class _Pill extends StatelessWidget {
             ],
             Text(text,
                 style: const TextStyle(
-                    color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600)),
           ],
         ),
       );
@@ -506,22 +522,22 @@ class _Stamp extends StatelessWidget {
                     ? 0.25
                     : 0,
             child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.15),
-              border: Border.all(color: color, width: 4),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              text,
-              style: TextStyle(
-                color: color,
-                fontSize: 30,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.15),
+                border: Border.all(color: color, width: 4),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                text,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 30,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1,
+                ),
               ),
             ),
-          ),
           ),
         ),
       ),
@@ -534,7 +550,7 @@ class _Stamp extends StatelessWidget {
 class _RoundButton extends StatelessWidget {
   const _RoundButton({
     required this.icon,
-    required this.color,
+    this.color,
     required this.tooltip,
     required this.onPressed,
     required this.size,
@@ -542,7 +558,9 @@ class _RoundButton extends StatelessWidget {
   });
 
   final IconData icon;
-  final Color color;
+
+  /// Icon colour; null = the ink of the theme.
+  final Color? color;
   final String tooltip;
   final VoidCallback? onPressed;
   final double size;
@@ -564,15 +582,8 @@ class _RoundButton extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: filled ? Brand.gradient : null,
-              color: filled ? null : scheme.surfaceContainerLowest,
-              boxShadow: [
-                BoxShadow(
-                  color: (filled ? Brand.like : Colors.black).withValues(alpha: filled ? 0.35 : 0.12),
-                  blurRadius: 16,
-                  offset: const Offset(0, 6),
-                ),
-              ],
+              color: filled ? Brand.like : scheme.surfaceContainerLowest,
+              border: filled ? null : Border.all(color: scheme.outlineVariant),
             ),
             child: Material(
               type: MaterialType.transparency,
@@ -583,7 +594,9 @@ class _RoundButton extends StatelessWidget {
                 child: SizedBox(
                   width: size,
                   height: size,
-                  child: Icon(icon, size: size * 0.5, color: filled ? Colors.white : color),
+                  child: Icon(icon,
+                      size: size * 0.5,
+                      color: filled ? Colors.white : color ?? scheme.onSurface),
                 ),
               ),
             ),

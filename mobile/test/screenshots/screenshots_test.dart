@@ -72,6 +72,11 @@ Future<void> _loadFonts() async {
     }
   }
   await roboto.load();
+  final onest = FontLoader('Onest');
+  for (final weight in ['Regular', 'Medium', 'SemiBold', 'Bold']) {
+    onest.addFont(File('assets/fonts/Onest-$weight.ttf').readAsBytes().then(ByteData.sublistView));
+  }
+  await onest.load();
   await (FontLoader('MaterialIcons')
         ..addFont(File('${dir.path}/materialicons-regular.otf')
             .readAsBytes()

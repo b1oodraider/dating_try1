@@ -380,7 +380,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       child: DecoratedBox(
                         decoration: const BoxDecoration(
                           shape: BoxShape.circle,
-                          gradient: Brand.gradient,
+                          color: Brand.rose,
                         ),
                         child: IconButton(
                           onPressed: _sending ? null : _sendText,
@@ -423,8 +423,7 @@ class _Bubble extends StatelessWidget {
             maxWidth: MediaQuery.of(context).size.width * 0.75,
           ),
           decoration: BoxDecoration(
-            gradient: mine ? Brand.gradient : null,
-            color: mine ? null : theme.colorScheme.surfaceContainerHigh,
+            color: mine ? Brand.rose : theme.colorScheme.surfaceContainerLow,
             borderRadius: BorderRadius.only(
               topLeft: const Radius.circular(20),
               topRight: const Radius.circular(20),

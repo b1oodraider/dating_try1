@@ -269,7 +269,7 @@ class _LikeCard extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Brand.superlike,
+                      color: Colors.black.withValues(alpha: 0.55),
                       borderRadius: BorderRadius.circular(100),
                     ),
                     child: const Row(
@@ -307,7 +307,7 @@ class _LikeCard extends StatelessWidget {
                         if (profile.verified)
                           const Padding(
                             padding: EdgeInsets.only(left: 4),
-                            child: Icon(Icons.verified, size: 16, color: Brand.verified),
+                            child: Icon(Icons.verified, size: 16, color: Colors.white),
                           ),
                       ],
                     ),
@@ -330,7 +330,7 @@ class _LikeCard extends StatelessWidget {
                             icon: Icons.favorite_rounded,
                             tooltip: 'Ответить взаимностью',
                             onPressed: onLike,
-                            gradient: Brand.gradient,
+                            color: Brand.rose,
                           ),
                         ),
                       ],
@@ -351,21 +351,20 @@ class _CardAction extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onPressed,
-    this.gradient,
+    this.color,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onPressed;
-  final Gradient? gradient;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) => Tooltip(
         message: tooltip,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            gradient: gradient,
-            color: gradient == null ? Colors.white.withValues(alpha: 0.22) : null,
+            color: color ?? Colors.white.withValues(alpha: 0.22),
             borderRadius: BorderRadius.circular(100),
           ),
           child: Material(

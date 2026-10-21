@@ -745,11 +745,8 @@ class _PhotosEditorState extends State<PhotosEditor> {
               ),
             if (p.photos.length < MyProfile.maxPhotos)
               Material(
-                color: theme.colorScheme.primary.withValues(alpha: 0.08),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(Radii.md),
-                  side: BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.35), width: 1.5),
-                ),
+                color: theme.colorScheme.surfaceContainer,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.md)),
                 child: InkWell(
                   customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.md)),
                   onTap: _busy ? null : _add,
@@ -762,7 +759,7 @@ class _PhotosEditorState extends State<PhotosEditor> {
                               Text(_progress!, style: theme.textTheme.bodySmall),
                             ],
                           ])
-                        : Icon(Icons.add_photo_alternate_outlined, color: theme.colorScheme.primary),
+                        : Icon(Icons.add_photo_alternate_outlined, color: theme.colorScheme.onSurfaceVariant),
                   ),
                 ),
               ),
