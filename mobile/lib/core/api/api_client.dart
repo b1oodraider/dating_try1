@@ -14,6 +14,7 @@ import '../models/exclusion_words.dart';
 import '../models/gacha.dart';
 import '../models/goal.dart';
 import '../models/boost.dart';
+import '../models/catalog.dart';
 import '../models/facts.dart';
 import '../models/interest.dart';
 import '../models/json_utils.dart';
@@ -432,6 +433,11 @@ class DatingApiClient {
     return ChatMessage.fromJson(_expectMap(json));
   }
 
+  /// «Печатает…» for the other person; call at most every few seconds while typing.
+  Future<void> sendTyping(String matchId) async {
+    await _send('POST', '/matches/${_segment(matchId)}/typing');
+  }
+
   Future<void> markRead(String matchId, String lastReadMessageId) async {
     await _send('POST', '/matches/${_segment(matchId)}/read',
         body: {'lastReadMessageId': lastReadMessageId});
@@ -568,6 +574,12 @@ class DatingApiClient {
   // ------------------------------------------------------ Testing: social
   //
   // Seed profiles act on my behalf: they like me, match with me, write to me.
+
+  /// Generates [count] (1..50) published seed profiles that match me; with [likeMe] all of them like me.
+  /// Returns how many were created.
+  Future<int> createSeedCrowd(int count, {bool likeMe = false}) async => asInt(_expectMap(await _send(
+      'POST', '/testing/profiles/crowd',
+      body: {'count': count, if (likeMe) 'likeMe': true}))['created']);
 
   Future<List<SeedProfileRef>> getSeedProfiles() async {
     final json = await _send('GET', '/testing/profiles');
@@ -723,13 +735,21 @@ class DatingApiClient {
         body: {'quantity': quantity},
       );
 
-  /// Sets the bought (PERMANENT) balance to exactly [quantity] (>= 0).
-  Future<TestingState> setTestItemBalance(String itemCode, int quantity) =>
+  /// Sets the bought (PERMANENT) balance to exactly [quantity] (>= 0); with [total] the whole balance,
+  /// premium allowance units included.
+  Future<TestingState> setTestItemBalance(String itemCode, int quantity, {bool total = false}) =>
       _testing(
         'PUT',
         '/testing/wallet/items/${_segment(itemCode)}',
-        body: {'quantity': quantity},
+        body: {'quantity': quantity, if (total) 'total': true},
       );
+
+  /// Active catalog items, sorted by kind, category, code.
+  Future<List<CatalogItem>> getCatalog() async {
+    final json = await _send('GET', '/catalog');
+    if (json is! List) throw _badResponse();
+    return json.whereType<Map<String, dynamic>>().map(CatalogItem.fromJson).toList();
+  }
 
   /// Adds [days] (1..3650) of premium.
   Future<TestingState> addTestPremiumDays(int days) =>

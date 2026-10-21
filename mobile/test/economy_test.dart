@@ -344,6 +344,13 @@ void main() {
         body: {'quantity': 0},
       ),
       (
+        name: 'set total item balance',
+        call: (api) => api.setTestItemBalance('SUPERLIKE', 2, total: true),
+        method: 'PUT',
+        path: '/testing/wallet/items/SUPERLIKE',
+        body: {'quantity': 2, 'total': true},
+      ),
+      (
         name: 'add premium days',
         call: (api) => api.addTestPremiumDays(30),
         method: 'POST',

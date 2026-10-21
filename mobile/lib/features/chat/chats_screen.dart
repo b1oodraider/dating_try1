@@ -130,15 +130,40 @@ class _MatchTile extends StatelessWidget {
     return ListTile(
       onTap: onTap,
       minVerticalPadding: 12,
-      leading: ClipOval(
-        child: SizedBox(
-          width: 56,
-          height: 56,
-          child: NetworkPhoto(
-            url: photo == null
-                ? null
-                : controller.api.resolveMediaUrl(photo.url),
-          ),
+      leading: SizedBox(
+        width: 56,
+        height: 56,
+        child: Stack(
+          children: [
+            ClipOval(
+              child: SizedBox(
+                width: 56,
+                height: 56,
+                child: NetworkPhoto(
+                  url: photo == null
+                      ? null
+                      : controller.api.resolveMediaUrl(photo.url),
+                ),
+              ),
+            ),
+            if (match.otherOnline)
+              Positioned(
+                right: 1,
+                bottom: 1,
+                child: Semantics(
+                  label: 'в сети',
+                  child: Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF16A34A),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Theme.of(context).colorScheme.surface, width: 2),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
       title: Row(

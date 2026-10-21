@@ -23,6 +23,10 @@ public record MatchDto(
         long unreadCount,
         UUID myLastReadMessageId,
         UUID otherLastReadMessageId,
-        Instant otherLastReadAt
+        Instant otherLastReadAt,
+        /** When the other person was last active; null = not known yet. */
+        Instant otherLastSeenAt,
+        /** The other person has the app open (event stream) or was active in the last 2 minutes. */
+        boolean otherOnline
 ) {
 }

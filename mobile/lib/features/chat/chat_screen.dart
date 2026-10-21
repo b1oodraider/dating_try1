@@ -44,6 +44,13 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _sending = false;
   String? _error;
 
+  /// The other person typed recently: «печатает…» until this moment.
+  DateTime? _typingUntil;
+  Timer? _typingTimer;
+
+  /// When I last told the server I am typing (at most every 3 s).
+  DateTime _sentTypingAt = DateTime.fromMillisecondsSinceEpoch(0);
+
   /// A text that failed to send keeps its id, so a retry is stored once.
   String? _unsentText;
   String? _unsentId;
@@ -81,6 +88,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_chats.openMatchId == widget.matchId) _chats.openMatchId = null;
     _chats.removeListener(_onChatsChanged);
     _subscription.cancel();
+    _typingTimer?.cancel();
     _input.dispose();
     super.dispose();
   }
@@ -151,8 +159,30 @@ class _ChatScreenState extends State<ChatScreen> {
     } else if (event.name == 'message') {
       final message = ChatMessage.fromJson(event.data);
       if (message.matchId != widget.matchId) return;
+      if (!message.mine) _setTyping(false);
       _add(message);
+    } else if (event.name == 'typing' && event.data['matchId'] == widget.matchId) {
+      _setTyping(true);
     }
+  }
+
+  void _setTyping(bool on) {
+    _typingTimer?.cancel();
+    if (!mounted) return;
+    setState(() => _typingUntil = on ? DateTime.now().add(const Duration(seconds: 5)) : null);
+    if (on) {
+      _typingTimer = Timer(const Duration(seconds: 5), () {
+        if (mounted) setState(() => _typingUntil = null);
+      });
+    }
+  }
+
+  /// Best effort and throttled: a lost «typing» costs nothing.
+  void _onInputChanged(String text) {
+    final now = DateTime.now();
+    if (text.trim().isEmpty || now.difference(_sentTypingAt) < const Duration(seconds: 3)) return;
+    _sentTypingAt = now;
+    _chats.api.sendTyping(widget.matchId).catchError((Object e) => debugPrint('typing: $e'));
   }
 
   void _add(ChatMessage message) {
@@ -246,7 +276,22 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(match?.profile.displayName ?? 'Чат'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(match?.profile.displayName ?? 'Чат'),
+            if (_typingUntil != null || match?.presenceText() != null)
+              Text(
+                _typingUntil != null ? 'печатает…' : match!.presenceText()!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: _typingUntil != null || match!.otherOnline
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+          ],
+        ),
         actions: [
           PopupMenuButton<String>(
             onSelected: _menu,
@@ -347,6 +392,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     Expanded(
                       child: TextField(
                         controller: _input,
+                        onChanged: _onInputChanged,
                         minLines: 1,
                         maxLines: 4,
                         maxLength: 2000,

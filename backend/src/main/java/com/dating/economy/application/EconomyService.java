@@ -171,6 +171,27 @@ public class EconomyService {
     }
 
     /**
+     * Testing support: sets the TOTAL balance of a consumable (premium allowance units included) exactly.
+     * Lowering it takes from the PERIODIC (premium) units last, so what was bought goes first; raising it adds
+     * to PERMANENT. Cosmetics behave as {@link #setPermanentBalance}.
+     */
+    @Transactional
+    public void setTotalBalance(UUID accountId, String itemCode, long quantity) {
+        CatalogItem item = requireItem(itemCode);
+        if (!item.kind().stackable()) {
+            setPermanentBalance(accountId, itemCode, quantity);
+            return;
+        }
+        if (quantity < 0) {
+            throw ApiException.badRequest("VALIDATION_ERROR", "Некорректное количество для " + itemCode);
+        }
+        Map<Bucket, Long> balances = repository.lockBalances(accountId, itemCode);
+        long periodic = Math.min(balances.getOrDefault(Bucket.PERIODIC, 0L), quantity);
+        repository.setBalance(accountId, itemCode, Bucket.PERIODIC, periodic);
+        repository.setBalance(accountId, itemCode, Bucket.PERMANENT, quantity - periodic);
+    }
+
+    /**
      * Testing support: forgets a transaction (and its ledger lines) so the same idempotency key can be
      * applied again. Balances are not changed.
      */

@@ -62,7 +62,8 @@ public class FaqService {
                         INSERT INTO faq_items (id, question, answer, sort_order, active)
                         VALUES (:id, :question, :answer, :sortOrder, :active)
                         """)
-                .param("id", id).paramSource(change).update();
+                .param("id", id).param("question", change.question()).param("answer", change.answer())
+                .param("sortOrder", change.sortOrder()).param("active", change.active()).update();
         FaqItem created = find(id);
         auditLog.record(actor, "CREATE", ENTITY, id.toString(), null, created);
         return created;
@@ -77,7 +78,8 @@ public class FaqService {
                                              active = :active, updated_at = now()
                         WHERE id = :id
                         """)
-                .param("id", id).paramSource(change).update();
+                .param("id", id).param("question", change.question()).param("answer", change.answer())
+                .param("sortOrder", change.sortOrder()).param("active", change.active()).update();
         FaqItem after = find(id);
         auditLog.record(actor, "UPDATE", ENTITY, id.toString(), before, after);
         return after;

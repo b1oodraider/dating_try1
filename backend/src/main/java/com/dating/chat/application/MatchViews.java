@@ -30,11 +30,14 @@ public class MatchViews {
     private final MatchService matchService;
     private final ChatRepository repository;
     private final PublicProfileAssembler profiles;
+    private final PresenceService presence;
 
-    public MatchViews(MatchService matchService, ChatRepository repository, PublicProfileAssembler profiles) {
+    public MatchViews(MatchService matchService, ChatRepository repository, PublicProfileAssembler profiles,
+                      PresenceService presence) {
         this.matchService = matchService;
         this.repository = repository;
         this.profiles = profiles;
+        this.presence = presence;
     }
 
     /**
@@ -60,6 +63,7 @@ public class MatchViews {
         Map<UUID, PublicProfileDto> byAccount = profiles.byAccountIds(me, matches.stream().map(m -> m.other(me)).toList());
         Map<UUID, ChatMessage> last = repository.lastMessages(ids);
         Map<UUID, Long> unread = repository.unreadCounts(me, ids);
+        Map<UUID, PresenceService.Presence> seen = presence.of(matches.stream().map(m -> m.other(me)).toList());
         Map<UUID, ChatRepository.ReadState> mine = new HashMap<>();
         Map<UUID, ChatRepository.ReadState> theirs = new HashMap<>();
         for (ChatRepository.ReadState state : repository.readStates(ids)) {
@@ -79,7 +83,9 @@ public class MatchViews {
                             unread.getOrDefault(match.id(), 0L),
                             my == null ? null : my.lastReadMessageId(),
                             other == null ? null : other.lastReadMessageId(),
-                            other == null ? null : other.lastReadAt());
+                            other == null ? null : other.lastReadAt(),
+                            seen.get(match.other(me)).lastSeenAt(),
+                            seen.get(match.other(me)).online());
                 })
                 .filter(Objects::nonNull)
                 .toList();

@@ -1,6 +1,7 @@
 package com.dating.safety.api;
 
 import com.dating.common.security.AuthenticatedUser;
+import com.dating.chat.application.PresenceService;
 import com.dating.safety.application.BehaviorService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -14,7 +15,8 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * Marks the authenticated account as active today (behavioral metric "active days"). Never fails a request.
+ * Marks the authenticated account as active today (behavioral metric "active days") and seen now (chat presence).
+ * Never fails a request.
  */
 @Configuration
 public class ActivityTracking implements WebMvcConfigurer {
@@ -22,9 +24,11 @@ public class ActivityTracking implements WebMvcConfigurer {
     private static final Logger log = LoggerFactory.getLogger(ActivityTracking.class);
 
     private final BehaviorService behaviorService;
+    private final PresenceService presence;
 
-    public ActivityTracking(BehaviorService behaviorService) {
+    public ActivityTracking(BehaviorService behaviorService, PresenceService presence) {
         this.behaviorService = behaviorService;
+        this.presence = presence;
     }
 
     @Override
@@ -36,6 +40,7 @@ public class ActivityTracking implements WebMvcConfigurer {
                 if (auth != null && auth.getPrincipal() instanceof AuthenticatedUser user) {
                     try {
                         behaviorService.touch(user.accountId());
+                        presence.touch(user.accountId());
                     } catch (RuntimeException e) {
                         log.warn("Activity day was not recorded: {}", e.getMessage());
                     }

@@ -108,6 +108,37 @@ class _SocialTestCardState extends State<SocialTestCard> {
               ],
             ),
             const Divider(height: 24),
+            Text('Толпа: анкеты под мою анкету (пол, возраст, город) с фото из загруженных',
+                style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final count in const [10, 30])
+                  FilledButton.tonal(
+                    onPressed: _busy
+                        ? null
+                        : () => _run(() async {
+                              final created = await api.createSeedCrowd(count);
+                              await _loadSeeds();
+                              return 'Создано анкет: $created';
+                            }),
+                    child: Text('+$count анкет'),
+                  ),
+                OutlinedButton(
+                  onPressed: _busy
+                      ? null
+                      : () => _run(() async {
+                            final created = await api.createSeedCrowd(20, likeMe: true);
+                            await _loadSeeds();
+                            return 'Вас лайкнули $created новых анкет';
+                          }),
+                  child: const Text('+20 и все лайкнули меня'),
+                ),
+              ],
+            ),
+            const Divider(height: 24),
             if (_seeds.isEmpty)
               const Text('Нет опубликованных тестовых анкет '
                   '(загрузите их скриптом scripts/seed-profiles.mjs)')

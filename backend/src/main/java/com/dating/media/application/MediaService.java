@@ -157,6 +157,27 @@ public class MediaService {
         }
     }
 
+    /**
+     * Testing support: puts a copy of an existing photo (its own file) into another profile, skipping the
+     * upload checks. Used to give generated seed profiles real pictures of people.
+     */
+    @Transactional
+    public void copyPhotoForTesting(UUID sourcePhotoId, UUID targetAccountId) {
+        ProfilePhoto source = photoRepository.findByIdAndDeletedAtIsNull(sourcePhotoId)
+                .orElseThrow(() -> ApiException.notFound("PHOTO_NOT_FOUND", "Фото не найдено"));
+        byte[] bytes = fileStorage.find(source.getStorageKey()).map(MediaService::readOrNull)
+                .orElseThrow(() -> ApiException.notFound("PHOTO_NOT_FOUND", "Файл фото не найден"));
+        Profile profile = profileService.lockOrCreateProfile(targetAccountId);
+        long count = photoRepository.countByProfileIdAndDeletedAtIsNull(profile.getId());
+        String extension = source.getMimeType().substring(source.getMimeType().indexOf('/') + 1)
+                .replace("jpeg", "jpg");
+        ProfilePhoto copy = new ProfilePhoto(UUID.randomUUID(), profile.getId(), fileStorage.save(bytes, extension),
+                source.getMimeType(), bytes.length, photoRepository.findMaxSortOrder(profile.getId()) + 1, count == 0);
+        PhotoFingerprint fingerprint = PhotoFingerprint.of(bytes);
+        copy.setFingerprint(fingerprint.sha256(), fingerprint.dhash());
+        photoRepository.save(copy);
+    }
+
     /** Selfie approved: the photos in the profile now are what later photos are compared with. */
     @Transactional
     public void markCurrentPhotosAsReference(UUID accountId) {

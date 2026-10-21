@@ -112,6 +112,11 @@ ThemeData _build(Brightness brightness) {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: ButtonStyle(
+        // Disabled stays readable (about 4.5:1), not grey on grey; null leaves other states to the button.
+        backgroundColor: WidgetStateProperty.resolveWith(
+            (s) => s.contains(WidgetState.disabled) ? scheme.surfaceContainerHigh : null),
+        foregroundColor: WidgetStateProperty.resolveWith(
+            (s) => s.contains(WidgetState.disabled) ? scheme.onSurfaceVariant : null),
         shape: stadium,
         minimumSize: buttonSize,
         padding: buttonPadding,

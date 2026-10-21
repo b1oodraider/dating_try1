@@ -342,6 +342,25 @@ class SocialChatIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void matchShowsWhetherTheOtherPersonIsOnlineAndTypingIsRelayed() throws Exception {
+        String city = uniqueCity();
+        User a = user(city, "Ася");
+        User b = user(city, "Бэн");
+        User stranger = user(city, "Чужой");
+        UUID matchId = match(a, b);
+
+        matchOf(a).andExpect(jsonPath("$[0].otherOnline").value(true))
+                .andExpect(jsonPath("$[0].otherLastSeenAt").isNotEmpty());
+        jdbc.update("UPDATE accounts SET last_seen_at = now() - interval '1 hour' WHERE id = ?", b.accountId());
+        matchOf(a).andExpect(jsonPath("$[0].otherOnline").value(false));
+
+        mvc.perform(post("/api/v1/matches/" + matchId + "/typing").header("Authorization", bearer(a.token())))
+                .andExpect(status().isNoContent());
+        mvc.perform(post("/api/v1/matches/" + matchId + "/typing").header("Authorization", bearer(stranger.token())))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void stickersRequireAnOwnedPackAndAKnownSticker() throws Exception {
         String city = uniqueCity();
         User a = user(city, "Аня");

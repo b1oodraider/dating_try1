@@ -61,6 +61,13 @@ public class MatchController {
         return chatService.send(user.accountId(), matchId, request);
     }
 
+    /** «Печатает…» for the other person; send at most every few seconds while typing. */
+    @PostMapping("/{matchId}/typing")
+    public ResponseEntity<Void> typing(@AuthenticationPrincipal AuthenticatedUser user, @PathVariable UUID matchId) {
+        chatService.typing(user.accountId(), matchId);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/{matchId}/read")
     public ReadStateDto read(@AuthenticationPrincipal AuthenticatedUser user, @PathVariable UUID matchId,
                              @Valid @RequestBody ReadRequest request) {

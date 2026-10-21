@@ -193,7 +193,8 @@ GET    /testing/state
 POST   /testing/achievements/{code}/complete     mark completed + grant rewards (once)
 DELETE /testing/achievements/{code}              reset completion (rewards already granted are kept); can complete again
 POST   /testing/wallet/items/{itemCode}          body { quantity 1..100000 }  add consumables / grant cosmetic
-PUT    /testing/wallet/items/{itemCode}          body { quantity 0..100000 }  set the bought (PERMANENT) balance exactly
+PUT    /testing/wallet/items/{itemCode}          body { quantity 0..100000, total?: boolean }  set the bought (PERMANENT) balance
+                                                 exactly; total=true sets the whole balance, premium allowance units included
 POST   /testing/premium                          body { days 1..3650 }   add premium days
 DELETE /testing/premium                          end premium now
 POST   /testing/clock/advance                    body { days 1..3650 }   move this account's economy time forward
@@ -236,6 +237,10 @@ POST   /testing/profiles/{accountId}/photos       multipart `file` (same rules a
 POST   /testing/profiles/{accountId}/publish      200 SeedProfile ; 400 PROFILE_INCOMPLETE
 DELETE /testing/profiles/{accountId}              204
 DELETE /testing/profiles                          200 { deleted: number }   — all seed profiles
+POST   /testing/profiles/crowd                    body { count 1..50, likeMe?: boolean }  201 { created, liked }
+                                                  published profiles that match me (my seeking, age range, city), photos copied
+                                                  from existing seed profiles of that gender (else 400 NO_SEED_PHOTOS; my
+                                                  gender/seeking/city missing → 400 PROFILE_INCOMPLETE); likeMe → each likes me
   Unknown/deleted ids and non-seed accounts: 404 SEED_PROFILE_NOT_FOUND.
   Bulk loading from a folder: scripts/seed-profiles.mjs (see seed/README.md).
 
@@ -473,6 +478,10 @@ POST   /matches/{matchId}/read          body { lastReadMessageId: uuid (required
   200 ReadState ; 404 MATCH_NOT_FOUND | MESSAGE_NOT_FOUND ; 400 VALIDATION_ERROR
   The pointer only moves forward (an older id is ignored). When it moves, the other person gets the `read` event.
 
+Match additionally carries otherLastSeenAt: string|null (the other person's last authenticated request, written at most once a
+minute) and otherOnline: boolean (an open event stream or activity in the last 2 minutes).
+POST /matches/{id}/typing   204 ; 404 MATCH_NOT_FOUND — relays `typing` to the other person; send at most every ~3 s while typing
+
 ## Realtime (Server-Sent Events)
 POST /events/ticket   (auth) 200 { ticket: string, expiresAt }   one-time, valid app.realtime.ticket-ttl (60s), kept in memory
 GET  /events          text/event-stream. Auth: `Authorization: Bearer` header (mobile, fetch-based clients) OR `?ticket=<ticket>`
@@ -489,6 +498,7 @@ GET  /events          text/event-stream. Auth: `Authorization: Bearer` header (m
     match_closed   { matchId }                          unmatch, block, or the other account was deleted
     like_received  { superlike: boolean, count }        someone liked me (no identity); count = GET /me/likes/received/count .count
     read           { matchId, lastReadMessageId, lastReadAt }   the other person read the chat up to this message
+    typing         { matchId }                          the other person is typing (not stored; show «печатает…» ~5 s)
   All events are sent only after the business transaction commits. Account deletion closes all its streams.
 
 ## Push notifications (auth)

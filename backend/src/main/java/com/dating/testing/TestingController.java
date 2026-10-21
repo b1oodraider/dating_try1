@@ -30,7 +30,8 @@ import java.util.UUID;
 @ConditionalOnProperty(prefix = "app.testing", name = "enabled", havingValue = "true")
 public class TestingController {
 
-    public record QuantityRequest(@Min(0) @Max(100_000) long quantity) {
+    /** @param total PUT only: set the whole balance, premium allowance units included (default: PERMANENT only) */
+    public record QuantityRequest(@Min(0) @Max(100_000) long quantity, Boolean total) {
     }
 
     public record DaysRequest(@Min(1) @Max(3650) int days) {
@@ -90,13 +91,17 @@ public class TestingController {
         return ResponseEntity.ok(state(accountId));
     }
 
-    /** Sets the PERMANENT balance exactly (0 removes; for cosmetics 0 or 1). */
+    /** Sets the PERMANENT balance exactly (0 removes; for cosmetics 0 or 1); with total=true the whole balance. */
     @PutMapping("/wallet/items/{itemCode}")
     public ResponseEntity<TestingStateDto> setItem(@AuthenticationPrincipal AuthenticatedUser user,
                                                    @PathVariable String itemCode,
                                                    @Valid @RequestBody QuantityRequest request) {
         UUID accountId = requireTestAccount(user);
-        economyService.setPermanentBalance(accountId, itemCode, request.quantity());
+        if (Boolean.TRUE.equals(request.total())) {
+            economyService.setTotalBalance(accountId, itemCode, request.quantity());
+        } else {
+            economyService.setPermanentBalance(accountId, itemCode, request.quantity());
+        }
         return ResponseEntity.ok(state(accountId));
     }
 

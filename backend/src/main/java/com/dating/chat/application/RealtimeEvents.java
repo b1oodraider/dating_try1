@@ -16,6 +16,8 @@ public final class RealtimeEvents {
     public static final String LIKE_RECEIVED = "like_received";
     /** Payload: ReadReceipt — the other person read the chat up to a message. */
     public static final String READ = "read";
+    /** Payload: { matchId } — the other person is typing in this chat (not stored; resend every few seconds). */
+    public static final String TYPING = "typing";
 
     private RealtimeEvents() {
     }

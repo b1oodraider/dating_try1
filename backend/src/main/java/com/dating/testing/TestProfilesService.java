@@ -12,6 +12,10 @@ import com.dating.profiles.api.MyProfileDto;
 import com.dating.profiles.api.PhotoDto;
 import com.dating.profiles.api.ProfileUpdateDto;
 import com.dating.profiles.application.ProfileService;
+import com.dating.profiles.domain.Gender;
+import com.dating.social.application.ReactionService;
+import com.dating.social.domain.ReactionType;
+import tools.jackson.databind.json.JsonMapper;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -22,8 +26,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Ready-made QA profiles ("seed profiles"): phone-less test accounts with a filled profile, photos,
@@ -54,14 +63,81 @@ public class TestProfilesService {
     private final MediaService mediaService;
     private final EconomyService economyService;
     private final CosmeticsService cosmeticsService;
+    private final ReactionService reactionService;
+    private final JsonMapper jsonMapper;
+
+    private static final List<String> FEMALE_NAMES = List.of("Алёна", "Вера", "Дина", "Ева", "Жанна", "Зоя", "Инна",
+            "Карина", "Лиля", "Майя", "Нина", "Олеся", "Полина", "Рита", "Света", "Тая", "Ульяна", "Яна", "Ксения",
+            "Мила");
+    private static final List<String> MALE_NAMES = List.of("Артём", "Борис", "Глеб", "Денис", "Егор", "Захар", "Илья",
+            "Кирилл", "Лев", "Марк", "Никита", "Олег", "Павел", "Роман", "Савва", "Тимур", "Фёдор", "Юрий", "Ян",
+            "Вадим");
 
     public TestProfilesService(AccountService accountService, ProfileService profileService, MediaService mediaService,
-                               EconomyService economyService, CosmeticsService cosmeticsService) {
+                               EconomyService economyService, CosmeticsService cosmeticsService,
+                               ReactionService reactionService, JsonMapper jsonMapper) {
         this.accountService = accountService;
         this.profileService = profileService;
         this.mediaService = mediaService;
         this.economyService = economyService;
         this.cosmeticsService = cosmeticsService;
+        this.reactionService = reactionService;
+        this.jsonMapper = jsonMapper;
+    }
+
+    public record CrowdResult(int created, int liked) {
+    }
+
+    /**
+     * A crowd for checking the feed and mass likes (the like-spam rule): [count] published seed profiles that
+     * match the caller (the gender they look for, their age range and city), with photos copied from the existing
+     * seed profiles of that gender. With [likeMe] every one of them likes the caller.
+     */
+    @Transactional
+    public CrowdResult crowd(UUID me, int count, boolean likeMe) {
+        MyProfileDto mine = profileService.getMyProfile(me);
+        if (mine.gender() == null || mine.seeking() == null || mine.city() == null) {
+            throw ApiException.badRequest("PROFILE_INCOMPLETE", "Сначала укажите в своей анкете пол, кого ищете и город");
+        }
+        Gender gender = mine.seeking();
+        List<UUID> photos = new ArrayList<>();
+        for (UUID seed : accountService.activeSeedAccountIds()) {
+            MyProfileDto profile = profileService.getMyProfile(seed);
+            if (profile.gender() == gender && !profile.photos().isEmpty()) {
+                photos.add(profile.photos().getFirst().id());
+            }
+        }
+        if (photos.isEmpty()) {
+            throw ApiException.badRequest("NO_SEED_PHOTOS",
+                    "Нет тестовых анкет нужного пола с фото: сначала загрузите анкеты из seed/");
+        }
+        List<String> names = gender == Gender.FEMALE ? FEMALE_NAMES : MALE_NAMES;
+        int ageTo = mine.ageTo() == null ? Math.min(mine.ageFrom() + 10, 60) : mine.ageTo();
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        int liked = 0;
+        for (int i = 0; i < count; i++) {
+            UUID accountId = accountService.createSeedAccount();
+            int age = random.nextInt(mine.ageFrom(), ageTo + 1);
+            Map<String, Object> fields = new LinkedHashMap<>();
+            fields.put("displayName", names.get(random.nextInt(names.size())));
+            fields.put("birthDate", LocalDate.now().minusYears(age).minusDays(random.nextInt(1, 360)).toString());
+            fields.put("gender", gender.name());
+            fields.put("seeking", mine.gender().name());
+            if (mine.cityId() != null) {
+                fields.put("cityId", mine.cityId());
+            } else {
+                fields.put("city", mine.city());
+            }
+            fields.put("aboutText", "Тестовая анкета из толпы №" + (i + 1));
+            profileService.updateProfile(accountId, jsonMapper.convertValue(fields, ProfileUpdateDto.class));
+            mediaService.copyPhotoForTesting(photos.get(i % photos.size()), accountId);
+            profileService.publishProfile(accountId);
+            if (likeMe) {
+                reactionService.reactForTesting(accountId, me, ReactionType.LIKE);
+                liked++;
+            }
+        }
+        return new CrowdResult(count, liked);
     }
 
     /** Creates a DRAFT seed profile; add photos and publish it with the other calls. */

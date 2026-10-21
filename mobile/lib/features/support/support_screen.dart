@@ -125,9 +125,21 @@ class _SupportScreenState extends State<SupportScreen> {
                       ListTile(
                         title: Text(t.categoryLabel),
                         subtitle: Text(
-                            [t.statusLabel, if (t.lastMessageAt != null) formatDateTime(t.lastMessageAt!)].join(' · ')),
+                            [
+                              if (t.status != 'ANSWERED') t.statusLabel,
+                              if (t.lastMessageAt != null) formatDateTime(t.lastMessageAt!),
+                            ].join(' · ')),
                         trailing: t.status == 'ANSWERED'
-                            ? const Badge(label: Text('ответ'), backgroundColor: Brand.like)
+                            // Good news, not an error: a pale green pill, not a red badge.
+                            ? Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFDCFAE5),
+                                  borderRadius: BorderRadius.circular(100),
+                                ),
+                                child: Text('Есть ответ',
+                                    style: theme.textTheme.labelMedium?.copyWith(color: const Color(0xFF14532D))),
+                              )
                             : const Icon(Icons.chevron_right_rounded),
                         onTap: () => _open(TicketScreen(api: widget.api, ticketId: t.id)),
                       ),

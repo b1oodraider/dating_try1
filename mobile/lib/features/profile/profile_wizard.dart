@@ -185,6 +185,16 @@ class _ProfileWizardScreenState extends State<ProfileWizardScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // A disabled button says why it is disabled.
+                if (!canNext && !_saving)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: Gaps.sm),
+                    child: Text(
+                      _refill && hasCurrent ? 'Введите новое или оставьте текущее' : 'Заполните, чтобы продолжить',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
                 FilledButton(
                   onPressed: canNext ? () => _next() : null,
                   child: _saving

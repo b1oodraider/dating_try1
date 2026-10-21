@@ -7,11 +7,11 @@ import '../../core/theme/app_theme.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/format.dart';
 import '../../core/models/achievement.dart';
+import '../../core/models/catalog.dart';
 import '../../core/models/testing_state.dart';
 import '../../core/models/wallet.dart';
 import '../auth/session_controller.dart';
 import '../cosmetics/cosmetic_visuals.dart';
-import 'stub_catalog.dart';
 
 /// QA tools for test accounts (`/testing/*`). Opened from the feed only when
 /// `Account.testAccount` is true; the server checks it again (403
@@ -138,12 +138,63 @@ class _TestPanelScreenState extends State<TestPanelScreen> {
         done: '$code +1',
       );
 
-  /// Cart «−» / trash: sets the bought part; the premium allowance part
-  /// (periodicQuantity) cannot be changed by the testing API.
-  void _setBought(String code, int quantity) => _run(
-        () => widget.session.api.setTestItemBalance(code, quantity),
+  /// Cart «−» / trash: sets the whole balance, premium allowance units included.
+  void _setTotal(String code, int quantity) => _run(
+        () => widget.session.api.setTestItemBalance(code, quantity, total: true),
         done: quantity == 0 ? 'Убрано: $code' : 'Баланс $code: $quantity',
       );
+
+  /// The whole catalog, grouped by kind and category; owned cosmetics are left out.
+  Future<void> _pickItem(Wallet wallet) async {
+    final List<CatalogItem> catalog;
+    try {
+      catalog = await widget.session.api.getCatalog();
+    } catch (e) {
+      if (mounted) _showMessage(_errorText(e), isError: true);
+      return;
+    }
+    if (!mounted) return;
+    final owned = {for (final item in wallet.items) if (!item.isConsumable) item.code};
+    final items = [for (final item in catalog) if (!owned.contains(item.code)) item];
+    final code = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        maxChildSize: 0.95,
+        builder: (_, controller) => ListView(
+          controller: controller,
+          children: [
+            for (final (index, item) in items.indexed) ...[
+              if (index == 0 || items[index - 1].category != item.category)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(Gaps.md, Gaps.md, Gaps.md, Gaps.xs),
+                  child: Text(
+                    '${item.isConsumable ? 'Расходники' : 'Косметика'} · ${item.category}',
+                    style: Theme.of(sheetContext).textTheme.titleSmall,
+                  ),
+                ),
+              ListTile(
+                title: Text(item.title),
+                subtitle: Text([item.code, if (item.rarity != null) rarityLabel(item.rarity) ?? item.rarity!]
+                    .join(' · ')),
+                trailing: const Icon(Icons.add_rounded),
+                onTap: () => Navigator.of(sheetContext).pop(item.code),
+              ),
+            ],
+            ListTile(
+              title: const Text('Другой код…'),
+              leading: const Icon(Icons.keyboard_outlined),
+              onTap: () => Navigator.of(sheetContext).pop(''),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (code == null) return;
+    code.isEmpty ? _addOther() : _increment(code);
+  }
 
   Future<void> _addOther() async {
     final controller = TextEditingController();
@@ -400,12 +451,6 @@ class _TestPanelScreenState extends State<TestPanelScreen> {
 
   Widget _buildItemsCard(BuildContext context, Wallet wallet) {
     final theme = Theme.of(context);
-    final owned = {for (final item in wallet.items) item.code};
-    final missing = [
-      for (final code in stubItemCodes)
-        if (!owned.contains(code)) code
-    ];
-
     return _Section(
       title: 'Предметы',
       children: [
@@ -416,29 +461,16 @@ class _TestPanelScreenState extends State<TestPanelScreen> {
           ),
         for (final item in wallet.items) _buildCartRow(theme, wallet, item),
         const SizedBox(height: Gaps.sm),
-        PopupMenuButton<String>(
-          enabled: !_busy,
-          tooltip: 'Добавить предмет',
-          onSelected: (code) => code.isEmpty ? _addOther() : _increment(code),
-          itemBuilder: (_) => [
-            for (final code in missing)
-              PopupMenuItem<String>(value: code, child: Text(code)),
-            const PopupMenuItem<String>(value: '', child: Text('Другой код…')),
-          ],
-          child: IgnorePointer(
-            child: OutlinedButton.icon(
-              onPressed: _busy ? null : () {},
-              icon: const Icon(Icons.add_shopping_cart),
-              label: const Text('Добавить предмет'),
-            ),
-          ),
+        OutlinedButton.icon(
+          onPressed: _busy ? null : () => _pickItem(wallet),
+          icon: const Icon(Icons.add_shopping_cart),
+          label: const Text('Добавить предмет'),
         ),
       ],
     );
   }
 
   Widget _buildCartRow(ThemeData theme, Wallet wallet, WalletItem item) {
-    final bought = item.quantity - item.periodicQuantity;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: Gaps.xs),
       child: Row(
@@ -462,9 +494,9 @@ class _TestPanelScreenState extends State<TestPanelScreen> {
           if (item.isConsumable) ...[
             IconButton(
               tooltip: 'Меньше',
-              onPressed: (_busy || bought <= 0)
+              onPressed: (_busy || item.quantity <= 0)
                   ? null
-                  : () => _setBought(item.code, bought - 1),
+                  : () => _setTotal(item.code, item.quantity - 1),
               icon: const Icon(Icons.remove_circle_outline),
             ),
             SizedBox(
@@ -484,7 +516,7 @@ class _TestPanelScreenState extends State<TestPanelScreen> {
           IconButton(
             tooltip: 'Убрать',
             onPressed:
-                (_busy || bought <= 0) ? null : () => _setBought(item.code, 0),
+                (_busy || item.quantity <= 0) ? null : () => _setTotal(item.code, 0),
             icon: Icon(Icons.delete_outline, color: theme.colorScheme.error),
           ),
         ],

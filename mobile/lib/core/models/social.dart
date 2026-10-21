@@ -71,6 +71,8 @@ class Match {
     this.myLastReadMessageId,
     this.otherLastReadMessageId,
     this.createdAt,
+    this.otherLastSeenAt,
+    this.otherOnline = false,
   });
 
   final String id;
@@ -84,6 +86,28 @@ class Match {
   /// Read receipt: the other person read the chat up to this message.
   final String? otherLastReadMessageId;
   final DateTime? createdAt;
+
+  /// Presence of the other person when the chat list was loaded.
+  final DateTime? otherLastSeenAt;
+  final bool otherOnline;
+
+  /// «в сети», «был(а) 5 мин назад», «был(а) сегодня в 14:05», «был(а) 12.10»; null when not known.
+  String? presenceText([DateTime? now]) {
+    if (otherOnline) return 'в сети';
+    final seen = otherLastSeenAt?.toLocal();
+    if (seen == null) return null;
+    final at = (now ?? DateTime.now()).toLocal();
+    final minutes = at.difference(seen).inMinutes;
+    String two(int v) => v.toString().padLeft(2, '0');
+    if (minutes < 60) return 'был(а) ${minutes < 1 ? 1 : minutes} мин назад';
+    final sameDay = seen.year == at.year && seen.month == at.month && seen.day == at.day;
+    if (sameDay) return 'был(а) сегодня в ${two(seen.hour)}:${two(seen.minute)}';
+    final yesterday = at.subtract(const Duration(days: 1));
+    if (seen.year == yesterday.year && seen.month == yesterday.month && seen.day == yesterday.day) {
+      return 'был(а) вчера в ${two(seen.hour)}:${two(seen.minute)}';
+    }
+    return 'был(а) ${two(seen.day)}.${two(seen.month)}';
+  }
 
   Match copyWith({
     ChatMessage? lastMessage,
@@ -100,6 +124,8 @@ class Match {
         otherLastReadMessageId:
             otherLastReadMessageId ?? this.otherLastReadMessageId,
         createdAt: createdAt,
+        otherLastSeenAt: otherLastSeenAt,
+        otherOnline: otherOnline,
       );
 
   factory Match.fromJson(Map<String, dynamic> json) {
@@ -113,6 +139,8 @@ class Match {
       myLastReadMessageId: asStringOrNull(json['myLastReadMessageId']),
       otherLastReadMessageId: asStringOrNull(json['otherLastReadMessageId']),
       createdAt: asDateTimeOrNull(json['createdAt']),
+      otherLastSeenAt: asDateTimeOrNull(json['otherLastSeenAt']),
+      otherOnline: asBool(json['otherOnline']),
     );
   }
 }

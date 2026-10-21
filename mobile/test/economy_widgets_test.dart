@@ -148,9 +148,9 @@ void main() {
     final requests = <http.Request>[];
     final session = _session(
       requests,
-      (request) => {
+      (request) => request.url.path.endsWith('/testing/profiles') ? <Object>[] : {
         'accountId': 'acc-1',
-        'clockOffsetDays': requests.length > 1 ? 7 : 0,
+        'clockOffsetDays': requests.any((r) => r.url.path.endsWith('/clock/advance')) ? 7 : 0,
         'economyNow': '2026-10-14T12:00:00Z',
         'wallet': _wallet(frameEquipped: false),
         'achievements': [
@@ -173,12 +173,13 @@ void main() {
 
     expect(find.text('Сдвиг часов: нет'), findsOneWidget);
 
+    await tester.ensureVisible(find.text('Следующая неделя'));
     await tester.tap(find.text('Следующая неделя'));
     await tester.pumpAndSettle();
 
-    expect(requests.last.method, 'POST');
-    expect(requests.last.url.path, '/api/v1/testing/clock/advance');
-    expect(jsonDecode(requests.last.body), {'days': 7});
+    final advance = requests.lastWhere((r) => r.url.path == '/api/v1/testing/clock/advance');
+    expect(advance.method, 'POST');
+    expect(jsonDecode(advance.body), {'days': 7});
     expect(find.text('Сдвиг часов: +7 дн.'), findsOneWidget);
 
     final reward = find.text('Награда: SUPERLIKE ×1');

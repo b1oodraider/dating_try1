@@ -1,0 +1,12 @@
+databaseChangeLog:
+  # «В сети / был(а) недавно» in chats: the last authenticated request, written at most once a minute
+  # (chat.application.PresenceService).
+  - changeSet:
+      id: 033-presence
+      author: dating-team
+      changes:
+        - sql:
+            sql: ALTER TABLE accounts ADD COLUMN last_seen_at TIMESTAMP WITH TIME ZONE
+      rollback:
+        - sql:
+            sql: ALTER TABLE accounts DROP COLUMN last_seen_at

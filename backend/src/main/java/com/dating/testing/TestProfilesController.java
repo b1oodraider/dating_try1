@@ -49,6 +49,19 @@ public class TestProfilesController {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.create(request));
     }
 
+    public record CrowdRequest(@jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(50) int count,
+                               Boolean likeMe) {
+    }
+
+    /** Generates [count] published profiles that match me; with likeMe they all like me. */
+    @PostMapping("/crowd")
+    public ResponseEntity<TestProfilesService.CrowdResult> crowd(@AuthenticationPrincipal AuthenticatedUser user,
+                                                                 @Valid @RequestBody CrowdRequest request) {
+        requireTestAccount(user);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(service.crowd(user.accountId(), request.count(), Boolean.TRUE.equals(request.likeMe())));
+    }
+
     @PutMapping("/{accountId}")
     public SeedProfileDto update(@AuthenticationPrincipal AuthenticatedUser user, @PathVariable UUID accountId,
                                  @Valid @RequestBody ProfileUpdateDto request) {

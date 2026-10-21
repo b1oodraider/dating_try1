@@ -121,6 +121,13 @@ public class ChatService {
         return new MessagePageDto(items, hasMore ? page.getLast().id() : null);
     }
 
+    /** «Печатает…»: tells the other person right away; nothing is stored. */
+    @Transactional(readOnly = true)
+    public void typing(UUID me, UUID matchId) {
+        MatchInfo match = matchService.requireActive(matchId, me);
+        realtime.send(match.other(me), RealtimeEvents.TYPING, Map.of("matchId", matchId));
+    }
+
     /**
      * Moves my read pointer forward (never back) and sends a read receipt to the other person.
      */
