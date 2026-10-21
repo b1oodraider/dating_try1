@@ -3,14 +3,17 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_exception.dart';
+import '../../core/format.dart';
 import '../../core/widgets/empty_state.dart';
 import '../../core/models/account.dart';
 import '../../core/models/discovery_filters.dart';
 import '../../core/models/public_profile.dart';
+import '../../core/models/social.dart';
 import '../../core/models/wallet.dart';
 import '../auth/session_controller.dart';
 import '../chat/match_dialog.dart';
 import '../safety/verification_screen.dart';
+import 'boost_button.dart';
 import 'discovery_filters_screen.dart';
 import 'profile_details_sheet.dart';
 import 'swipe_deck.dart';
@@ -57,6 +60,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   /// Unverified and the daily views are used up (429 DAILY_VIEWS_LIMIT).
   String? _verifyToSeeMore;
+
+  /// Active LIKES restriction (from GET /me/restrictions or a 403 ACCOUNT_RESTRICTED).
+  Restriction? _likesRestriction;
 
   /// The «your like waits for verification» hint was shown in this session.
   bool _queuedHintShown = false;
@@ -109,9 +115,36 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   }
 
   Future<void> _start() async {
+    _loadRestrictions();
     await _prepare();
     if (!mounted) return;
     await _loadFirstPage();
+  }
+
+  /// Best effort: on failure the server still refuses likes with 403 ACCOUNT_RESTRICTED.
+  Future<void> _loadRestrictions() async {
+    try {
+      final all = await widget.session.api.getRestrictions();
+      if (!mounted) return;
+      setState(() => _likesRestriction =
+          all.where((r) => r.kind == 'LIKES' || r.kind == 'SUSPENDED').firstOrNull);
+    } catch (e) {
+      debugPrint('Failed to load restrictions: $e');
+    }
+  }
+
+  void _showLikesBlocked() {
+    final r = _likesRestriction;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(r == null ? 'Лайки недоступны' : _restrictionText(r))));
+  }
+
+  static String _restrictionText(Restriction r) {
+    final until = r.endsAt;
+    return until == null
+        ? 'Лайки недоступны до решения модератора'
+        : 'Лайки недоступны до ${formatDateTime(until)}';
   }
 
   @override
@@ -411,6 +444,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     } catch (e) {
       if (!mounted) return;
       if (e is ApiException && e.isUnauthorized) return;
+      if (e is ApiException && e.code == 'ACCOUNT_RESTRICTED') _loadRestrictions();
       // A profile that is gone (hidden, blocked) is not put back.
       if (!(e is ApiException && e.code == 'PROFILE_NOT_FOUND')) {
         setState(() {
@@ -519,8 +553,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Вернуть последнюю анкету',
+          icon: const Icon(Icons.replay_rounded),
+          onPressed: _undo,
+        ),
         title: const Text('Анкеты'),
         actions: [
+          BoostButton(api: widget.session.api),
           IconButton(
             tooltip: 'Фильтры',
             icon: Badge(
@@ -616,13 +656,26 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       );
     }
 
-    return SwipeDeck(
+    final likesRestriction = _likesRestriction;
+    final deck = SwipeDeck(
       key: _deckKey,
       profiles: _items,
       photoUrl: widget.session.api.resolveMediaUrl,
       onSwipe: _react,
       onOpenDetails: _openDetails,
-      onUndo: _undo,
+      likesBlocked: likesRestriction != null,
+      onLikeBlocked: _showLikesBlocked,
+    );
+    if (likesRestriction == null) return deck;
+    return Column(
+      children: [
+        MaterialBanner(
+          leading: const Icon(Icons.block),
+          content: Text('${_restrictionText(likesRestriction)}. ${likesRestriction.reason}'.trim()),
+          actions: [TextButton(onPressed: _loadRestrictions, child: const Text('Обновить'))],
+        ),
+        Expanded(child: deck),
+      ],
     );
   }
 }

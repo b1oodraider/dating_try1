@@ -101,6 +101,7 @@ Map<String, Object?> _profile(
   List<int> artistIdx = const [],
   String? zodiac,
   List<String> common = const [],
+  Map<String, Object?> facts = const {},
 }) =>
     {
       'id': id,
@@ -121,12 +122,22 @@ Map<String, Object?> _profile(
       'artists': [for (final i in artistIdx) artists[i]],
       'zodiac': zodiac,
       'common': common,
+      'facts': facts,
     };
 
 final List<Map<String, Object?>> feed = [
   _profile('p1', 'Анна', 26, 'Москва',
       folder: '01-female',
       photos: 3,
+      facts: {
+        'kidsPlans': 'WANT',
+        'smoking': 'NO',
+        'sport': 'REGULARLY',
+        'pets': ['DOG'],
+        'profession': 'UX-дизайнер',
+        'educationLevel': 'HIGHER',
+        'languages': ['RU', 'EN'],
+      },
       about: 'Люблю утренние пробежки по набережной, кофе без сахара и '
           'долгие разговоры о книгах. Ищу того, с кем можно молчать.',
       status: 'Сегодня иду на выставку Айвазовского',
@@ -423,6 +434,22 @@ final Map<String, Object?> myProfile = {
   'artists': [artists[1]],
   'zodiac': 'Телец',
   'showZodiac': true,
+  'facts': {'smoking': 'NO', 'alcohol': 'RARELY', 'pets': ['CAT']},
+};
+
+List<Map<String, String>> _opts(List<String> pairs) => [
+      for (var i = 0; i < pairs.length; i += 2) {'code': pairs[i], 'label': pairs[i + 1]},
+    ];
+
+final Map<String, Object?> profileOptions = {
+  'kidsHas': _opts(['YES', 'Есть дети', 'NO', 'Детей нет']),
+  'kidsPlans': _opts(['WANT', 'Хочу детей', 'DONT_WANT', 'Не хочу детей', 'UNDECIDED', 'Пока не решил(а)']),
+  'smoking': _opts(['NO', 'Не курю', 'SOMETIMES', 'Иногда', 'CIGARETTES', 'Курю сигареты', 'VAPE', 'Вейп, кальян']),
+  'alcohol': _opts(['NO', 'Не пью', 'RARELY', 'Редко', 'MODERATELY', 'Умеренно', 'OFTEN', 'Часто']),
+  'sport': _opts(['REGULARLY', 'Регулярно', 'SOMETIMES', 'Иногда', 'NO', 'Не занимаюсь']),
+  'pets': _opts(['CAT', 'Кошка', 'DOG', 'Собака', 'OTHER', 'Другие животные', 'NONE', 'Нет животных']),
+  'educationLevel': _opts(['SCHOOL', 'Среднее', 'COLLEGE', 'Среднее специальное', 'HIGHER', 'Высшее']),
+  'languages': _opts(['RU', 'Русский', 'EN', 'Английский', 'DE', 'Немецкий']),
 };
 
 http.Response _json(Object? body, [int status = 200]) => http.Response(
@@ -456,6 +483,14 @@ http.Response respond(http.Request request) {
   if (path == '/me/profile' && get) return _json(myProfile);
   if (path == '/me/wallet') return _json(wallet);
   if (path == '/me/restrictions') return _json(<Object>[]);
+  if (path == '/profile-options') return _json(profileOptions);
+  if (path == '/me/fact-filters') {
+    return _json({'smoking': {'accept': ['NO', 'SOMETIMES'], 'unspecified': true}});
+  }
+  if (path == '/me/boost') {
+    return _json({'active': false, 'impressions': 0, 'available': 2, 'durationMinutes': 30,
+        'now': '2026-10-21T12:00:00Z', 'history': <Object>[]});
+  }
   if (path == '/me/verification') return _json({'verified': true});
   if (path == '/me/excluded-goals') {
     return _json({'goalCodes': <String>[], 'active': true});

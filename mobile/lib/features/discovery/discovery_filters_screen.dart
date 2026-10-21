@@ -597,36 +597,50 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
                 ]),
         )
       else
-        for (final fact in Facts.filterable) ...[
-          const SizedBox(height: 16),
-          Text(Facts.titles[fact]!, style: theme.textTheme.titleSmall),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+        for (final fact in Facts.filterable)
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(bottom: 8),
+            expandedCrossAxisAlignment: CrossAxisAlignment.start,
+            title: Text(Facts.titles[fact]!),
+            subtitle: Text(_factSummary(fact, options), style: hint),
             children: [
-              for (final o in options.of(fact))
-                FilterChip(
-                  label: Text(o.label),
-                  selected: _factAccept[fact]!.contains(o.code),
-                  onSelected: (on) => setState(() {
-                    final accept = _factAccept[fact]!;
-                    // At least one answer stays: an empty filter means nobody.
-                    if (!on && accept.length == 1) return;
-                    on ? accept.add(o.code) : accept.remove(o.code);
-                  }),
-                ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final o in options.of(fact))
+                    FilterChip(
+                      label: Text(o.label),
+                      selected: _factAccept[fact]!.contains(o.code),
+                      onSelected: (on) => setState(() {
+                        final accept = _factAccept[fact]!;
+                        // At least one answer stays: an empty filter means nobody.
+                        if (!on && accept.length == 1) return;
+                        on ? accept.add(o.code) : accept.remove(o.code);
+                      }),
+                    ),
+                ],
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: const Text('Показывать тех, кто не указал'),
+                value: _factUnspecified[fact]!,
+                onChanged: (v) => setState(() => _factUnspecified[fact] = v),
+              ),
             ],
           ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            title: const Text('Показывать тех, кто не указал'),
-            value: _factUnspecified[fact]!,
-            onChanged: (v) => setState(() => _factUnspecified[fact] = v),
-          ),
-        ],
     ];
+  }
+
+  String _factSummary(String fact, ProfileOptions options) {
+    final accept = _factAccept[fact]!;
+    final all = options.of(fact);
+    final answers = accept.length >= all.length
+        ? 'Любые'
+        : [for (final o in all) if (accept.contains(o.code)) o.label].join(', ');
+    return _factUnspecified[fact]! ? answers : '$answers · без неуказавших';
   }
 
   static String _rangeText(

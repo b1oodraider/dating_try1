@@ -48,6 +48,9 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _unsentText;
   String? _unsentId;
 
+  /// Active MESSAGES (or SUSPENDED) restriction: the composer is replaced by its reason.
+  Restriction? _messagesRestriction;
+
   ChatsController get _chats => widget.controller;
 
   @override
@@ -57,6 +60,20 @@ class _ChatScreenState extends State<ChatScreen> {
     _chats.addListener(_onChatsChanged);
     _subscription = widget.events.listen(_onEvent);
     _load();
+    _loadRestrictions();
+  }
+
+  /// Best effort: on failure the server still refuses with 403 ACCOUNT_RESTRICTED.
+  Future<void> _loadRestrictions() async {
+    try {
+      final all = await _chats.api.getRestrictions();
+      if (!mounted) return;
+      setState(() => _messagesRestriction = all
+          .where((r) => r.kind == 'MESSAGES' || r.kind == 'SUSPENDED')
+          .firstOrNull);
+    } catch (e) {
+      debugPrint('Failed to load restrictions: $e');
+    }
   }
 
   @override
@@ -82,8 +99,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _load() async {
     try {
-      final page = await _chats.api
-          .getMessages(widget.matchId, limit: _pageSize);
+      final page =
+          await _chats.api.getMessages(widget.matchId, limit: _pageSize);
       if (!mounted) return;
       setState(() {
         _messages
@@ -93,7 +110,8 @@ class _ChatScreenState extends State<ChatScreen> {
         _loading = false;
         _error = null;
       });
-      _chats.markRead(widget.matchId, page.items.isEmpty ? null : page.items.first);
+      _chats.markRead(
+          widget.matchId, page.items.isEmpty ? null : page.items.first);
     } catch (e) {
       if (!mounted) return;
       if (e is ApiException && e.code == 'MATCH_NOT_FOUND') {
@@ -149,7 +167,8 @@ class _ChatScreenState extends State<ChatScreen> {
     if (text != null && text == _unsentText && _unsentId != null) {
       id = _unsentId!;
     } else {
-      id = '${DateTime.now().microsecondsSinceEpoch}-${math.Random().nextInt(1 << 32)}';
+      id =
+          '${DateTime.now().microsecondsSinceEpoch}-${math.Random().nextInt(1 << 32)}';
     }
     _unsentText = text;
     _unsentId = id;
@@ -171,6 +190,9 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (e) {
       if (!mounted) return;
       if (text != null && _input.text.isEmpty) _input.text = text;
+      if (e is ApiException && e.code == 'ACCOUNT_RESTRICTED') {
+        _loadRestrictions();
+      }
       _snack(describeError(e));
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -182,8 +204,8 @@ class _ChatScreenState extends State<ChatScreen> {
     if (text.isNotEmpty) _send(text: text);
   }
 
-  void _snack(String text) => ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text(text)));
+  void _snack(String text) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 
   Future<void> _menu(String action) async {
     final match = _chats.byId(widget.matchId);
@@ -256,13 +278,14 @@ class _ChatScreenState extends State<ChatScreen> {
                         : ListView.builder(
                             reverse: true,
                             padding: const EdgeInsets.all(12),
-                            itemCount:
-                                _messages.length + (_olderCursor == null ? 0 : 1),
+                            itemCount: _messages.length +
+                                (_olderCursor == null ? 0 : 1),
                             itemBuilder: (context, index) {
                               if (index == _messages.length) {
                                 return Center(
                                   child: TextButton(
-                                    onPressed: _loadingOlder ? null : _loadOlder,
+                                    onPressed:
+                                        _loadingOlder ? null : _loadOlder,
                                     child: Text(_loadingOlder
                                         ? 'Загрузка…'
                                         : 'Показать более ранние'),
@@ -288,61 +311,89 @@ class _ChatScreenState extends State<ChatScreen> {
                             },
                           ),
           ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(Gaps.md, Gaps.sm, Gaps.sm, Gaps.sm),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _input,
-                      minLines: 1,
-                      maxLines: 4,
-                      maxLength: 2000,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: InputDecoration(
-                        hintText: 'Сообщение',
-                        counterText: '',
-                        isDense: true,
-                        contentPadding:
-                            const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(Radii.lg),
-                          borderSide: BorderSide.none,
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(Radii.lg),
-                          borderSide: BorderSide.none,
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(Radii.lg),
-                          borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5),
-                        ),
-                      ),
-                      onSubmitted: (_) => _sendText(),
-                    ),
-                  ),
-                  const SizedBox(width: Gaps.sm),
-                  Tooltip(
-                    message: 'Отправить',
-                    child: DecoratedBox(
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: Brand.gradient,
-                      ),
-                      child: IconButton(
-                        onPressed: _sending ? null : _sendText,
-                        color: Colors.white,
-                        icon: const Icon(Icons.send_rounded, semanticLabel: 'Отправить'),
+          if (_messagesRestriction case final r?)
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.all(Gaps.md),
+                child: Row(
+                  children: [
+                    Icon(Icons.block, color: theme.colorScheme.error),
+                    const SizedBox(width: Gaps.sm),
+                    Expanded(
+                      child: Text(
+                        [
+                          r.endsAt == null
+                              ? 'Сообщения недоступны до решения модератора'
+                              : 'Сообщения недоступны до ${formatDateTime(r.endsAt!)}',
+                          if (r.reason.isNotEmpty) r.reason,
+                        ].join('. '),
+                        style: theme.textTheme.bodyMedium,
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+              ),
+            )
+          else
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    Gaps.md, Gaps.sm, Gaps.sm, Gaps.sm),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _input,
+                        minLines: 1,
+                        maxLines: 4,
+                        maxLength: 2000,
+                        textCapitalization: TextCapitalization.sentences,
+                        decoration: InputDecoration(
+                          hintText: 'Сообщение',
+                          counterText: '',
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 18, vertical: 12),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(Radii.lg),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(Radii.lg),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(Radii.lg),
+                            borderSide: BorderSide(
+                                color: theme.colorScheme.primary, width: 1.5),
+                          ),
+                        ),
+                        onSubmitted: (_) => _sendText(),
+                      ),
+                    ),
+                    const SizedBox(width: Gaps.sm),
+                    Tooltip(
+                      message: 'Отправить',
+                      child: DecoratedBox(
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: Brand.gradient,
+                        ),
+                        child: IconButton(
+                          onPressed: _sending ? null : _sendText,
+                          color: Colors.white,
+                          icon: const Icon(Icons.send_rounded,
+                              semanticLabel: 'Отправить'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -402,7 +453,9 @@ class _Bubble extends StatelessWidget {
                       formatDateTime(time).substring(11),
                       style: TextStyle(
                         fontSize: 10,
-                        color: mine ? Colors.white70 : theme.colorScheme.onSurfaceVariant,
+                        color: mine
+                            ? Colors.white70
+                            : theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                   if (mine)

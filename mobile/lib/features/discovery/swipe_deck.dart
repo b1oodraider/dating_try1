@@ -19,7 +19,8 @@ class SwipeDeck extends StatefulWidget {
     required this.photoUrl,
     required this.onSwipe,
     required this.onOpenDetails,
-    this.onUndo,
+    this.likesBlocked = false,
+    this.onLikeBlocked,
   });
 
   final List<PublicProfile> profiles;
@@ -29,8 +30,11 @@ class SwipeDeck extends StatefulWidget {
   final void Function(PublicProfile profile, SwipeAction action) onSwipe;
   final void Function(PublicProfile profile) onOpenDetails;
 
-  /// Shows the «back» button in the action row (premium; the server answers 403 otherwise).
-  final VoidCallback? onUndo;
+  /// Likes are restricted: like / super like are disabled and those swipes spring back.
+  final bool likesBlocked;
+
+  /// A like was tried while [likesBlocked].
+  final VoidCallback? onLikeBlocked;
 
   @override
   State<SwipeDeck> createState() => SwipeDeckState();
@@ -63,6 +67,11 @@ class SwipeDeckState extends State<SwipeDeck>
   Future<void> swipe(SwipeAction action) async {
     final profile = _top;
     if (profile == null || _flying != null) return;
+    if (widget.likesBlocked && action != SwipeAction.pass) {
+      setState(() => _drag = Offset.zero);
+      widget.onLikeBlocked?.call();
+      return;
+    }
     final size = context.size ?? const Size(400, 600);
     _flyFrom = _drag;
     _flyTo = switch (action) {
@@ -217,14 +226,6 @@ class SwipeDeckState extends State<SwipeDeck>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              if (widget.onUndo != null)
-                _RoundButton(
-                  icon: Icons.replay_rounded,
-                  color: Brand.gold,
-                  tooltip: 'Вернуть последнюю анкету',
-                  size: 48,
-                  onPressed: widget.onUndo,
-                ),
               _RoundButton(
                 icon: Icons.close_rounded,
                 color: Brand.pass,
@@ -237,8 +238,9 @@ class SwipeDeckState extends State<SwipeDeck>
                 color: Brand.superlike,
                 tooltip: 'Суперлайк',
                 size: 52,
-                onPressed:
-                    top == null ? null : () => swipe(SwipeAction.superlike),
+                onPressed: top == null || widget.likesBlocked
+                    ? null
+                    : () => swipe(SwipeAction.superlike),
               ),
               _RoundButton(
                 icon: Icons.favorite_rounded,
@@ -246,7 +248,9 @@ class SwipeDeckState extends State<SwipeDeck>
                 tooltip: 'Нравится',
                 size: 64,
                 filled: true,
-                onPressed: top == null ? null : () => swipe(SwipeAction.like),
+                onPressed: top == null || widget.likesBlocked
+                    ? null
+                    : () => swipe(SwipeAction.like),
               ),
             ],
           ),

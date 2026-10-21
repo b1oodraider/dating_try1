@@ -13,6 +13,7 @@ import '../models/excluded_goals.dart';
 import '../models/exclusion_words.dart';
 import '../models/gacha.dart';
 import '../models/goal.dart';
+import '../models/boost.dart';
 import '../models/facts.dart';
 import '../models/interest.dart';
 import '../models/json_utils.dart';
@@ -481,6 +482,12 @@ class DatingApiClient {
 
   Future<SupportTicket> writeToSupport(String ticketId, String text) async => SupportTicket.fromJson(
       _expectMap(await _send('POST', '/support/tickets/${_segment(ticketId)}/messages', body: {'text': text})));
+
+  Future<BoostStatus> getBoost() async => BoostStatus.fromJson(_expectMap(await _send('GET', '/me/boost')));
+
+  /// 409 BOOST_ALREADY_ACTIVE / INSUFFICIENT_BALANCE; the same [idempotencyKey] never spends twice.
+  Future<BoostStatus> activateBoost(String idempotencyKey) async => BoostStatus.fromJson(
+      _expectMap(await _send('POST', '/me/boost', body: {'idempotencyKey': idempotencyKey})));
 
   Future<List<Restriction>> getRestrictions() async {
     final json = await _send('GET', '/me/restrictions');

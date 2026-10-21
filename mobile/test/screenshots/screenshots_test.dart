@@ -16,6 +16,8 @@ import 'package:dating_mobile/core/theme/app_theme.dart';
 import 'package:dating_mobile/features/auth/otp_screen.dart';
 import 'package:dating_mobile/features/auth/phone_screen.dart';
 import 'package:dating_mobile/features/auth/session_controller.dart';
+import 'package:dating_mobile/core/models/discovery_filters.dart';
+import 'package:dating_mobile/features/discovery/discovery_filters_screen.dart';
 import 'package:dating_mobile/features/discovery/discovery_screen.dart';
 import 'package:dating_mobile/core/models/my_profile.dart';
 import 'package:dating_mobile/features/discovery/profile_card.dart';
@@ -172,6 +174,8 @@ void main() {
     await _loadFonts();
   });
 
+  setUp(Dictionaries.reset);
+
   // Unmount inside the test: HomeScreen's dispose closes the realtime stream.
   tearDown(() => HttpOverrides.global = null);
 
@@ -284,6 +288,22 @@ void main() {
           profile: MyProfile.fromJson(fx.myProfile),
         ));
     await _shot(tester, 'section_interests');
+  });
+
+  testWidgets('lifestyle section and filters', skip: skip, (tester) async {
+    final session = _session();
+    await _pump(
+        tester,
+        ProfileSectionScreen(
+          api: session.api,
+          step: profileSteps.firstWhere((s) => s.id == 'lifestyle'),
+          profile: MyProfile.fromJson(fx.myProfile),
+        ));
+    await _shot(tester, 'section_lifestyle');
+    await _pump(tester, DiscoveryFiltersScreen(session: session, initial: const DiscoveryFilters()));
+    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await _settle(tester);
+    await _shot(tester, 'filters_lifestyle');
   });
 
   testWidgets('wizard', skip: skip, (tester) async {

@@ -230,6 +230,16 @@ abstract final class Dictionaries {
   /// The options once loaded (for summaries, which cannot wait).
   static ProfileOptions? loadedOptions;
 
+  /// Tests run each case in its own fake zone: a future cached by an earlier case never completes there.
+  @visibleForTesting
+  static void reset() {
+    _options = null;
+    loadedOptions = null;
+    _tags = null;
+    _goals = null;
+    _interests = null;
+  }
+
   static Future<ProfileOptions> options(DatingApiClient api) =>
       _options ??= api.getProfileOptions().then((o) => loadedOptions = o).catchError((Object e) {
         _options = null;
@@ -638,11 +648,46 @@ class _PhotosEditorState extends State<PhotosEditor> {
     }
   }
 
+  /// Upload progress «2 из 4» while several photos go up one by one.
+  String? _progress;
+
   Future<void> _add() async {
-    final file = await ImagePicker().pickImage(
-        source: ImageSource.gallery, maxWidth: 2000, maxHeight: 2000, imageQuality: 85);
-    if (file == null || !mounted) return;
-    await _run(() async => widget.c.api.uploadPhoto(await file.readAsBytes(), file.name));
+    final free = MyProfile.maxPhotos - widget.c.profile.photos.length;
+    final picked = await ImagePicker().pickMultiImage(
+        maxWidth: 2000, maxHeight: 2000, imageQuality: 85, limit: free > 1 ? free : null);
+    if (picked.isEmpty || !mounted) return;
+    final files = picked.take(free).toList();
+    final failed = <String>[];
+    setState(() => _busy = true);
+    try {
+      for (var i = 0; i < files.length; i++) {
+        setState(() => _progress = '${i + 1} из ${files.length}');
+        try {
+          await widget.c.api.uploadPhoto(await files[i].readAsBytes(), files[i].name);
+        } on ApiException catch (e) {
+          if (e.isUnauthorized) return;
+          failed.add('Фото ${i + 1}: ${describeError(e)}');
+        }
+      }
+      widget.c.onProfile(await widget.c.api.getMyProfile());
+    } catch (e) {
+      failed.add(describeError(e));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _progress = null;
+        });
+        final skipped = picked.length - files.length;
+        final notes = [
+          ...failed,
+          if (skipped > 0) 'Не поместилось фото: $skipped (максимум ${MyProfile.maxPhotos})',
+        ];
+        if (notes.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(notes.join('\n'))));
+        }
+      }
+    }
   }
 
   @override
@@ -652,8 +697,8 @@ class _PhotosEditorState extends State<PhotosEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const StepHint('На каждом фото должны быть вы. Первое фото — главное; нажмите на фото, чтобы сделать '
-            'его главным или удалить.'),
+        const StepHint('На каждом фото должны быть вы. Можно выбрать несколько сразу. Первое фото — главное; '
+            'нажмите на фото, чтобы сделать его главным или удалить.'),
         GridView.count(
           crossAxisCount: 3,
           shrinkWrap: true,
@@ -710,8 +755,14 @@ class _PhotosEditorState extends State<PhotosEditor> {
                   onTap: _busy ? null : _add,
                   child: Center(
                     child: _busy
-                        ? const CircularProgressIndicator()
-                        : Icon(Icons.add_a_photo_outlined, color: theme.colorScheme.primary),
+                        ? Column(mainAxisSize: MainAxisSize.min, children: [
+                            const CircularProgressIndicator(),
+                            if (_progress != null) ...[
+                              const SizedBox(height: Gaps.sm),
+                              Text(_progress!, style: theme.textTheme.bodySmall),
+                            ],
+                          ])
+                        : Icon(Icons.add_photo_alternate_outlined, color: theme.colorScheme.primary),
                   ),
                 ),
               ),
