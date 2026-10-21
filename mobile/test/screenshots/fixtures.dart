@@ -410,7 +410,7 @@ final Map<String, Object?> myProfile = {
       'requiredToPublish': false
     },
     {
-      'code': 'PHOTOS',
+      'code': 'MORE_PHOTOS',
       'text': 'Добавьте ещё фото',
       'weight': 10,
       'done': false,

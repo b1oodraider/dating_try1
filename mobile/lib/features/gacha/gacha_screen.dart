@@ -298,8 +298,9 @@ class _RewardChip extends StatelessWidget {
     final item = reward.item;
     return Container(
       padding: const EdgeInsets.all(6),
+      // Rarity as a pale tint of its colour, not a loud frame (docs/design-audit.md).
       decoration: BoxDecoration(
-        border: Border.all(color: color, width: 2),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -534,12 +535,8 @@ class _ResultsSheet extends StatelessWidget {
                 children: [
                   for (final r in results)
                     Card(
-                      shape: RoundedRectangleBorder(
-                        side: BorderSide(
-                            color: rarityColor(r.rarity) ?? Colors.grey,
-                            width: 2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      color: (rarityColor(r.rarity) ?? Colors.grey).withValues(alpha: 0.12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       child: ListTile(
                         leading: SizedBox.square(
                           dimension: 40,

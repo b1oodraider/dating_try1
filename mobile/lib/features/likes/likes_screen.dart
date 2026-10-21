@@ -130,6 +130,14 @@ class _LikesScreenState extends State<LikesScreen> {
     }
   }
 
+  Widget _card(int index) => _LikeCard(
+        like: _likes[index],
+        photoUrl: widget.api.resolveMediaUrl,
+        onOpen: () => showProfileDetails(context, api: widget.api, profile: _likes[index].profile),
+        onPass: () => _answer(_likes[index], false),
+        onLike: () => _answer(_likes[index], true),
+      );
+
   void _snack(String text) => ScaffoldMessenger.of(context)
       .showSnackBar(SnackBar(content: Text(text)));
 
@@ -193,17 +201,24 @@ class _LikesScreenState extends State<LikesScreen> {
                 crossAxisSpacing: 12,
                 childAspectRatio: 0.68,
               ),
-              itemCount: _likes.length,
-              itemBuilder: (context, index) => _LikeCard(
-                like: _likes[index],
-                photoUrl: widget.api.resolveMediaUrl,
-                onOpen: () => showProfileDetails(context,
-                    api: widget.api, profile: _likes[index].profile),
-                onPass: () => _answer(_likes[index], false),
-                onLike: () => _answer(_likes[index], true),
-              ),
+              // An odd last card gets its own full-width row below, never an orphan cell.
+              itemCount: _likes.length - _likes.length % 2,
+              itemBuilder: (context, index) => _card(index),
             ),
           ),
+          if (_likes.length.isOdd)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(Gaps.md, 0, Gaps.md, Gaps.md),
+              sliver: SliverToBoxAdapter(
+                child: LayoutBuilder(
+                  // Same height as a grid card: half the width (minus the gap) / 0.68.
+                  builder: (context, c) => SizedBox(
+                    height: (c.maxWidth - 12) / 2 / 0.68,
+                    child: _card(_likes.length - 1),
+                  ),
+                ),
+              ),
+            ),
           if (more)
             SliverToBoxAdapter(
               child: Padding(

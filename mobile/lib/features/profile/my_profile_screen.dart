@@ -128,6 +128,20 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     }
   }
 
+  /// How much each section would add to completeness (undone tips), keyed by step id.
+  static Map<String, int> _gains(MyProfile profile) {
+    const stepOf = {
+      'NAME': 'name', 'AGE': 'identity', 'CITY': 'place', 'FIRST_PHOTO': 'photos', 'MORE_PHOTOS': 'photos',
+      'ABOUT': 'about', 'CARDS': 'tags', 'GOALS': 'heightGoals', 'HEIGHT': 'heightGoals', 'VERIFIED': 'verified',
+    };
+    final gains = <String, int>{};
+    for (final tip in profile.tips.where((t) => !t.done)) {
+      final step = stepOf[tip.code];
+      if (step != null) gains[step] = (gains[step] ?? 0) + tip.weight;
+    }
+    return gains;
+  }
+
   /// Visibility switches are saved at once.
   Future<void> _setVisibility({bool? invisible, bool? showPremiumBadge, bool? showZodiac}) async {
     setState(() => _busy = true);
@@ -207,6 +221,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     }
     final theme = Theme.of(context);
     final api = widget.session.api;
+    final gains = _gains(profile);
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -225,32 +240,14 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             profile: profile,
             photoUrl: api.resolveMediaUrl,
             missing: profile.missingForPublish.map((f) => _missingText[f] ?? f).toList(),
-            tips: profile.tips.where((t) => !t.done).take(2).map((t) => '${t.text} (+${t.weight}%)').toList(),
-            onTogglePublished: _busy ? null : _togglePublished,
-          ),
-          const SizedBox(height: Gaps.md),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => showMyProfileAsOthers(context, api: api, profile: profile),
-                  icon: const Icon(Icons.visibility_outlined, size: 20),
-                  label: const Text('Как видят'),
-                ),
-              ),
-              const SizedBox(width: Gaps.sm),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _refill,
-                  icon: const Icon(Icons.restart_alt_rounded, size: 20),
-                  label: const Text('Заново'),
-                ),
-              ),
-            ],
+            onPublish: _busy ? null : _togglePublished,
+            onPreview: () => showMyProfileAsOthers(context, api: api, profile: profile),
+            onRefill: _refill,
           ),
           const SizedBox(height: Gaps.lg),
           _PhotoStrip(
             profile: profile,
+            gain: gains['photos'],
             photoUrl: api.resolveMediaUrl,
             onOpen: () => _openSection(profileSteps.firstWhere((s) => s.id == 'photos')),
           ),
@@ -273,7 +270,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                             ? null
                             : TextStyle(color: theme.colorScheme.error),
                       ),
-                      trailing: const Icon(Icons.chevron_right_rounded),
+                      trailing: _Gain(gains[step.id]),
                       onTap: () => _openSection(step),
                     ),
               ],
@@ -285,6 +282,13 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             clipBehavior: Clip.antiAlias,
             child: Column(
               children: [
+                if (profile.isPublished || profile.publicationStatus == 'HIDDEN')
+                  SwitchListTile(
+                    title: const Text('Анкета в ленте'),
+                    subtitle: Text(profile.isPublished ? 'Её видят другие' : 'Скрыта: её никто не видит'),
+                    value: profile.isPublished,
+                    onChanged: _busy ? null : (_) => _togglePublished(),
+                  ),
                 SwitchListTile(
                   title: const Text('Показывать знак зодиака'),
                   subtitle: Text(profile.zodiac ?? 'Укажите дату рождения'),
@@ -318,7 +322,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                       color: profile.verified ? Brand.verified : null),
                   title: Text(profile.verified ? 'Селфи проверено' : 'Пройти проверку селфи'),
                   subtitle: const Text('Значок «Проверен» и показ анкеты в ленте'),
-                  trailing: profile.verified ? null : const Icon(Icons.chevron_right_rounded),
+                  trailing: profile.verified ? null : _Gain(gains['verified']),
                   onTap: profile.verified ? null : () => _push(VerificationScreen(api: api)),
                 ),
                 ListTile(
@@ -371,9 +375,12 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
 
 /// My photos in a row; a tap opens the photo section.
 class _PhotoStrip extends StatelessWidget {
-  const _PhotoStrip({required this.profile, required this.photoUrl, required this.onOpen});
+  const _PhotoStrip({required this.profile, required this.photoUrl, required this.onOpen, this.gain});
 
   final MyProfile profile;
+
+  /// Completeness the photos would add, shown before «Изменить».
+  final int? gain;
   final String Function(String url) photoUrl;
   final VoidCallback onOpen;
 
@@ -386,6 +393,8 @@ class _PhotoStrip extends StatelessWidget {
         Row(
           children: [
             Expanded(child: _Section('Фото · ${profile.photos.length} из ${MyProfile.maxPhotos}')),
+            if (gain != null)
+              Text('+$gain%', style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.primary)),
             TextButton(onPressed: onOpen, child: const Text('Изменить')),
           ],
         ),
@@ -464,15 +473,19 @@ class _Header extends StatelessWidget {
     required this.profile,
     required this.photoUrl,
     required this.missing,
-    required this.tips,
-    required this.onTogglePublished,
+    required this.onPublish,
+    required this.onPreview,
+    required this.onRefill,
   });
 
   final MyProfile profile;
   final String Function(String url) photoUrl;
   final List<String> missing;
-  final List<String> tips;
-  final VoidCallback? onTogglePublished;
+
+  /// Publishing is the header's one job while the profile is not in the feed; hiding lives in «Видимость».
+  final VoidCallback? onPublish;
+  final VoidCallback onPreview;
+  final VoidCallback onRefill;
 
   @override
   Widget build(BuildContext context) {
@@ -490,7 +503,6 @@ class _Header extends StatelessWidget {
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(Radii.card),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -560,27 +572,52 @@ class _Header extends StatelessWidget {
             Text('Для публикации нужно: ${missing.join(', ')}',
                 style: theme.textTheme.bodyMedium?.copyWith(color: scheme.error)),
           ],
-          for (final tip in tips)
-            Padding(
-              padding: const EdgeInsets.only(top: Gaps.sm),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.lightbulb_outline_rounded, size: 18, color: Brand.gold),
-                  const SizedBox(width: Gaps.sm),
-                  Expanded(child: Text(tip, style: theme.textTheme.bodyMedium)),
-                ],
-              ),
+          if (!profile.isPublished) ...[
+            const SizedBox(height: Gaps.md),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(onPressed: onPublish, child: const Text('Опубликовать')),
             ),
-          const SizedBox(height: Gaps.md),
-          SizedBox(
-            width: double.infinity,
-            child: profile.isPublished
-                ? OutlinedButton(onPressed: onTogglePublished, child: const Text('Скрыть анкету'))
-                : FilledButton(onPressed: onTogglePublished, child: const Text('Опубликовать')),
+          ],
+          const SizedBox(height: Gaps.sm),
+          Row(
+            children: [
+              TextButton.icon(
+                onPressed: onPreview,
+                icon: const Icon(Icons.visibility_outlined, size: 20),
+                label: const Text('Как видят'),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: onRefill,
+                icon: const Icon(Icons.restart_alt_rounded, size: 20),
+                label: const Text('Заново'),
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+}
+
+/// «+5%» before the chevron: what filling this section adds to completeness.
+class _Gain extends StatelessWidget {
+  const _Gain(this.percent);
+
+  final int? percent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (percent != null)
+          Text('+$percent%',
+              style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.primary)),
+        const Icon(Icons.chevron_right_rounded),
+      ],
     );
   }
 }
