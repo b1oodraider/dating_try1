@@ -1,4 +1,5 @@
 import 'goal.dart';
+import 'facts.dart';
 import 'interest.dart';
 import 'json_utils.dart';
 import 'photo.dart';
@@ -50,6 +51,7 @@ class MyProfile {
     this.artists = const <Artist>[],
     this.showZodiac = false,
     this.zodiac,
+    this.facts = const Facts(),
     this.city,
     this.aboutText,
     this.dailyStatusText,
@@ -118,6 +120,8 @@ class MyProfile {
 
   /// My sign (from the birth date), always present when the date is set.
   final String? zodiac;
+
+  final Facts facts;
   final String? aboutText;
   final String? dailyStatusText;
 
@@ -168,6 +172,7 @@ class MyProfile {
       artists: asList<Artist>(json['artists'], Artist.fromJson),
       showZodiac: asBool(json['showZodiac']),
       zodiac: asStringOrNull(json['zodiac']),
+      facts: Facts.fromJson(json['facts']),
       aboutText: asStringOrNull(json['aboutText']),
       dailyStatusText: asStringOrNull(json['dailyStatusText']),
       publicationStatus: asString(json['publicationStatus'], 'DRAFT'),

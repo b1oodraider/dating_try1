@@ -1,5 +1,6 @@
 package com.dating.profiles.application;
 
+import com.dating.profiles.api.FactsDto;
 import com.dating.profiles.persistence.ProfileHistoryRepository;
 import com.dating.profiles.persistence.InterestRepository;
 import com.dating.profiles.persistence.ArtistRepository;
@@ -188,6 +189,17 @@ public class ProfileService {
         if (dto.artistIds() != null) {
             artists = resolveArtists(dto.artistIds(), errors);
         }
+        checkFact("kidsHas", dto.kidsHas(), ProfileFacts.KIDS_HAS, errors);
+        checkFact("kidsPlans", dto.kidsPlans(), ProfileFacts.KIDS_PLANS, errors);
+        checkFact("smoking", dto.smoking(), ProfileFacts.SMOKING, errors);
+        checkFact("alcohol", dto.alcohol(), ProfileFacts.ALCOHOL, errors);
+        checkFact("sport", dto.sport(), ProfileFacts.SPORT, errors);
+        checkFact("educationLevel", dto.educationLevel(), ProfileFacts.EDUCATION, errors);
+        checkFacts("pets", dto.pets(), ProfileFacts.PETS, 4, errors);
+        checkFacts("languages", dto.languages(), ProfileFacts.LANGUAGES, 6, errors);
+        if (dto.pets() != null && dto.pets().contains("NONE") && dto.pets().size() > 1) {
+            errors.put("pets", "«Нет животных» нельзя выбрать вместе с животными");
+        }
         boolean clearHeight = Boolean.TRUE.equals(dto.clearHeight());
         if (clearHeight && dto.heightCm() != null) {
             errors.put("heightCm", "Нельзя одновременно указать и удалить рост");
@@ -242,6 +254,36 @@ public class ProfileService {
         }
         if (dto.showZodiac() != null) {
             profile.setShowZodiac(dto.showZodiac());
+        }
+        if (dto.kidsHas() != null) {
+            profile.setKidsHas(blankToNull(dto.kidsHas()));
+        }
+        if (dto.kidsPlans() != null) {
+            profile.setKidsPlans(blankToNull(dto.kidsPlans()));
+        }
+        if (dto.smoking() != null) {
+            profile.setSmoking(blankToNull(dto.smoking()));
+        }
+        if (dto.alcohol() != null) {
+            profile.setAlcohol(blankToNull(dto.alcohol()));
+        }
+        if (dto.sport() != null) {
+            profile.setSport(blankToNull(dto.sport()));
+        }
+        if (dto.pets() != null) {
+            profile.setPets(dto.pets().stream().distinct().toList());
+        }
+        if (dto.profession() != null) {
+            profile.setProfession(blankToNull(dto.profession()));
+        }
+        if (dto.educationLevel() != null) {
+            profile.setEducationLevel(blankToNull(dto.educationLevel()));
+        }
+        if (dto.university() != null) {
+            profile.setUniversity(blankToNull(dto.university()));
+        }
+        if (dto.languages() != null) {
+            profile.setLanguages(dto.languages().stream().distinct().toList());
         }
 
         if (displayName != null) {
@@ -300,6 +342,30 @@ public class ProfileService {
         return toMyProfileDto(profile);
     }
 
+    private static String blankToNull(String value) {
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /** One answer from the fixed list, or "" to clear. */
+    private static void checkFact(String field, String value, Map<String, String> allowed, Map<String, String> errors) {
+        if (value != null && !value.isBlank() && !allowed.containsKey(value.trim())) {
+            errors.put(field, "Неизвестное значение: " + value);
+        }
+    }
+
+    private static void checkFacts(String field, List<String> values, Map<String, String> allowed, int max,
+                                   Map<String, String> errors) {
+        if (values == null) {
+            return;
+        }
+        if (values.size() > max) {
+            errors.put(field, "Не больше " + max);
+        } else if (!allowed.keySet().containsAll(values)) {
+            errors.put(field, "Неизвестные значения");
+        }
+    }
+
     /** What a person filled in (no photos: they keep their own rows); the previous one goes to profile_history. */
     private static Map<String, Object> snapshot(Profile p) {
         Map<String, Object> s = new LinkedHashMap<>();
@@ -318,6 +384,7 @@ public class ProfileService {
         s.put("tags", p.getTags().stream().map(CommunicationTag::getCode).sorted().toList());
         s.put("interests", p.getInterests().stream().map(Interest::getCode).sorted().toList());
         s.put("artists", p.getArtists().stream().map(Artist::getId).sorted().toList());
+        s.put("facts", FactsDto.from(p));
         return s;
     }
 
@@ -528,6 +595,7 @@ public class ProfileService {
                 artistsOf(profile),
                 profile.isShowZodiac(),
                 Zodiac.of(profile.getBirthDate()),
+                FactsDto.from(profile),
                 profile.getCreatedAt(),
                 profile.getUpdatedAt()
         );

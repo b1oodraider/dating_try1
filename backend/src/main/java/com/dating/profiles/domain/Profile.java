@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Period;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -132,6 +133,39 @@ public class Profile extends AssignedIdEntity {
     /** Show my zodiac sign (computed from the birth date) to others. */
     @Column(name = "show_zodiac", nullable = false)
     private boolean showZodiac;
+
+    // Facts (docs/matching.md, part 7); codes from ProfileFacts, null = not said.
+    @Column(name = "kids_has")
+    private String kidsHas;
+
+    @Column(name = "kids_plans")
+    private String kidsPlans;
+
+    @Column(name = "smoking")
+    private String smoking;
+
+    @Column(name = "alcohol")
+    private String alcohol;
+
+    @Column(name = "sport")
+    private String sport;
+
+    @Column(name = "profession")
+    private String profession;
+
+    @Column(name = "education_level")
+    private String educationLevel;
+
+    @Column(name = "university")
+    private String university;
+
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.ARRAY)
+    @Column(name = "pets", columnDefinition = "text[]")
+    private List<String> pets;
+
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.ARRAY)
+    @Column(name = "languages", columnDefinition = "text[]")
+    private List<String> languages;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -347,6 +381,96 @@ public class Profile extends AssignedIdEntity {
     public void replaceArtists(Set<Artist> newArtists) {
         this.artists.clear();
         this.artists.addAll(newArtists);
+        touch();
+    }
+
+    public String getKidsHas() {
+        return kidsHas;
+    }
+
+    public void setKidsHas(String kidsHas) {
+        this.kidsHas = kidsHas;
+        touch();
+    }
+
+    public String getKidsPlans() {
+        return kidsPlans;
+    }
+
+    public void setKidsPlans(String kidsPlans) {
+        this.kidsPlans = kidsPlans;
+        touch();
+    }
+
+    public String getSmoking() {
+        return smoking;
+    }
+
+    public void setSmoking(String smoking) {
+        this.smoking = smoking;
+        touch();
+    }
+
+    public String getAlcohol() {
+        return alcohol;
+    }
+
+    public void setAlcohol(String alcohol) {
+        this.alcohol = alcohol;
+        touch();
+    }
+
+    public String getSport() {
+        return sport;
+    }
+
+    public void setSport(String sport) {
+        this.sport = sport;
+        touch();
+    }
+
+    public String getProfession() {
+        return profession;
+    }
+
+    public void setProfession(String profession) {
+        this.profession = profession;
+        touch();
+    }
+
+    public String getEducationLevel() {
+        return educationLevel;
+    }
+
+    public void setEducationLevel(String educationLevel) {
+        this.educationLevel = educationLevel;
+        touch();
+    }
+
+    public String getUniversity() {
+        return university;
+    }
+
+    public void setUniversity(String university) {
+        this.university = university;
+        touch();
+    }
+
+    public List<String> getPets() {
+        return pets == null ? List.of() : List.copyOf(pets);
+    }
+
+    public void setPets(List<String> pets) {
+        this.pets = pets == null || pets.isEmpty() ? null : new java.util.ArrayList<>(pets);
+        touch();
+    }
+
+    public List<String> getLanguages() {
+        return languages == null ? List.of() : List.copyOf(languages);
+    }
+
+    public void setLanguages(List<String> languages) {
+        this.languages = languages == null || languages.isEmpty() ? null : new java.util.ArrayList<>(languages);
         touch();
     }
 

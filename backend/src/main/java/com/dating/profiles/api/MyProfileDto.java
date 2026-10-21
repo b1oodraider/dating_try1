@@ -55,6 +55,7 @@ public record MyProfileDto(
         boolean showZodiac,
         /** My sign, always (shown to others only with showZodiac). */
         String zodiac,
+        FactsDto facts,
         Instant createdAt,
         Instant updatedAt
 ) {}

@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/api_exception.dart';
+import '../../core/models/facts.dart';
 import '../../core/models/goal.dart';
 import '../../core/models/interest.dart';
 import '../../core/models/my_profile.dart';
@@ -74,6 +75,14 @@ String _date(DateTime d) =>
 String _genderLabel(String? g) => switch (g) { 'MALE' => 'Мужчина', 'FEMALE' => 'Женщина', _ => '' };
 
 String _ages(MyProfile p) => p.ageTo == null ? 'от ${p.ageFrom}' : '${p.ageFrom}–${p.ageTo}';
+
+/// Labels of the said facts (or how many are said while the options are not loaded yet).
+String _factsSummary(MyProfile p, List<String> keys) {
+  final said = keys.where((k) => p.facts.values.containsKey(k)).toList();
+  final options = Dictionaries.loadedOptions;
+  if (options == null) return said.isEmpty ? '' : 'указано: ${said.length}';
+  return _join([for (final k in said) if (options.describe(p.facts, k) case final d?) d], max: 2);
+}
 
 String _join(Iterable<String> items, {int max = 3}) {
   final list = items.toList();
@@ -183,6 +192,24 @@ final List<ProfileStep> profileSteps = [
     build: (c) => MusicEditor(c),
   ),
   ProfileStep(
+    id: 'lifestyle',
+    title: 'Образ жизни',
+    question: 'Ваш образ жизни',
+    icon: Icons.spa_outlined,
+    hasValue: (p) => _lifestyle.any(p.facts.values.containsKey),
+    summary: (p) => _factsSummary(p, _lifestyle),
+    build: (c) => FactsEditor(c, facts: _lifestyle),
+  ),
+  ProfileStep(
+    id: 'work',
+    title: 'Работа и учёба',
+    question: 'Работа, учёба и языки',
+    icon: Icons.work_outline_rounded,
+    hasValue: (p) => _work.any(p.facts.values.containsKey),
+    summary: (p) => _factsSummary(p, _work),
+    build: (c) => FactsEditor(c, facts: _work),
+  ),
+  ProfileStep(
     id: 'tags',
     title: 'Карточки общения',
     question: 'Как вам удобнее общаться?',
@@ -193,8 +220,22 @@ final List<ProfileStep> profileSteps = [
   ),
 ];
 
+const List<String> _lifestyle = ['kidsHas', 'kidsPlans', 'smoking', 'alcohol', 'sport', 'pets'];
+const List<String> _work = ['profession', 'educationLevel', 'university', 'languages'];
+
 /// Dictionaries change rarely: loaded once per app run.
 abstract final class Dictionaries {
+  static Future<ProfileOptions>? _options;
+
+  /// The options once loaded (for summaries, which cannot wait).
+  static ProfileOptions? loadedOptions;
+
+  static Future<ProfileOptions> options(DatingApiClient api) =>
+      _options ??= api.getProfileOptions().then((o) => loadedOptions = o).catchError((Object e) {
+        _options = null;
+        throw e;
+      });
+
   static Future<List<Tag>>? _tags;
   static Future<List<Goal>>? _goals;
   static Future<List<InterestGroup>>? _interests;
@@ -923,6 +964,119 @@ class _InterestsEditorState extends State<InterestsEditor> {
                 },
               ),
               _FieldError(widget.c.errors['interestCodes']),
+            ],
+          );
+        },
+      );
+}
+
+// ---------------------------------------------------------------- facts
+
+/// Facts by API name: one-of chips (tap again to clear), several-of chips, free text.
+class FactsEditor extends StatefulWidget {
+  const FactsEditor(this.c, {super.key, required this.facts});
+
+  final StepContext c;
+  final List<String> facts;
+
+  @override
+  State<FactsEditor> createState() => _FactsEditorState();
+}
+
+class _FactsEditorState extends State<FactsEditor> {
+  late final Facts _start = widget.c.blank ? const Facts() : widget.c.profile.facts;
+  late final Map<String, String?> _one = {for (final k in Facts.single) k: _start.one(k)};
+  late final Map<String, Set<String>> _many = {for (final k in Facts.multi) k: _start.many(k).toSet()};
+  late final Map<String, TextEditingController> _text = {
+    for (final k in Facts.text) k: TextEditingController(text: _start.one(k) ?? ''),
+  };
+
+  @override
+  void dispose() {
+    for (final c in _text.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _send(String fact, Object value) => widget.c.onChanged(ProfilePatch(facts: {fact: value}));
+
+  void _toggleMany(String fact, String code, bool on) {
+    final set = _many[fact]!;
+    setState(() {
+      if (!on) {
+        set.remove(code);
+      } else if (fact == 'pets' && (code == 'NONE') != set.contains('NONE')) {
+        // «Нет животных» and animals exclude each other.
+        set
+          ..clear()
+          ..add(code);
+      } else {
+        set.add(code);
+      }
+    });
+    _send(fact, set.toList());
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<ProfileOptions>(
+        future: Dictionaries.options(widget.c.api),
+        builder: (context, snapshot) {
+          final options = snapshot.data;
+          if (options == null) {
+            return snapshot.hasError ? Text(describeError(snapshot.error!)) : const LinearProgressIndicator();
+          }
+          final theme = Theme.of(context);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const StepHint('Всё по желанию. Указанное видно в анкете, по образу жизни можно фильтровать ленту.'),
+              for (final fact in widget.facts) ...[
+                if (Facts.text.contains(fact))
+                  Padding(
+                    padding: const EdgeInsets.only(top: Gaps.sm),
+                    child: TextField(
+                      controller: _text[fact],
+                      maxLength: fact == 'profession' ? 80 : 120,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: InputDecoration(
+                        labelText: Facts.titles[fact],
+                        errorText: widget.c.errors[fact],
+                      ),
+                      onChanged: (v) => _send(fact, v.trim()),
+                    ),
+                  )
+                else ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: Gaps.md, bottom: Gaps.sm),
+                    child: Text(Facts.titles[fact]!,
+                        style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                  ),
+                  Wrap(
+                    spacing: Gaps.sm,
+                    runSpacing: Gaps.sm,
+                    children: [
+                      for (final o in options.of(fact))
+                        if (Facts.multi.contains(fact))
+                          FilterChip(
+                            label: Text(o.label),
+                            selected: _many[fact]!.contains(o.code),
+                            onSelected: (on) => _toggleMany(fact, o.code, on),
+                          )
+                        else
+                          ChoiceChip(
+                            label: Text(o.label),
+                            selected: _one[fact] == o.code,
+                            onSelected: (on) {
+                              setState(() => _one[fact] = on ? o.code : null);
+                              _send(fact, on ? o.code : '');
+                            },
+                          ),
+                    ],
+                  ),
+                  _FieldError(widget.c.errors[fact]),
+                ],
+              ],
             ],
           );
         },

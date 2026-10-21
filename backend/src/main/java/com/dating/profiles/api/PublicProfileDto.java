@@ -40,17 +40,18 @@ public record PublicProfileDto(
         /** Only when the owner shows it. */
         @JsonInclude(JsonInclude.Include.NON_NULL) String zodiac,
         /** Feed only: up to 2 interests / artists / cards the viewer shares with this person. */
-        @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> common
+        @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> common,
+        FactsDto facts
 ) {
     /** @param distanceKm shown only when both people share their location (city centres would mislead) */
     public PublicProfileDto withDistanceKm(Integer distanceKm) {
         return new PublicProfileDto(id, displayName, age, city, aboutText, dailyStatusText, tags, photos, decorations,
-                heightCm, goals, premium, verified, compatibility, boosted, distanceKm, interests, artists, zodiac, common);
+                heightCm, goals, premium, verified, compatibility, boosted, distanceKm, interests, artists, zodiac, common, facts);
     }
 
     public PublicProfileDto withCommon(List<String> common) {
         return new PublicProfileDto(id, displayName, age, city, aboutText, dailyStatusText, tags, photos, decorations,
-                heightCm, goals, premium, verified, compatibility, boosted, distanceKm, interests, artists, zodiac, common);
+                heightCm, goals, premium, verified, compatibility, boosted, distanceKm, interests, artists, zodiac, common, facts);
     }
 
     /** @param compatibility percent match by cards with the viewer, null when there is too little to compare */
@@ -81,7 +82,8 @@ public record PublicProfileDto(
                 ProfileService.interestsOf(profile),
                 ProfileService.artistsOf(profile),
                 profile.isShowZodiac() ? Zodiac.of(profile.getBirthDate()) : null,
-                List.of()
+                List.of(),
+                FactsDto.from(profile)
         );
     }
 }

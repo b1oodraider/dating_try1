@@ -1,0 +1,198 @@
+databaseChangeLog:
+  # docs/matching.md, parts 1, 2 and 7: profile facts (kids, smoking, alcohol, sport, pets, work, study, languages),
+  # two-way fact filters with «show those who did not say», interests and music in the feed score, and a stub for the
+  # behaviour rating (the model is not decided yet).
+  - changeSet:
+      id: 031-facts-and-score
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE profiles
+                ADD COLUMN kids_has        VARCHAR(10) CHECK (kids_has IN ('YES', 'NO')),
+                ADD COLUMN kids_plans      VARCHAR(12) CHECK (kids_plans IN ('WANT', 'DONT_WANT', 'UNDECIDED')),
+                ADD COLUMN smoking         VARCHAR(12) CHECK (smoking IN ('NO', 'SOMETIMES', 'CIGARETTES', 'VAPE')),
+                ADD COLUMN alcohol         VARCHAR(12) CHECK (alcohol IN ('NO', 'RARELY', 'MODERATELY', 'OFTEN')),
+                ADD COLUMN sport           VARCHAR(12) CHECK (sport IN ('REGULARLY', 'SOMETIMES', 'NO')),
+                ADD COLUMN pets            TEXT[],
+                ADD COLUMN profession      VARCHAR(80),
+                ADD COLUMN education_level VARCHAR(20)
+                    CHECK (education_level IN ('SCHOOL', 'COLLEGE', 'INCOMPLETE_HIGHER', 'HIGHER', 'DEGREE')),
+                ADD COLUMN university      VARCHAR(120),
+                ADD COLUMN languages       TEXT[],
+                ADD COLUMN fact_filters    JSONB
+        # One fact against one filter: no filter → fine; not said → the filter's «unspecified» switch; otherwise
+        # the value must be accepted. Lists (pets): every value must be accepted.
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE FUNCTION fact_ok(filters JSONB, fact TEXT, val TEXT)
+              RETURNS BOOLEAN LANGUAGE sql IMMUTABLE AS $$
+                SELECT CASE
+                         WHEN filters IS NULL OR NOT filters ? fact THEN TRUE
+                         WHEN val IS NULL THEN coalesce((filters -> fact ->> 'unspecified')::boolean, TRUE)
+                         ELSE coalesce((filters -> fact -> 'accept') ? val, TRUE)
+                       END
+              $$
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE FUNCTION fact_ok_all(filters JSONB, fact TEXT, vals TEXT[])
+              RETURNS BOOLEAN LANGUAGE sql IMMUTABLE AS $$
+                SELECT CASE
+                         WHEN filters IS NULL OR NOT filters ? fact THEN TRUE
+                         WHEN vals IS NULL OR cardinality(vals) = 0
+                           THEN coalesce((filters -> fact ->> 'unspecified')::boolean, TRUE)
+                         ELSE NOT EXISTS (SELECT 1 FROM unnest(vals) v WHERE NOT (filters -> fact -> 'accept') ? v)
+                       END
+              $$
+        # Two-way: the candidate passes my filters and I pass the candidate's.
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE FUNCTION facts_match(viewer_profile UUID, candidate_profile UUID)
+              RETURNS BOOLEAN LANGUAGE sql STABLE AS $$
+                SELECT fact_ok(a.fact_filters, 'kidsHas', b.kids_has) AND fact_ok(b.fact_filters, 'kidsHas', a.kids_has)
+                   AND fact_ok(a.fact_filters, 'kidsPlans', b.kids_plans) AND fact_ok(b.fact_filters, 'kidsPlans', a.kids_plans)
+                   AND fact_ok(a.fact_filters, 'smoking', b.smoking) AND fact_ok(b.fact_filters, 'smoking', a.smoking)
+                   AND fact_ok(a.fact_filters, 'alcohol', b.alcohol) AND fact_ok(b.fact_filters, 'alcohol', a.alcohol)
+                   AND fact_ok(a.fact_filters, 'sport', b.sport) AND fact_ok(b.fact_filters, 'sport', a.sport)
+                   AND fact_ok_all(a.fact_filters, 'pets', b.pets) AND fact_ok_all(b.fact_filters, 'pets', a.pets)
+                  FROM profiles a, profiles b
+                 WHERE a.id = viewer_profile AND b.id = candidate_profile
+              $$
+        # shortcut: the behaviour rating (docs/matching.md, part 5) is not modelled yet; always 0 until it is.
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE FUNCTION behavior_rating(account UUID)
+              RETURNS DOUBLE PRECISION LANGUAGE sql STABLE AS $$ SELECT 0::DOUBLE PRECISION $$
+        - sql:
+            sql: DROP FUNCTION feed_score(UUID, UUID); DROP FUNCTION feed_score_parts(UUID, UUID)
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE FUNCTION feed_score_parts(viewer_account UUID, candidate UUID)
+              RETURNS TABLE (distance DOUBLE PRECISION, goals DOUBLE PRECISION, interests DOUBLE PRECISION,
+                             quality DOUBLE PRECISION, recency DOUBLE PRECISION, boost DOUBLE PRECISION,
+                             newcomer DOUBLE PRECISION, outside_their_radius DOUBLE PRECISION,
+                             recently_shown DOUBLE PRECISION, liked_me DOUBLE PRECISION, behavior DOUBLE PRECISION)
+              LANGUAGE plpgsql STABLE AS $$
+              DECLARE
+                v profiles%ROWTYPE;
+                c profiles%ROWTYPE;
+                v_lat DOUBLE PRECISION; v_lon DOUBLE PRECISION;
+                c_lat DOUBLE PRECISION; c_lon DOUBLE PRECISION;
+                km DOUBLE PRECISION;
+                shared INT;
+                same_interests INT; same_categories INT; same_artists INT;
+                v_unsure BOOLEAN; c_unsure BOOLEAN;
+                last_active DATE;
+                premium BOOLEAN;
+                photos INT;
+              BEGIN
+                SELECT * INTO v FROM profiles WHERE account_id = viewer_account;
+                SELECT * INTO c FROM profiles WHERE id = candidate;
+                SELECT coalesce(v.latitude, ci.latitude), coalesce(v.longitude, ci.longitude) INTO v_lat, v_lon
+                  FROM (SELECT 1) one LEFT JOIN cities ci ON ci.id = v.city_id;
+                SELECT coalesce(c.latitude, ci.latitude), coalesce(c.longitude, ci.longitude) INTO c_lat, c_lon
+                  FROM (SELECT 1) one LEFT JOIN cities ci ON ci.id = c.city_id;
+                IF v_lat IS NOT NULL AND c_lat IS NOT NULL THEN
+                  km := geo_distance_km(v_lat, v_lon, c_lat, c_lon);
+                END IF;
+
+                -- Distance, up to 30: closer is better inside the viewer's radius (100 km when none is set).
+                -- A city centre on either side says nothing precise, so it scores a neutral 15.
+                IF km IS NULL OR v.latitude IS NULL OR c.latitude IS NULL THEN
+                  distance := 15;
+                ELSE
+                  distance := 30 * greatest(0, 1 - km / coalesce(v.search_radius_km, 100));
+                END IF;
+
+                -- Goals: 2+ shared 20, 1 shared 12, "not sure" on either side 8.
+                SELECT count(*) INTO shared FROM profile_goals a JOIN profile_goals b ON a.goal_code = b.goal_code
+                 WHERE a.profile_id = v.id AND b.profile_id = c.id AND a.goal_code <> 'NOT_SURE';
+                v_unsure := EXISTS (SELECT 1 FROM profile_goals WHERE profile_id = v.id AND goal_code = 'NOT_SURE');
+                c_unsure := EXISTS (SELECT 1 FROM profile_goals WHERE profile_id = c.id AND goal_code = 'NOT_SURE');
+                goals := CASE WHEN shared >= 2 THEN 20 WHEN shared = 1 THEN 12 WHEN v_unsure OR c_unsure THEN 8 ELSE 0 END;
+
+                -- Interests and music share one cap with goals (25 together): the same interest 3, the same artist 3,
+                -- only the same category of interests 1 (up to 4).
+                SELECT count(*) INTO same_interests FROM profile_interests a
+                  JOIN profile_interests b ON a.interest_code = b.interest_code
+                 WHERE a.profile_id = v.id AND b.profile_id = c.id;
+                SELECT count(DISTINCT ib.category_code) INTO same_categories
+                  FROM profile_interests a JOIN interests ia ON ia.code = a.interest_code
+                  JOIN interests ib ON ib.category_code = ia.category_code
+                  JOIN profile_interests b ON b.interest_code = ib.code
+                 WHERE a.profile_id = v.id AND b.profile_id = c.id AND a.interest_code <> b.interest_code;
+                SELECT count(*) INTO same_artists FROM profile_artists a JOIN profile_artists b ON a.artist_id = b.artist_id
+                 WHERE a.profile_id = v.id AND b.profile_id = c.id;
+                interests := least(25 - goals, 3 * same_interests + least(4, same_categories) + 3 * same_artists);
+
+                -- Profile quality, up to 20: photos (4 each, up to 3), about text, cards, height or goals.
+                SELECT count(*) INTO photos FROM profile_photos WHERE profile_id = c.id;
+                quality := 4 * least(photos, 3)
+                         + CASE WHEN length(coalesce(c.about_text, '')) >= 50 THEN 4 ELSE 0 END
+                         + CASE WHEN EXISTS (SELECT 1 FROM profile_communication_tags t WHERE t.profile_id = c.id) THEN 2 ELSE 0 END
+                         + CASE WHEN c.height_cm IS NOT NULL OR EXISTS (SELECT 1 FROM profile_goals g WHERE g.profile_id = c.id)
+                                THEN 2 ELSE 0 END;
+
+                -- Soft decay for days without visits (no reward for being online a lot): 0.15 a day, 0.1 with premium.
+                SELECT max(day) INTO last_active FROM account_activity_days WHERE account_id = c.account_id;
+                premium := EXISTS (SELECT 1 FROM premium_entitlements s
+                                    WHERE s.account_id = c.account_id AND s.premium_until > now());
+                recency := -least(30, greatest(0, current_date - coalesce(last_active, c.updated_at::date)))
+                           * CASE WHEN premium THEN 0.1 ELSE 0.15 END;
+
+                -- Paid boost: shown more often, never above a clearly better match.
+                boost := CASE WHEN active_boost_order_key(c.account_id, viewer_account::text) IS NOT NULL THEN 12 ELSE 0 END;
+
+                -- Newcomers get a head start for their first week.
+                -- shortcut: by profile age, not by the first 50-100 impressions; switch when impressions are cheap to count.
+                newcomer := CASE WHEN c.created_at > now() - INTERVAL '7 days' THEN 15 ELSE 0 END;
+
+                -- The viewer is farther than the candidate's own radius: shown, but lower.
+                outside_their_radius := CASE WHEN km IS NOT NULL AND c.search_radius_km IS NOT NULL
+                                              AND km > c.search_radius_km THEN -20 ELSE 0 END;
+
+                -- Shown 10 minutes to 3 hours ago without a swipe: the next visit should not open with the same
+                -- person. The last 10 minutes do not count, so paging through one visit stays stable.
+                recently_shown := CASE WHEN EXISTS (SELECT 1 FROM feed_impressions i
+                                                     WHERE i.viewer_account_id = viewer_account
+                                                       AND i.target_account_id = c.account_id
+                                                       AND i.shown_at > now() - INTERVAL '3 hours'
+                                                       AND i.shown_at < now() - INTERVAL '10 minutes') THEN -10 ELSE 0 END;
+
+                -- People who liked me are mixed in at random places (stable for a day), so that the order does not
+                -- reveal who liked me (that is a premium feature).
+                liked_me := CASE WHEN has_liked(c.account_id, viewer_account)
+                                 THEN abs(hashtext(viewer_account::text || c.id::text || current_date::text)) % 26
+                                 ELSE 0 END;
+
+                behavior := behavior_rating(c.account_id);
+                RETURN NEXT;
+              END
+              $$
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE FUNCTION feed_score(viewer_account UUID, candidate UUID)
+              RETURNS DOUBLE PRECISION LANGUAGE sql STABLE AS $$
+                SELECT distance + goals + interests + quality + recency + boost + newcomer + outside_their_radius
+                       + recently_shown + liked_me + behavior
+                  FROM feed_score_parts(viewer_account, candidate)
+              $$
+      rollback:
+        - sql:
+            sql: >
+              DROP FUNCTION feed_score(UUID, UUID);
+              DROP FUNCTION feed_score_parts(UUID, UUID);
+              DROP FUNCTION behavior_rating(UUID);
+              DROP FUNCTION facts_match(UUID, UUID);
+              DROP FUNCTION fact_ok_all(JSONB, TEXT, TEXT[]);
+              DROP FUNCTION fact_ok(JSONB, TEXT, TEXT);
+              ALTER TABLE profiles DROP COLUMN fact_filters, DROP COLUMN languages, DROP COLUMN university,
+                DROP COLUMN education_level, DROP COLUMN profession, DROP COLUMN pets, DROP COLUMN sport,
+                DROP COLUMN alcohol, DROP COLUMN smoking, DROP COLUMN kids_plans, DROP COLUMN kids_has
+        # Restoring the 024 score on rollback: re-run changeset 024's two CREATE FUNCTION statements by hand.

@@ -103,7 +103,8 @@ public class DiscoveryService {
                 .and(ownerIsActive(viewerIsTestAccount))
                 .and(notOwnedBy(callerAccountId))
                 .and(mutualMatch(viewer, query))
-                .and(notInvisibleTo(callerAccountId));
+                .and(notInvisibleTo(callerAccountId))
+                .and(factsMatch(viewer.getId()));
         if (!viewerIsTestAccount) { // seed profiles of test accounts never log in
             spec = spec.and(recentlyActive());
         }
@@ -362,6 +363,12 @@ public class DiscoveryService {
                     cb.equal(a.get("testAccount"), testAccounts));
             return cb.exists(account);
         };
+    }
+
+    /** Fact filters of both people (kids, smoking, alcohol, sport, pets): see facts_match, changeset 031. */
+    private static Specification<Profile> factsMatch(UUID viewerProfileId) {
+        return (root, q, cb) -> cb.isTrue(cb.function("facts_match", Boolean.class,
+                cb.literal(viewerProfileId), root.get("id")));
     }
 
     /** Invisible mode works only while premium is on, and never hides from people the owner liked. */

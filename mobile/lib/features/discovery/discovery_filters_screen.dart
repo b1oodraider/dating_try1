@@ -1,13 +1,17 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_exception.dart';
 import '../../core/models/discovery_filters.dart';
 import '../../core/models/excluded_goals.dart';
+import '../../core/models/facts.dart';
 import '../../core/models/goal.dart';
 import '../../core/models/wallet.dart';
 import '../auth/session_controller.dart';
 import '../exclusion_words/exclusion_words_screen.dart';
 import '../premium/premium_badge.dart';
+import '../profile/profile_steps.dart' show Dictionaries;
 
 /// Discovery filters: city and age are free; height, "looking for" goals,
 /// saved excluded goals and exclusion words are premium.
@@ -60,6 +64,13 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
   bool _applying = false;
   String? _applyError;
 
+  // Lifestyle filters (free, two-way): null while loading or after an error.
+  ProfileOptions? _factOptions;
+  String? _factsError;
+  Map<String, FactFilter> _savedFactFilters = const <String, FactFilter>{};
+  final Map<String, Set<String>> _factAccept = {};
+  final Map<String, bool> _factUnspecified = {};
+
   @override
   void initState() {
     super.initState();
@@ -75,7 +86,54 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
     );
     _goalCodes = initial.goalCodes.toSet();
     _loadAdvanced();
+    _loadFacts();
   }
+
+  Future<void> _loadFacts() async {
+    try {
+      final results = await Future.wait<Object>([
+        Dictionaries.options(widget.session.api),
+        widget.session.api.getFactFilters(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _factOptions = results[0] as ProfileOptions;
+        _savedFactFilters = results[1] as Map<String, FactFilter>;
+        _setFactChips(_savedFactFilters);
+        _factsError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      if (e is ApiException && e.isUnauthorized) return;
+      setState(() => _factsError = describeError(e));
+    }
+  }
+
+  /// Fills the chips from saved filters; a fact without a filter = everything accepted.
+  void _setFactChips(Map<String, FactFilter> saved) {
+    for (final fact in Facts.filterable) {
+      final f = saved[fact];
+      _factAccept[fact] = f?.accept.toSet() ?? {for (final o in _factOptions!.of(fact)) o.code};
+      _factUnspecified[fact] = f?.unspecified ?? true;
+    }
+  }
+
+  /// Only facts that narrow the feed; all answers + «не указали» is no filter.
+  Map<String, FactFilter> _builtFactFilters() => {
+        for (final fact in Facts.filterable)
+          if (_factAccept[fact] case final accept?
+              when accept.isNotEmpty &&
+                  (accept.length < _factOptions!.of(fact).length || _factUnspecified[fact] == false))
+            fact: FactFilter(
+              accept: [for (final o in _factOptions!.of(fact)) if (accept.contains(o.code)) o.code],
+              unspecified: _factUnspecified[fact] ?? true,
+            ),
+      };
+
+  bool get _factFiltersChanged =>
+      _factOptions != null &&
+      jsonEncode(_builtFactFilters().map((k, v) => MapEntry(k, v.toJson()))) !=
+          jsonEncode(_savedFactFilters.map((k, v) => MapEntry(k, v.toJson())));
 
   @override
   void dispose() {
@@ -162,6 +220,7 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
         );
         _goalCodes = <String>{};
       }
+      if (_factOptions != null) _setFactChips(const {});
       _applyError = null;
     });
   }
@@ -253,6 +312,22 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
       }
     }
 
+    if (_factFiltersChanged) {
+      try {
+        final saved = await widget.session.api.putFactFilters(_builtFactFilters());
+        if (!mounted) return;
+        _savedFactFilters = saved;
+      } catch (e) {
+        if (!mounted) return;
+        if (e is ApiException && e.isUnauthorized) return;
+        setState(() {
+          _applying = false;
+          _applyError = describeError(e);
+        });
+        return;
+      }
+    }
+
     if (!mounted) return;
     Navigator.of(context).pop(_buildFilters());
   }
@@ -290,8 +365,10 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           children: [
             ..._buildBasicSection(context),
-            // TODO(ux): a future "Доп. фильтры" section goes here; its UX is
-            // not decided yet, so nothing is implemented for it.
+            const SizedBox(height: 24),
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+            ..._buildFactsSection(context),
             const SizedBox(height: 24),
             const Divider(height: 1),
             const SizedBox(height: 16),
@@ -497,6 +574,58 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
           onTap: _applying ? null : _openExclusionWords,
         ),
       ),
+    ];
+  }
+
+  List<Widget> _buildFactsSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final options = _factOptions;
+    final hint = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    return [
+      Text('Образ жизни', style: theme.textTheme.titleMedium),
+      const SizedBox(height: 4),
+      Text('Работает в обе стороны: вы не увидите тех, кому не подходите вы. '
+          'Сохраняется в аккаунте.', style: hint),
+      if (options == null)
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: _factsError == null
+              ? const LinearProgressIndicator()
+              : Row(children: [
+                  Expanded(child: Text(_factsError!)),
+                  TextButton(onPressed: _loadFacts, child: const Text('Повторить')),
+                ]),
+        )
+      else
+        for (final fact in Facts.filterable) ...[
+          const SizedBox(height: 16),
+          Text(Facts.titles[fact]!, style: theme.textTheme.titleSmall),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final o in options.of(fact))
+                FilterChip(
+                  label: Text(o.label),
+                  selected: _factAccept[fact]!.contains(o.code),
+                  onSelected: (on) => setState(() {
+                    final accept = _factAccept[fact]!;
+                    // At least one answer stays: an empty filter means nobody.
+                    if (!on && accept.length == 1) return;
+                    on ? accept.add(o.code) : accept.remove(o.code);
+                  }),
+                ),
+            ],
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: const Text('Показывать тех, кто не указал'),
+            value: _factUnspecified[fact]!,
+            onChanged: (v) => setState(() => _factUnspecified[fact] = v),
+          ),
+        ],
     ];
   }
 

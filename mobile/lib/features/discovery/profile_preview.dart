@@ -23,6 +23,7 @@ PublicProfile publicViewOf(MyProfile profile) => PublicProfile(
       interests: profile.interests,
       artists: profile.artists,
       zodiac: profile.showZodiac ? profile.zodiac : null,
+      facts: profile.facts,
     );
 
 /// «Посмотреть как видят другие»: my profile in the details sheet, without actions.

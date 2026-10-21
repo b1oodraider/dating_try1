@@ -529,6 +529,21 @@ PublicProfile           + interests, artists, zodiac (only when the owner shows 
 Every change of the profile stores its previous state in profile_history (no API; for moderation and support).
 Removed reference photos keep their files so later photos can still be compared with them.
 
+## Profile facts and fact filters (docs/matching.md, part 1)
+GET /profile-options    (public) 200 { kidsHas, kidsPlans, smoking, alcohol, sport, pets, educationLevel, languages:
+                          [{ code, label }] }   // answers in display order; clients show these labels
+PUT /me/profile         + kidsHas, kidsPlans, smoking, alcohol, sport, educationLevel: code ('' clears),
+                          pets, languages: code[] ([] clears; pets NONE cannot be mixed with animals),
+                          profession (<= 80), university (<= 120): text ('' clears); unknown code → 400 fieldErrors.<field>
+MyProfile, PublicProfile + facts: { kidsHas, kidsPlans, smoking, alcohol, sport, pets, profession, educationLevel,
+                          university, languages }   // null / [] = not said
+GET /me/fact-filters    (auth) 200 { <fact>: { accept: code[], unspecified: boolean } }
+PUT /me/fact-filters    (auth) same body; replaces all. Keys: kidsHas, kidsPlans, smoking, alcohol, sport, pets
+                          (other → 400); accept must not be empty (400). Free, not premium.
+Two-way: a candidate is shown only if their facts pass my filters AND mine pass theirs; `unspecified` also lets
+through those who did not say. Feed score: + interests (3 per shared interest, up to 4 for shared categories,
+3 per shared artist; capped together with goals at 25) and behavior (stub, 0).
+
 ## Support (auth) — see docs/support.md
 Users: POST/GET /support/tickets, GET /support/tickets/{id}, POST /support/tickets/{id}/messages.
 Staff (SUPPORT, MODERATOR, ADMIN): /admin/support/tickets… — queue, reply (push `support_reply`), close.

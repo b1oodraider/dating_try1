@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/models/decoration.dart';
+import '../../core/models/facts.dart';
 import '../../core/models/public_profile.dart';
 import '../cosmetics/cosmetic_visuals.dart';
 import '../premium/premium_badge.dart';
@@ -9,9 +10,12 @@ import '../premium/premium_badge.dart';
 /// The whole public profile: photo carousel on top, then the facts and
 /// small titled sections (goals, status, about, interests, music, communication).
 class ProfileCard extends StatelessWidget {
-  const ProfileCard({super.key, required this.profile, this.photoUrl});
+  const ProfileCard({super.key, required this.profile, this.photoUrl, this.options});
 
   final PublicProfile profile;
+
+  /// Labels for the facts; without them the facts are not shown.
+  final ProfileOptions? options;
 
   /// Resolves a relative signed photo path to an absolute URL; null shows placeholders.
   final String Function(String url)? photoUrl;
@@ -142,6 +146,27 @@ class ProfileCard extends StatelessWidget {
             child: _Chips([for (final artist in profile.artists) artist.name],
                 icon: Icons.music_note_rounded),
           ),
+        for (final (title, keys) in _factSections)
+          if (options case final o? when keys.any(profile.facts.values.containsKey))
+            _Section(
+              title: title,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final key in keys)
+                    if (o.describe(profile.facts, key) case final text?)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: Gaps.xs),
+                        child: Text.rich(TextSpan(children: [
+                          TextSpan(
+                              text: '${Facts.titles[key]}: ',
+                              style: TextStyle(color: scheme.onSurfaceVariant)),
+                          TextSpan(text: text),
+                        ])),
+                      ),
+                ],
+              ),
+            ),
         if (profile.tags.isNotEmpty)
           _Section(
             title: 'Общение',
@@ -167,6 +192,11 @@ class ProfileCard extends StatelessWidget {
     );
   }
 }
+
+const List<(String, List<String>)> _factSections = [
+  ('Образ жизни', ['kidsHas', 'kidsPlans', 'smoking', 'alcohol', 'sport', 'pets']),
+  ('Работа и учёба', ['profession', 'educationLevel', 'university', 'languages']),
+];
 
 /// Photos switched by swipe or by tapping the left / right third, with
 /// segment indicators on top.

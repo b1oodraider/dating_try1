@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
 import java.util.List;
 
 @RestController
@@ -17,8 +18,11 @@ public class ProfileController {
 
     private final ProfileService profileService;
     private final ArtistSearchService artistSearch;
+    private final com.dating.profiles.application.FactFiltersService factFilters;
 
-    public ProfileController(ProfileService profileService, ArtistSearchService artistSearch) {
+    public ProfileController(ProfileService profileService, ArtistSearchService artistSearch,
+                             com.dating.profiles.application.FactFiltersService factFilters) {
+        this.factFilters = factFilters;
         this.profileService = profileService;
         this.artistSearch = artistSearch;
     }
@@ -69,6 +73,24 @@ public class ProfileController {
     @GetMapping("/tags")
     public ResponseEntity<List<TagResponseDto>> listTags() {
         return ResponseEntity.ok(profileService.listActiveTags());
+    }
+
+    @GetMapping("/profile-options")
+    public Map<String, List<com.dating.profiles.application.ProfileFacts.Option>> profileOptions() {
+        return com.dating.profiles.application.ProfileFacts.options();
+    }
+
+    @GetMapping("/me/fact-filters")
+    public Map<String, com.dating.profiles.application.FactFiltersService.Filter> factFilters(
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return factFilters.get(user.accountId());
+    }
+
+    @PutMapping("/me/fact-filters")
+    public Map<String, com.dating.profiles.application.FactFiltersService.Filter> putFactFilters(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestBody Map<String, com.dating.profiles.application.FactFiltersService.Filter> filters) {
+        return factFilters.put(user.accountId(), filters);
     }
 
     @GetMapping("/interests")

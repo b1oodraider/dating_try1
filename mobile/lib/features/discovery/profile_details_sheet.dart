@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_exception.dart';
+import '../../core/models/facts.dart';
+import '../profile/profile_steps.dart' show Dictionaries;
 import '../../core/models/public_profile.dart';
 import '../safety/report_sheet.dart';
 import 'profile_card.dart';
@@ -60,7 +62,11 @@ Future<ProfileDetailsResult?> showProfileDetails(
                 ],
               ),
             ),
-          ProfileCard(profile: profile, photoUrl: api.resolveMediaUrl),
+          FutureBuilder<ProfileOptions>(
+            future: Dictionaries.options(api),
+            builder: (context, snapshot) => ProfileCard(
+                profile: profile, photoUrl: api.resolveMediaUrl, options: snapshot.data),
+          ),
           const SizedBox(height: Gaps.lg),
           if (!preview) ...[
             if (withReactions)

@@ -1,5 +1,6 @@
 import 'decoration.dart';
 import 'goal.dart';
+import 'facts.dart';
 import 'interest.dart';
 import 'json_utils.dart';
 import 'photo.dart';
@@ -27,6 +28,7 @@ class PublicProfile {
     this.interests = const <Interest>[],
     this.artists = const <Artist>[],
     this.zodiac,
+    this.facts = const Facts(),
     this.common = const <String>[],
   });
 
@@ -69,6 +71,8 @@ class PublicProfile {
   /// Sign name, only when the owner shows it.
   final String? zodiac;
 
+  final Facts facts;
+
   /// Feed only: up to 2 interests / artists / cards I share with this person.
   final List<String> common;
 
@@ -102,6 +106,7 @@ class PublicProfile {
       interests: asList<Interest>(json['interests'], Interest.fromJson),
       artists: asList<Artist>(json['artists'], Artist.fromJson),
       zodiac: asStringOrNull(json['zodiac']),
+      facts: Facts.fromJson(json['facts']),
       common: asStringList(json['common']),
     );
   }

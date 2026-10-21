@@ -88,5 +88,19 @@ public record ProfileUpdateDto(
         List<Long> artistIds,
 
         /** Show my zodiac sign to others. */
-        Boolean showZodiac
+        Boolean showZodiac,
+
+        /** Facts: a code from GET /profile-options, "" clears. */
+        String kidsHas,
+        String kidsPlans,
+        String smoking,
+        String alcohol,
+        String sport,
+        /** [] clears. */
+        List<String> pets,
+        @jakarta.validation.constraints.Size(max = 80, message = "Профессия — до 80 символов") String profession,
+        String educationLevel,
+        @jakarta.validation.constraints.Size(max = 120, message = "Учебное заведение — до 120 символов") String university,
+        /** Up to 6 codes, [] clears. */
+        List<String> languages
 ) {}

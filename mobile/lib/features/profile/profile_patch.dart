@@ -26,6 +26,7 @@ class ProfilePatch {
     this.invisible,
     this.showPremiumBadge,
     this.showZodiac,
+    this.facts,
   });
 
   static const ProfilePatch empty = ProfilePatch();
@@ -52,6 +53,9 @@ class ProfilePatch {
   final bool? showPremiumBadge;
   final bool? showZodiac;
 
+  /// Fact fields by API name: a code / text ('' clears) or a code list ([] clears).
+  final Map<String, Object>? facts;
+
   bool get isEmpty =>
       displayName == null &&
       birthDate == null &&
@@ -73,7 +77,8 @@ class ProfilePatch {
       artistIds == null &&
       invisible == null &&
       showPremiumBadge == null &&
-      showZodiac == null;
+      showZodiac == null &&
+      facts == null;
 
   /// [later] wins field by field.
   ProfilePatch merge(ProfilePatch later) => ProfilePatch(
@@ -104,6 +109,9 @@ class ProfilePatch {
         invisible: later.invisible ?? invisible,
         showPremiumBadge: later.showPremiumBadge ?? showPremiumBadge,
         showZodiac: later.showZodiac ?? showZodiac,
+        facts: facts == null && later.facts == null
+            ? null
+            : {...?facts, ...?later.facts},
       );
 
   Future<MyProfile> saveWith(DatingApiClient api) => api.updateMyProfile(
@@ -128,5 +136,6 @@ class ProfilePatch {
         invisible: invisible,
         showPremiumBadge: showPremiumBadge,
         showZodiac: showZodiac,
+        facts: facts,
       );
 }

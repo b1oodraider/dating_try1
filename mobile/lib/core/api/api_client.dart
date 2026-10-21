@@ -13,6 +13,7 @@ import '../models/excluded_goals.dart';
 import '../models/exclusion_words.dart';
 import '../models/gacha.dart';
 import '../models/goal.dart';
+import '../models/facts.dart';
 import '../models/interest.dart';
 import '../models/json_utils.dart';
 import '../models/my_profile.dart';
@@ -157,6 +158,7 @@ class DatingApiClient {
     int? heightCm,
     bool clearHeight = false,
     List<String>? goalCodes,
+    Map<String, Object>? facts,
   }) async {
     if (clearHeight && heightCm != null) {
       throw ArgumentError('clearHeight cannot be combined with heightCm');
@@ -188,6 +190,7 @@ class DatingApiClient {
         if (heightCm != null) 'heightCm': heightCm,
         if (clearHeight) 'clearHeight': true,
         if (goalCodes != null) 'goalCodes': List<String>.of(goalCodes),
+        ...?facts,
       },
     );
     return MyProfile.fromJson(_expectMap(json));
@@ -251,6 +254,17 @@ class DatingApiClient {
     if (json is! List) throw _badResponse();
     return json.whereType<Map<String, dynamic>>().map(InterestGroup.fromJson).toList();
   }
+
+  /// Answers for profile facts (labels to show).
+  Future<ProfileOptions> getProfileOptions() async =>
+      ProfileOptions.fromJson(await _send('GET', '/profile-options', authenticated: false));
+
+  Future<Map<String, FactFilter>> getFactFilters() async =>
+      FactFilter.mapFromJson(await _send('GET', '/me/fact-filters'));
+
+  Future<Map<String, FactFilter>> putFactFilters(Map<String, FactFilter> filters) async =>
+      FactFilter.mapFromJson(await _send('PUT', '/me/fact-filters',
+          body: {for (final e in filters.entries) e.key: e.value.toJson()}));
 
   /// Artist search; a miss may be looked up on MusicBrainz by the server.
   Future<List<Artist>> searchArtists(String query) async {
