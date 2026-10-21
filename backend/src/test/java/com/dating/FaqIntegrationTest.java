@@ -24,7 +24,14 @@ class FaqIntegrationTest extends AdminTestSupport {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fieldErrors.question").exists());
         String id = json(as(support, post("/api/v1/admin/faq"),
                 "{\"question\": \"Как удалить аккаунт?\", \"answer\": \"Профиль → Настройки\", \"sortOrder\": 1}")
-                .andExpect(status().isCreated()), "$.id");
+                .andExpect(result -> {
+                    // Shows the server's own exception when this fails (CI keeps no logs of the app).
+                    if (result.getResponse().getStatus() != 201) {
+                        Exception cause = result.getResolvedException();
+                        throw new AssertionError("Expected 201, got " + result.getResponse().getStatus() + ": "
+                                + result.getResponse().getContentAsString(), cause);
+                    }
+                }), "$.id");
         mvc.perform(get("/api/v1/faq")).andExpect(jsonPath("$[0].question").value("Как удалить аккаунт?"));
 
         as(support, put("/api/v1/admin/faq/" + id),
