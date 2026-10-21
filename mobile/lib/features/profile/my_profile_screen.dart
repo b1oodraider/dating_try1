@@ -1,22 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:image_picker/image_picker.dart';
 
-import '../../core/theme/app_theme.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/format.dart';
 import '../../core/models/account.dart';
 import '../../core/models/my_profile.dart';
 import '../../core/models/social.dart';
-import '../../core/models/tag.dart';
+import '../../core/theme/app_theme.dart';
 import '../auth/session_controller.dart';
 import '../collection/collection_screen.dart';
 import '../discovery/profile_card.dart';
+import '../discovery/profile_preview.dart';
 import '../safety/verification_screen.dart';
+import '../support/support_screen.dart';
 import '../testing/test_panel_screen.dart';
-import 'city_picker.dart';
-import 'height_goals_screen.dart';
+import '../update/update_checker.dart';
+import 'profile_section_screen.dart';
+import 'profile_steps.dart';
+import 'profile_wizard.dart';
 
 const Map<String, String> _restrictionText = {
   'LIKES': 'Лайки временно недоступны',
@@ -35,9 +35,8 @@ const Map<String, String> _missingText = {
   'photos': 'фото',
 };
 
-/// My profile: photos, name / age / city / about, cards, status of the day,
-/// publish or hide, completeness tips, restrictions, and the rest of the app
-/// (height and goals, collection, verification, test panel, logout).
+/// My profile: an overview of sections (each opens its own screen and saves as you go), visibility switches,
+/// «как видят другие», «заполнить заново», and the rest of the app (verification, collection, help, updates).
 class MyProfileScreen extends StatefulWidget {
   const MyProfileScreen({super.key, required this.session});
 
@@ -48,35 +47,12 @@ class MyProfileScreen extends StatefulWidget {
 }
 
 class _MyProfileScreenState extends State<MyProfileScreen> {
-  final TextEditingController _name = TextEditingController();
-  final TextEditingController _birth = TextEditingController();
-  final TextEditingController _about = TextEditingController();
-  final TextEditingController _status = TextEditingController();
-
   MyProfile? _profile;
   Account? _account;
-  List<Tag> _allTags = const <Tag>[];
-  Set<String> _tagCodes = <String>{};
   List<Restriction> _restrictions = const <Restriction>[];
-  /// The right end of the radius slider means «no radius».
-  static const int _noRadius = 300;
-
-  int? _cityId;
-  String? _cityName;
-  double _radius = 300;
-  bool _locating = false;
-
-  /// The right end of the age slider means «no upper limit».
-  static const int _maxAgeSlider = 70;
-
-  String? _gender;
-  String? _seeking;
-  RangeValues _ages = const RangeValues(18, 70);
   bool _loading = true;
-  bool _saving = false;
-  bool _uploading = false;
+  bool _busy = false;
   String? _error;
-  Map<String, String> _fieldErrors = const <String, String>{};
 
   @override
   void initState() {
@@ -84,28 +60,15 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     _load();
   }
 
-  @override
-  void dispose() {
-    for (final c in [_name, _birth, _about, _status]) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
   Future<void> _load() async {
     try {
-      final results = await Future.wait<Object>([
-        widget.session.api.getMyProfile(),
-        widget.session.api.getTags(),
-        widget.session.api.getMe(),
-        widget.session.api.getRestrictions(),
-      ]);
+      final api = widget.session.api;
+      final results = await Future.wait<Object>([api.getMyProfile(), api.getMe(), api.getRestrictions()]);
       if (!mounted) return;
       setState(() {
-        _apply(results[0] as MyProfile);
-        _allTags = results[1] as List<Tag>;
-        _account = results[2] as Account;
-        _restrictions = results[3] as List<Restriction>;
+        _profile = results[0] as MyProfile;
+        _account = results[1] as Account;
+        _restrictions = results[2] as List<Restriction>;
         _loading = false;
         _error = null;
       });
@@ -118,175 +81,118 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     }
   }
 
-  void _apply(MyProfile profile) {
-    _profile = profile;
-    _name.text = profile.displayName ?? '';
-    final born = profile.birthDate;
-    _birth.text = born == null
-        ? ''
-        : '${born.day.toString().padLeft(2, '0')}.${born.month.toString().padLeft(2, '0')}.${born.year}';
-    _gender = profile.gender;
-    _seeking = profile.seeking;
-    _ages = RangeValues(profile.ageFrom.toDouble(),
-        (profile.ageTo ?? _maxAgeSlider).toDouble());
-    _cityId = profile.cityId;
-    _cityName = profile.city;
-    _radius = (profile.searchRadiusKm ?? _noRadius).toDouble().clamp(5, _noRadius.toDouble());
-    _about.text = profile.aboutText ?? '';
-    _status.text = profile.dailyStatusText ?? '';
-    _tagCodes = profile.tags.map((t) => t.code).toSet();
-  }
+  void _snack(String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 
-  /// `ДД.ММ.ГГГГ` → date; null when incomplete or not a real date.
-  static DateTime? _parseBirth(String text) {
-    final m = RegExp(r'^(\d{2})\.(\d{2})\.(\d{4})$').firstMatch(text.trim());
-    if (m == null) return null;
-    final d = DateTime(int.parse(m[3]!), int.parse(m[2]!), int.parse(m[1]!));
-    return d.day == int.parse(m[1]!) && d.month == int.parse(m[2]!) ? d : null;
-  }
-
-  Future<void> _save() async {
+  Future<void> _openSection(ProfileStep step) async {
     final profile = _profile;
-    final birth = _parseBirth(_birth.text);
-    if (_birth.text.trim().isNotEmpty && birth == null) {
-      setState(() => _fieldErrors = {'birthDate': 'Формат ДД.ММ.ГГГГ'});
-      return;
-    }
-    final locked = profile?.identityLocked ?? false;
-    final noUpperLimit = _ages.end >= _maxAgeSlider;
-    setState(() {
-      _saving = true;
-      _fieldErrors = const <String, String>{};
-    });
-    try {
-      final saved = await widget.session.api.updateMyProfile(
-        displayName: _name.text.trim().isEmpty ? null : _name.text.trim(),
-        birthDate: birth,
-        gender: locked ? null : _gender,
-        seeking: _seeking,
-        ageFrom: _ages.start.round(),
-        ageTo: noUpperLimit ? null : _ages.end.round(),
-        clearAgeTo: noUpperLimit,
-        cityId: _cityId,
-        searchRadiusKm: _radius >= _noRadius ? null : _radius.round(),
-        clearSearchRadius: _radius >= _noRadius,
-        aboutText: _about.text.trim(),
-        tagCodes: _tagCodes.toList(),
-        dailyStatusText: _status.text.trim(),
-      );
-      if (!mounted) return;
-      setState(() => _apply(saved));
-      _snack('Сохранено');
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        if (e is ApiException) _fieldErrors = e.fieldErrors;
-      });
-      _snack(describeError(e));
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
+    if (profile == null) return;
+    final updated = await Navigator.of(context).push<MyProfile>(MaterialPageRoute<MyProfile>(
+      builder: (_) => ProfileSectionScreen(api: widget.session.api, step: step, profile: profile),
+    ));
+    if (!mounted) return;
+    if (updated != null) setState(() => _profile = updated);
+    _load();
+  }
+
+  Future<void> _refill() async {
+    final profile = _profile;
+    if (profile == null) return;
+    final ok = await _confirm(
+      'Заполнить анкету заново?',
+      'Пройдёте все шаги с чистого листа. На каждом шаге можно оставить текущее. Фото и прежние данные не '
+          'теряются.',
+      'Начать',
+    );
+    if (!ok || !mounted) return;
+    await Navigator.of(context).push<bool>(MaterialPageRoute<bool>(
+      builder: (_) => ProfileWizardScreen(api: widget.session.api, profile: profile, mode: WizardMode.refill),
+    ));
+    if (mounted) _load();
   }
 
   Future<void> _togglePublished() async {
     final profile = _profile;
     if (profile == null) return;
-    await _save();
-    if (!mounted || _fieldErrors.isNotEmpty) return;
+    setState(() => _busy = true);
     try {
       final updated = profile.isPublished
           ? await widget.session.api.hideProfile()
           : await widget.session.api.publishProfile();
       if (!mounted) return;
-      setState(() => _apply(updated));
-      _snack(updated.isPublished
-          ? 'Анкета опубликована — её видят в ленте'
-          : 'Анкета скрыта');
-    } catch (e) {
-      if (mounted) _snack(describeError(e));
-    }
-  }
-
-  Future<void> _addPhoto() async {
-    final file = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 2000,
-      maxHeight: 2000,
-      imageQuality: 85,
-    );
-    if (file == null || !mounted) return;
-    setState(() => _uploading = true);
-    try {
-      await widget.session.api.uploadPhoto(await file.readAsBytes(), file.name);
-      final profile = await widget.session.api.getMyProfile();
-      if (!mounted) return;
-      setState(() => _profile = profile);
+      setState(() => _profile = updated);
+      _snack(updated.isPublished ? 'Анкета опубликована — её видят в ленте' : 'Анкета скрыта');
     } catch (e) {
       if (mounted) _snack(describeError(e));
     } finally {
-      if (mounted) setState(() => _uploading = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _photoAction(String photoId, String action) async {
+  /// Visibility switches are saved at once.
+  Future<void> _setVisibility({bool? invisible, bool? showPremiumBadge, bool? showZodiac}) async {
+    setState(() => _busy = true);
     try {
-      if (action == 'primary') {
-        await widget.session.api.makePhotoPrimary(photoId);
-      } else {
-        await widget.session.api.deletePhoto(photoId);
-      }
-      final profile = await widget.session.api.getMyProfile();
-      if (mounted) setState(() => _profile = profile);
+      final updated = await widget.session.api
+          .updateMyProfile(invisible: invisible, showPremiumBadge: showPremiumBadge, showZodiac: showZodiac);
+      if (mounted) setState(() => _profile = updated);
+    } catch (e) {
+      if (mounted) _snack(describeError(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _push(Widget screen) async {
+    await Navigator.of(context).push<void>(MaterialPageRoute<void>(builder: (_) => screen));
+    if (mounted) _load();
+  }
+
+  Future<bool> _confirm(String title, String text, String action) async {
+    final answer = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(title),
+        content: Text(text),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(c).pop(false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.of(c).pop(true), child: Text(action)),
+        ],
+      ),
+    );
+    return answer == true;
+  }
+
+  Future<void> _logout() async {
+    if (await _confirm('Выйти из аккаунта?', 'Войти снова можно по номеру телефона.', 'Выйти')) {
+      await widget.session.signOut();
+    }
+  }
+
+  Future<void> _deleteAccount() async {
+    final ok = await _confirm('Удалить аккаунт?',
+        'Анкета, фото, пары и переписки будут удалены без возможности восстановления.', 'Удалить');
+    if (!ok) return;
+    try {
+      await widget.session.deleteAccount();
     } catch (e) {
       if (mounted) _snack(describeError(e));
     }
   }
 
-  void _snack(String text) => ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text(text)));
-
-  Future<void> _push(Widget screen) async {
-    await Navigator.of(context)
-        .push<void>(MaterialPageRoute<void>(builder: (_) => screen));
-    if (mounted) _load();
-  }
-
-  Future<void> _confirmLogout() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Выйти из аккаунта?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Выйти'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) await widget.session.signOut();
-  }
-
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Моя анкета'),
-        actions: [
-          IconButton(
-            tooltip: 'Выйти',
-            icon: const Icon(Icons.logout),
-            onPressed: _confirmLogout,
-          ),
-        ],
-      ),
-      body: _buildBody(),
-    );
-  }
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(
+          title: const Text('Моя анкета'),
+          actions: [
+            IconButton(
+              tooltip: 'Помощь',
+              icon: const Icon(Icons.help_outline_rounded),
+              onPressed: () => _push(SupportScreen(api: widget.session.api)),
+            ),
+          ],
+        ),
+        body: _buildBody(),
+      );
 
   Widget _buildBody() {
     if (_loading) return const Center(child: CircularProgressIndicator());
@@ -295,14 +201,12 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       return Center(
         child: TextButton(
           onPressed: _load,
-          child: Text('${_error ?? 'Ошибка'}\nПовторить',
-              textAlign: TextAlign.center),
+          child: Text('${_error ?? 'Ошибка'}\nПовторить', textAlign: TextAlign.center),
         ),
       );
     }
     final theme = Theme.of(context);
-    final pendingTips = profile.tips.where((t) => !t.done).toList();
-
+    final api = widget.session.api;
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -314,177 +218,148 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
               child: ListTile(
                 leading: Icon(Icons.shield_outlined, color: theme.colorScheme.onErrorContainer),
                 title: Text(_restrictionText[r.kind] ?? r.kind),
-                subtitle: Text(r.endsAt == null
-                    ? 'До решения модератора'
-                    : 'До ${formatDateTime(r.endsAt!)}'),
+                subtitle: Text(r.endsAt == null ? 'До решения модератора' : 'До ${formatDateTime(r.endsAt!)}'),
               ),
             ),
           _Header(
             profile: profile,
-            photoUrl: widget.session.api.resolveMediaUrl,
+            photoUrl: api.resolveMediaUrl,
             missing: profile.missingForPublish.map((f) => _missingText[f] ?? f).toList(),
-            tips: pendingTips.take(2).map((t) => '${t.text} (+${t.weight}%)').toList(),
-            onTogglePublished: _saving ? null : _togglePublished,
+            tips: profile.tips.where((t) => !t.done).take(2).map((t) => '${t.text} (+${t.weight}%)').toList(),
+            onTogglePublished: _busy ? null : _togglePublished,
           ),
-          const SizedBox(height: Gaps.lg),
-          _Section('Фото · ${profile.photos.length} из ${MyProfile.maxPhotos}'),
-          SizedBox(
-            height: 140,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                for (final photo in profile.photos)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: PopupMenuButton<String>(
-                      onSelected: (action) => _photoAction(photo.id, action),
-                      itemBuilder: (_) => [
-                        if (!photo.isPrimary)
-                          const PopupMenuItem(
-                              value: 'primary', child: Text('Сделать главным')),
-                        const PopupMenuItem(
-                            value: 'delete', child: Text('Удалить')),
-                      ],
-                      child: Stack(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(Radii.md),
-                            child: SizedBox(
-                              width: 105,
-                              height: 140,
-                              child: NetworkPhoto(
-                                  url: widget.session.api
-                                      .resolveMediaUrl(photo.url)),
-                            ),
-                          ),
-                          if (photo.isPrimary)
-                            const Positioned(
-                              left: 4,
-                              top: 4,
-                              child: Icon(Icons.star_rounded, color: Brand.gold),
-                            ),
-                          if (photo.underReview)
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              bottom: 0,
-                              child: Tooltip(
-                                message: 'Лицо не совпало с подтверждёнными '
-                                    'фото. Другие увидят фото после проверки',
-                                child: Container(
-                                  color: Colors.black54,
-                                  padding: const EdgeInsets.symmetric(vertical: 4),
-                                  child: const Text('На проверке',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                          color: Colors.white, fontSize: 12)),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (profile.photos.length < MyProfile.maxPhotos)
-                  SizedBox(
-                    width: 105,
-                    child: Material(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.08),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(Radii.md),
-                        side: BorderSide(
-                            color: theme.colorScheme.primary.withValues(alpha: 0.35), width: 1.5),
-                      ),
-                      child: InkWell(
-                        customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.md)),
-                        onTap: _uploading ? null : _addPhoto,
-                        child: Center(
-                          child: _uploading
-                              ? const CircularProgressIndicator()
-                              : Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.add_a_photo_outlined, color: theme.colorScheme.primary),
-                                    const SizedBox(height: 6),
-                                    Text('Добавить',
-                                        style: theme.textTheme.labelLarge
-                                            ?.copyWith(color: theme.colorScheme.primary)),
-                                  ],
-                                ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: Gaps.lg),
-          const _Section('Обо мне'),
-          _field(_name, 'Имя', 'displayName'),
-          _buildIdentity(profile, theme),
-          _buildPlace(profile, theme),
-          _field(_about, 'О себе', 'aboutText', lines: 4, maxLength: 1000),
-          _field(_status, 'Статус на сегодня (24 часа)', 'dailyStatusText',
-              maxLength: 200),
-          const SizedBox(height: Gaps.sm),
-          const _Section('Карточки общения · до ${MyProfile.maxTags}'),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
+          const SizedBox(height: Gaps.md),
+          Row(
             children: [
-              for (final tag in _allTags)
-                FilterChip(
-                  label: Text(tag.label),
-                  tooltip: tag.description,
-                  selected: _tagCodes.contains(tag.code),
-                  onSelected: (on) => setState(() {
-                    if (!on) {
-                      _tagCodes.remove(tag.code);
-                    } else if (_tagCodes.length < MyProfile.maxTags) {
-                      _tagCodes.add(tag.code);
-                    }
-                  }),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => showMyProfileAsOthers(context, api: api, profile: profile),
+                  icon: const Icon(Icons.visibility_outlined, size: 20),
+                  label: const Text('Как видят'),
                 ),
+              ),
+              const SizedBox(width: Gaps.sm),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _refill,
+                  icon: const Icon(Icons.restart_alt_rounded, size: 20),
+                  label: const Text('Заново'),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: Gaps.lg),
-          FilledButton(
-            onPressed: _saving ? null : _save,
-            child: Text(_saving ? 'Сохраняем…' : 'Сохранить изменения'),
+          _PhotoStrip(
+            profile: profile,
+            photoUrl: api.resolveMediaUrl,
+            onOpen: () => _openSection(profileSteps.firstWhere((s) => s.id == 'photos')),
           ),
-          const SizedBox(height: Gaps.xl),
-          const _Section('Настройки'),
+          const SizedBox(height: Gaps.lg),
+          const _Section('Анкета'),
           Card(
             clipBehavior: Clip.antiAlias,
             child: Column(
               children: [
-          ListTile(
-            leading: Icon(profile.verified ? Icons.verified : Icons.camera_front_outlined,
-                color: profile.verified ? Brand.verified : null),
-            title: Text(profile.verified
-                ? 'Селфи проверено'
-                : 'Пройти проверку селфи'),
-            subtitle: const Text('Значок «Проверен» в анкете'),
-            onTap: profile.verified
-                ? null
-                : () => _push(VerificationScreen(api: widget.session.api)),
-          ),
-          ListTile(
-            leading: const Icon(Icons.straighten),
-            title: const Text('Рост и цели знакомства'),
-            onTap: () => _push(HeightGoalsScreen(session: widget.session)),
-          ),
-          ListTile(
-            leading: const Icon(Icons.collections_bookmark_outlined),
-            title: const Text('Коллекция и премиум'),
-            onTap: () => _push(CollectionScreen(session: widget.session)),
-          ),
-          if (_account?.testAccount ?? false)
-            ListTile(
-              leading: const Icon(Icons.science_outlined),
-              title: const Text('Тест-панель'),
-              onTap: () => _push(TestPanelScreen(session: widget.session)),
+                for (final step in profileSteps)
+                  if (step.id != 'photos')
+                    ListTile(
+                      leading: Icon(step.icon, color: theme.colorScheme.primary),
+                      title: Text(step.title),
+                      subtitle: Text(
+                        step.hasValue(profile) ? step.summary(profile) : 'Не заполнено',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: step.hasValue(profile) || !step.requiredToPublish
+                            ? null
+                            : TextStyle(color: theme.colorScheme.error),
+                      ),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => _openSection(step),
+                    ),
+              ],
             ),
+          ),
+          const SizedBox(height: Gaps.md),
+          const _Section('Видимость'),
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                SwitchListTile(
+                  title: const Text('Показывать знак зодиака'),
+                  subtitle: Text(profile.zodiac ?? 'Укажите дату рождения'),
+                  value: profile.showZodiac,
+                  onChanged: _busy || profile.zodiac == null ? null : (on) => _setVisibility(showZodiac: on),
+                ),
+                SwitchListTile(
+                  title: const Text('Невидимка'),
+                  subtitle: Text(
+                      profile.premium ? 'Анкету видят только те, кого вы лайкнули' : 'Доступно с премиумом'),
+                  value: profile.invisible && profile.premium,
+                  onChanged: profile.premium && !_busy ? (on) => _setVisibility(invisible: on) : null,
+                ),
+                if (profile.premium)
+                  SwitchListTile(
+                    title: const Text('Показывать значок премиума'),
+                    value: profile.showPremiumBadge,
+                    onChanged: _busy ? null : (on) => _setVisibility(showPremiumBadge: on),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: Gaps.md),
+          const _Section('Ещё'),
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Icon(profile.verified ? Icons.verified : Icons.camera_front_outlined,
+                      color: profile.verified ? Brand.verified : theme.colorScheme.primary),
+                  title: Text(profile.verified ? 'Селфи проверено' : 'Пройти проверку селфи'),
+                  subtitle: const Text('Значок «Проверен» и показ анкеты в ленте'),
+                  trailing: profile.verified ? null : const Icon(Icons.chevron_right_rounded),
+                  onTap: profile.verified ? null : () => _push(VerificationScreen(api: api)),
+                ),
+                ListTile(
+                  leading: Icon(Icons.collections_bookmark_outlined, color: theme.colorScheme.primary),
+                  title: const Text('Коллекция и премиум'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _push(CollectionScreen(session: widget.session)),
+                ),
+                ListTile(
+                  leading: Icon(Icons.support_agent_rounded, color: theme.colorScheme.primary),
+                  title: const Text('Помощь и поддержка'),
+                  subtitle: const Text('Частые вопросы и обращения'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _push(SupportScreen(api: api)),
+                ),
+                CheckForUpdatesTile(api: api),
+                if (_account?.testAccount ?? false)
+                  ListTile(
+                    leading: Icon(Icons.science_outlined, color: theme.colorScheme.primary),
+                    title: const Text('Тест-панель'),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => _push(TestPanelScreen(session: widget.session)),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: Gaps.md),
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.logout_rounded),
+                  title: const Text('Выйти'),
+                  onTap: _logout,
+                ),
+                ListTile(
+                  leading: Icon(Icons.delete_outline_rounded, color: theme.colorScheme.error),
+                  title: Text('Удалить аккаунт', style: TextStyle(color: theme.colorScheme.error)),
+                  onTap: _deleteAccount,
+                ),
               ],
             ),
           ),
@@ -492,240 +367,85 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       ),
     );
   }
-
-  /// City from the dictionary, the search radius and sharing an approximate location.
-  Widget _buildPlace(MyProfile profile, ThemeData theme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 4),
-          child: InputDecorator(
-            decoration: InputDecoration(
-              labelText: 'Город',
-              errorText: _fieldErrors['cityId'] ?? _fieldErrors['city'],
-              suffixIcon: const Icon(Icons.search),
-            ),
-            child: InkWell(
-              onTap: () async {
-                final city = await pickCity(context, widget.session.api);
-                if (city != null && mounted) {
-                  setState(() {
-                    _cityId = city.id;
-                    _cityName = city.name;
-                  });
-                }
-              },
-              child: Text(_cityName?.isNotEmpty == true ? _cityName! : 'Выбрать город'),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Искать в радиусе: '
-          '${_radius >= _noRadius ? 'без ограничения' : '${_radius.round()} км'}',
-          style: theme.textTheme.titleSmall,
-        ),
-        Slider(
-          value: _radius,
-          min: 5,
-          max: _noRadius.toDouble(),
-          divisions: (_noRadius - 5) ~/ 5,
-          label: _radius >= _noRadius ? '∞' : '${_radius.round()} км',
-          onChanged: (v) => setState(() => _radius = v),
-        ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Учитывать моё местоположение'),
-          subtitle: const Text('Приблизительно, до ~1 км. Без него расстояния '
-              'считаются от центра города'),
-          value: profile.locationShared,
-          onChanged: _locating ? null : (on) => _toggleLocation(on),
-        ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Невидимка'),
-          subtitle: Text(profile.premium
-              ? 'Анкету видят только те, кого вы лайкнули'
-              : 'Доступно с премиумом'),
-          value: profile.invisible && profile.premium,
-          onChanged: profile.premium && !_saving
-              ? (on) => _applyPrivacy(invisible: on)
-              : null,
-        ),
-        if (profile.premium)
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Показывать значок премиума'),
-            value: profile.showPremiumBadge,
-            onChanged: _saving ? null : (on) => _applyPrivacy(showPremiumBadge: on),
-          ),
-        const SizedBox(height: 8),
-      ],
-    );
-  }
-
-  /// Applied at once, apart from the rest of the form.
-  Future<void> _applyPrivacy({bool? invisible, bool? showPremiumBadge}) async {
-    setState(() => _saving = true);
-    try {
-      final updated = await widget.session.api.updateMyProfile(
-          invisible: invisible, showPremiumBadge: showPremiumBadge);
-      if (mounted) setState(() => _profile = updated);
-    } catch (e) {
-      if (mounted) _snack(describeError(e));
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  Future<void> _toggleLocation(bool on) async {
-    setState(() => _locating = true);
-    try {
-      final MyProfile updated;
-      if (on) {
-        var permission = await Geolocator.checkPermission();
-        if (permission == LocationPermission.denied) {
-          permission = await Geolocator.requestPermission();
-        }
-        if (permission == LocationPermission.denied ||
-            permission == LocationPermission.deniedForever) {
-          _snack('Нет доступа к местоположению — расстояния будут от центра города');
-          return;
-        }
-        final position = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(accuracy: LocationAccuracy.low),
-        );
-        updated = await widget.session.api
-            .updateLocation(position.latitude, position.longitude);
-      } else {
-        updated = await widget.session.api.clearLocation();
-      }
-      if (mounted) setState(() => _profile = updated);
-    } catch (e) {
-      if (mounted) _snack(e is ApiException ? e.message : 'Не удалось определить местоположение');
-    } finally {
-      if (mounted) setState(() => _locating = false);
-    }
-  }
-
-  /// Gender, birth date (locked after the first publish), who I look for and the ages I accept.
-  Widget _buildIdentity(MyProfile profile, ThemeData theme) {
-    final locked = profile.identityLocked;
-    final lockedHint = locked ? 'Изменить можно через поддержку' : null;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Я', style: theme.textTheme.titleSmall),
-        const SizedBox(height: 6),
-        SegmentedButton<String>(
-          segments: const [
-            ButtonSegment(value: 'FEMALE', label: Text('Женщина')),
-            ButtonSegment(value: 'MALE', label: Text('Мужчина')),
-          ],
-          selected: {if (_gender != null) _gender!},
-          emptySelectionAllowed: true,
-          onSelectionChanged: locked
-              ? null
-              : (v) => setState(() => _gender = v.isEmpty ? null : v.first),
-        ),
-        if (_fieldErrors['gender'] != null || lockedHint != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(_fieldErrors['gender'] ?? lockedHint!,
-                style: theme.textTheme.bodySmall?.copyWith(
-                    color: _fieldErrors['gender'] != null
-                        ? theme.colorScheme.error
-                        : null)),
-          ),
-        const SizedBox(height: 12),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: TextField(
-            controller: _birth,
-            keyboardType: TextInputType.number,
-            inputFormatters: [_DateMask()],
-            decoration: InputDecoration(
-              labelText: 'Дата рождения',
-              hintText: 'ДД.ММ.ГГГГ',
-              helperText: locked
-                  ? 'Можно уточнить дату, но не возраст'
-                  : 'Покажем только возраст${profile.age == null ? '' : ' (${profile.age})'}',
-              errorText: _fieldErrors['birthDate'],
-            ),
-          ),
-        ),
-        Text('Ищу', style: theme.textTheme.titleSmall),
-        const SizedBox(height: 6),
-        SegmentedButton<String>(
-          segments: const [
-            ButtonSegment(value: 'MALE', label: Text('Мужчину')),
-            ButtonSegment(value: 'FEMALE', label: Text('Женщину')),
-          ],
-          selected: {if (_seeking != null) _seeking!},
-          emptySelectionAllowed: true,
-          onSelectionChanged: (v) =>
-              setState(() => _seeking = v.isEmpty ? null : v.first),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'Возраст: ${_ages.start.round()}–'
-          '${_ages.end >= _maxAgeSlider ? 'без ограничения' : _ages.end.round()}',
-          style: theme.textTheme.titleSmall,
-        ),
-        RangeSlider(
-          values: _ages,
-          min: 18,
-          max: _maxAgeSlider.toDouble(),
-          divisions: _maxAgeSlider - 18,
-          labels: RangeLabels('${_ages.start.round()}',
-              _ages.end >= _maxAgeSlider ? '∞' : '${_ages.end.round()}'),
-          onChanged: (v) => setState(() => _ages = v),
-        ),
-        if (_fieldErrors['ageTo'] != null)
-          Text(_fieldErrors['ageTo']!,
-              style: TextStyle(color: theme.colorScheme.error)),
-        const SizedBox(height: 8),
-      ],
-    );
-  }
-
-  Widget _field(
-    TextEditingController controller,
-    String label,
-    String field, {
-    bool number = false,
-    int lines = 1,
-    int? maxLength,
-  }) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: TextField(
-          controller: controller,
-          keyboardType: number ? TextInputType.number : null,
-          minLines: 1,
-          maxLines: lines,
-          maxLength: maxLength,
-          decoration: InputDecoration(
-            labelText: label,
-            errorText: _fieldErrors[field],
-          ),
-        ),
-      );
 }
 
-/// Types digits as `ДД.ММ.ГГГГ`, adding the dots.
-class _DateMask extends TextInputFormatter {
+/// My photos in a row; a tap opens the photo section.
+class _PhotoStrip extends StatelessWidget {
+  const _PhotoStrip({required this.profile, required this.photoUrl, required this.onOpen});
+
+  final MyProfile profile;
+  final String Function(String url) photoUrl;
+  final VoidCallback onOpen;
+
   @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
-    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
-    final buffer = StringBuffer();
-    for (var i = 0; i < digits.length && i < 8; i++) {
-      if (i == 2 || i == 4) buffer.write('.');
-      buffer.write(digits[i]);
-    }
-    final text = buffer.toString();
-    return TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _Section('Фото · ${profile.photos.length} из ${MyProfile.maxPhotos}')),
+            TextButton(onPressed: onOpen, child: const Text('Изменить')),
+          ],
+        ),
+        SizedBox(
+          height: 120,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: profile.photos.length + 1,
+            separatorBuilder: (_, __) => const SizedBox(width: Gaps.sm),
+            itemBuilder: (context, i) {
+              if (i == profile.photos.length) {
+                return SizedBox(
+                  width: 90,
+                  child: Material(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(Radii.md),
+                      side: BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.35), width: 1.5),
+                    ),
+                    child: InkWell(
+                      customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.md)),
+                      onTap: onOpen,
+                      child: Icon(Icons.add_a_photo_outlined, color: theme.colorScheme.primary),
+                    ),
+                  ),
+                );
+              }
+              final photo = profile.photos[i];
+              return GestureDetector(
+                onTap: onOpen,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(Radii.md),
+                  child: SizedBox(
+                    width: 90,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        NetworkPhoto(url: photoUrl(photo.url)),
+                        if (photo.underReview)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: Container(
+                              color: Colors.black54,
+                              padding: const EdgeInsets.symmetric(vertical: 3),
+                              child: const Text('На проверке',
+                                  textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 11)),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
   }
 }
 

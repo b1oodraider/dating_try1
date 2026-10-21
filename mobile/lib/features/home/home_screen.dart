@@ -9,6 +9,8 @@ import '../discovery/discovery_screen.dart';
 import '../gacha/gacha_screen.dart';
 import '../likes/likes_screen.dart';
 import '../profile/my_profile_screen.dart';
+import '../profile/profile_wizard.dart';
+import '../update/update_checker.dart';
 
 /// The signed-in app: feed, likes, chats, gacha, my profile. Owns the event stream
 /// and the match list for the whole session.
@@ -34,6 +36,30 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _chats.load();
     _realtime.start();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _firstRun());
+  }
+
+  /// A new person gets the onboarding (intro + profile wizard); everyone gets a quiet update check.
+  Future<void> _firstRun() async {
+    final api = widget.session.api;
+    try {
+      final profile = await api.getMyProfile();
+      if (mounted && profile.publicationStatus == 'DRAFT') {
+        final published = await Navigator.of(context).push<bool>(MaterialPageRoute<bool>(
+          fullscreenDialog: true,
+          builder: (_) => OnboardingScreen(api: api, profile: profile),
+        ));
+        if (mounted && published == true) setState(() => _tab = 0);
+      }
+    } catch (e) {
+      debugPrint('Onboarding check failed: $e');
+    }
+    try {
+      final update = await checkForUpdate(api);
+      if (mounted && update != null) await showUpdateDialog(context, update);
+    } catch (e) {
+      debugPrint('Update check failed: $e'); // offline or no version file: try next start
+    }
   }
 
   @override

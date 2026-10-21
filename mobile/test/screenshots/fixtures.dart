@@ -43,11 +43,42 @@ final List<Map<String, Object?>> tags = [
 ];
 
 const List<Map<String, Object?>> goals = [
-  {'code': 'SERIOUS_RELATIONSHIP', 'label': 'Серьёзные отношения', 'sortOrder': 1},
+  {
+    'code': 'SERIOUS_RELATIONSHIP',
+    'label': 'Серьёзные отношения',
+    'sortOrder': 1
+  },
   {'code': 'FAMILY', 'label': 'Семья', 'sortOrder': 2},
   {'code': 'DATING', 'label': 'Свидания', 'sortOrder': 3},
   {'code': 'FRIENDSHIP', 'label': 'Дружба', 'sortOrder': 4},
   {'code': 'CHAT', 'label': 'Общение', 'sortOrder': 5},
+];
+
+Map<String, Object?> _interest(
+        String code, String category, String categoryLabel, String label) =>
+    {
+      'code': code,
+      'category': category,
+      'categoryLabel': categoryLabel,
+      'label': label,
+    };
+
+final List<Map<String, Object?>> interests = [
+  _interest('RUNNING', 'sport', 'Спорт', 'Бег'),
+  _interest('YOGA', 'sport', 'Спорт', 'Йога'),
+  _interest('MUSEUMS', 'culture', 'Культура', 'Музеи'),
+  _interest('BOOKS', 'culture', 'Культура', 'Книги'),
+  _interest('COFFEE', 'food', 'Еда', 'Кофе'),
+  _interest('TRAVEL', 'travel', 'Путешествия', 'Путешествия'),
+  _interest('PAINTING', 'creative', 'Творчество', 'Рисование'),
+  _interest('SUP', 'sport', 'Спорт', 'Сапборд'),
+];
+
+final List<Map<String, Object?>> artists = [
+  {'id': 1, 'name': 'Земфира'},
+  {'id': 2, 'name': 'Кино'},
+  {'id': 3, 'name': 'Radiohead'},
+  {'id': 4, 'name': 'Мумий Тролль'},
 ];
 
 Map<String, Object?> _profile(
@@ -66,6 +97,10 @@ Map<String, Object?> _profile(
   bool verified = false,
   int? compatibility,
   int? distance,
+  List<int> interestIdx = const [],
+  List<int> artistIdx = const [],
+  String? zodiac,
+  List<String> common = const [],
 }) =>
     {
       'id': id,
@@ -82,6 +117,10 @@ Map<String, Object?> _profile(
       'verified': verified,
       'compatibility': compatibility,
       'distanceKm': distance,
+      'interests': [for (final i in interestIdx) interests[i]],
+      'artists': [for (final i in artistIdx) artists[i]],
+      'zodiac': zodiac,
+      'common': common,
     };
 
 final List<Map<String, Object?>> feed = [
@@ -97,7 +136,11 @@ final List<Map<String, Object?>> feed = [
       premium: true,
       verified: true,
       compatibility: 87,
-      distance: 3),
+      distance: 3,
+      interestIdx: [0, 1, 2, 3, 4, 5],
+      artistIdx: [0, 1, 2],
+      zodiac: 'Лев',
+      common: ['Бег', 'Земфира']),
   _profile('p2', 'Мария', 24, 'Москва',
       folder: '02-female',
       photos: 3,
@@ -108,7 +151,11 @@ final List<Map<String, Object?>> feed = [
       height: 172,
       verified: true,
       compatibility: 64,
-      distance: 7),
+      distance: 7,
+      interestIdx: [6, 7, 5],
+      artistIdx: [3],
+      zodiac: 'Рыбы',
+      common: ['Путешествия']),
   _profile('p3', 'Екатерина', 29, 'Санкт-Петербург',
       folder: '04-female',
       photos: 2,
@@ -132,13 +179,12 @@ final List<Map<String, Object?>> likers = [
       folder: '06-female', verified: true, compatibility: 78, distance: 4),
   _profile('l2', 'Алина', 23, 'Москва', folder: '07-female', premium: true),
   _profile('l3', 'София', 28, 'Санкт-Петербург', folder: '08-female'),
-  _profile('l4', 'Виктория', 30, 'Москва',
-      folder: '09-female', verified: true),
+  _profile('l4', 'Виктория', 30, 'Москва', folder: '09-female', verified: true),
   _profile('l5', 'Полина', 26, 'Москва', folder: '10-female'),
 ];
 
-Map<String, Object?> _message(String id, String matchId, bool mine,
-        String text, String time) =>
+Map<String, Object?> _message(
+        String id, String matchId, bool mine, String text, String time) =>
     {
       'id': id,
       'matchId': matchId,
@@ -152,7 +198,11 @@ Map<String, Object?> _message(String id, String matchId, bool mine,
 final List<Map<String, Object?>> conversation = [
   for (final (i, (mine, text, time)) in const [
     (false, 'Привет! Увидела, что ты тоже любишь Айвазовского)', '18:02'),
-    (true, 'Привет, Анна! Да, был на выставке в Третьяковке в прошлом году', '18:05'),
+    (
+      true,
+      'Привет, Анна! Да, был на выставке в Третьяковке в прошлом году',
+      '18:05'
+    ),
     (false, 'Завидую! Я как раз собираюсь в эту субботу', '18:06'),
     (true, 'Можно составить компанию? Потом можно выпить кофе рядом', '18:10'),
     (false, 'Звучит отлично. Только чур кофе без сахара!', '18:12'),
@@ -184,7 +234,8 @@ final List<Map<String, Object?>> matches = [
     'id': 'match3',
     'profile': _profile('p9', 'Дмитрий', 31, 'Москва',
         folder: '21-male', verified: true),
-    'lastMessage': _message('x2', 'match3', true, 'Хорошо, спишемся завтра', '12:15'),
+    'lastMessage':
+        _message('x2', 'match3', true, 'Хорошо, спишемся завтра', '12:15'),
     'unreadCount': 0,
     'createdAt': '2026-10-17T12:00:00Z',
   },
@@ -197,8 +248,9 @@ final List<Map<String, Object?>> matches = [
   },
 ];
 
-Map<String, Object?> _item(String code, String kind, String category,
-        String title, int qty, {String? rarity}) =>
+Map<String, Object?> _item(
+        String code, String kind, String category, String title, int qty,
+        {String? rarity}) =>
     {
       'code': code,
       'kind': kind,
@@ -231,8 +283,17 @@ final List<Map<String, Object?>> banners = [
     'type': 'LIMITED',
     'endsAt': '2026-11-05T00:00:00Z',
     'open': true,
-    'cost': {'itemCode': 'GACHA_TICKET', 'perPull': 1, 'multiPullSize': 10, 'multiPullCost': 9},
-    'myPity': {'epicGuaranteedIn': 4, 'legendaryGuaranteedIn': 52, 'totalPulls': 28},
+    'cost': {
+      'itemCode': 'GACHA_TICKET',
+      'perPull': 1,
+      'multiPullSize': 10,
+      'multiPullCost': 9
+    },
+    'myPity': {
+      'epicGuaranteedIn': 4,
+      'legendaryGuaranteedIn': 52,
+      'totalPulls': 28
+    },
     'rates': {
       'rarities': [
         {'rarity': 'COMMON', 'percent': 70.0},
@@ -247,7 +308,8 @@ final List<Map<String, Object?>> banners = [
         'rarity': 'LEGENDARY',
         'reward': {
           'type': 'ITEM',
-          'item': _item('FRAME_MAPLE', 'COSMETIC', 'PHOTO_FRAME', 'Кленовая рамка', 1,
+          'item': _item(
+              'FRAME_MAPLE', 'COSMETIC', 'PHOTO_FRAME', 'Кленовая рамка', 1,
               rarity: 'LEGENDARY'),
           'quantity': 1,
         },
@@ -269,8 +331,17 @@ final List<Map<String, Object?>> banners = [
     'description': 'Суперлайки, бусты и стикеры',
     'type': 'PERMANENT',
     'open': true,
-    'cost': {'itemCode': 'GACHA_TICKET', 'perPull': 1, 'multiPullSize': 10, 'multiPullCost': 10},
-    'myPity': {'epicGuaranteedIn': 9, 'legendaryGuaranteedIn': 80, 'totalPulls': 10},
+    'cost': {
+      'itemCode': 'GACHA_TICKET',
+      'perPull': 1,
+      'multiPullSize': 10,
+      'multiPullCost': 10
+    },
+    'myPity': {
+      'epicGuaranteedIn': 9,
+      'legendaryGuaranteedIn': 80,
+      'totalPulls': 10
+    },
     'rates': {
       'rarities': [
         {'rarity': 'COMMON', 'percent': 75.0},
@@ -314,11 +385,33 @@ final Map<String, Object?> myProfile = {
   'dailyStatusText': 'Ищу, с кем сходить в кино на выходных',
   'publicationStatus': 'PUBLISHED',
   'tags': [tags[0], tags[2], tags[4], tags[6]],
-  'photos': [_photo('19-male', 1), _photo('19-male', 2), _photo('20-male', 1, order: 3)],
+  'photos': [
+    _photo('19-male', 1),
+    _photo('19-male', 2),
+    _photo('20-male', 1, order: 3)
+  ],
   'tips': [
-    {'code': 'HEIGHT', 'text': 'Укажите рост', 'weight': 5, 'done': false, 'requiredToPublish': false},
-    {'code': 'PHOTOS', 'text': 'Добавьте ещё фото', 'weight': 10, 'done': false, 'requiredToPublish': false},
-    {'code': 'ABOUT', 'text': 'Расскажите о себе', 'weight': 15, 'done': true, 'requiredToPublish': false},
+    {
+      'code': 'HEIGHT',
+      'text': 'Укажите рост',
+      'weight': 5,
+      'done': false,
+      'requiredToPublish': false
+    },
+    {
+      'code': 'PHOTOS',
+      'text': 'Добавьте ещё фото',
+      'weight': 10,
+      'done': false,
+      'requiredToPublish': false
+    },
+    {
+      'code': 'ABOUT',
+      'text': 'Расскажите о себе',
+      'weight': 15,
+      'done': true,
+      'requiredToPublish': false
+    },
   ],
   'completenessPercent': 85,
   'missingForPublish': <String>[],
@@ -326,6 +419,10 @@ final Map<String, Object?> myProfile = {
   'heightCm': 182,
   'goals': [goals[0], goals[2]],
   'premium': true,
+  'interests': [interests[0], interests[5]],
+  'artists': [artists[1]],
+  'zodiac': 'Телец',
+  'showZodiac': true,
 };
 
 http.Response _json(Object? body, [int status = 200]) => http.Response(
@@ -360,10 +457,27 @@ http.Response respond(http.Request request) {
   if (path == '/me/wallet') return _json(wallet);
   if (path == '/me/restrictions') return _json(<Object>[]);
   if (path == '/me/verification') return _json({'verified': true});
-  if (path == '/me/excluded-goals') return _json({'goalCodes': <String>[], 'active': true});
-  if (path == '/me/exclusion-words') return _json({'words': <String>[], 'active': true});
+  if (path == '/me/excluded-goals') {
+    return _json({'goalCodes': <String>[], 'active': true});
+  }
+  if (path == '/me/exclusion-words') {
+    return _json({'words': <String>[], 'active': true});
+  }
   if (path == '/me/achievements') return _json(<Object>[]);
   if (path == '/tags') return _json(tags);
+  if (path == '/interests') {
+    final groups = <String, List<Map<String, Object?>>>{};
+    for (final i in interests) {
+      groups.putIfAbsent(i['categoryLabel']! as String, () => []).add(i);
+    }
+    return _json([
+      for (final e in groups.entries)
+        {'code': e.value.first['category'], 'label': e.key, 'items': e.value},
+    ]);
+  }
+  if (path == '/artists') return _json(artists);
+  if (path == '/support/tickets' && get) return _json(supportTickets);
+  if (path.startsWith('/support/tickets/')) return _json(supportTicket);
   if (path == '/goals') return _json(goals);
   if (path == '/discovery/profiles') {
     return _json({
@@ -379,12 +493,15 @@ http.Response respond(http.Request request) {
   if (path == '/me/likes/received') {
     return _json({
       'items': [
-        for (final (i, p) in likers.indexed) {'profile': p, 'superlike': i == 1},
+        for (final (i, p) in likers.indexed)
+          {'profile': p, 'superlike': i == 1},
       ],
       'totalElements': likers.length,
     });
   }
-  if (path == '/me/likes/received/count') return _json({'count': likers.length});
+  if (path == '/me/likes/received/count') {
+    return _json({'count': likers.length});
+  }
   if (path == '/matches') return _json(matches);
   if (path.startsWith('/matches/') && path.endsWith('/messages') && get) {
     return _json({'items': conversation, 'nextBefore': null});
@@ -398,6 +515,46 @@ http.Response respond(http.Request request) {
       'maxTicketsPerExchange': 100,
     });
   }
-  debugPrint('screenshots fake backend: no fixture for ${request.method} $path');
+  if (path == '/testing/state') {
+    return _json({
+      'accountId': 'me',
+      'clockOffsetDays': 0,
+      'economyNow': '2026-10-21T12:00:00Z',
+      'wallet': wallet,
+      'achievements': <Object>[],
+    });
+  }
+  if (path == '/testing/profiles') return _json(<Object>[]);
+  debugPrint(
+      'screenshots fake backend: no fixture for ${request.method} $path');
   return _json({'code': 'NOT_FOUND', 'message': 'Не найдено'}, 404);
 }
+
+final List<Map<String, Object?>> supportTickets = [
+  {
+    'id': 't1',
+    'category': 'LIKES_MATCHES',
+    'status': 'ANSWERED',
+    'createdAt': '2026-10-20T10:00:00Z',
+    'updatedAt': '2026-10-20T12:00:00Z',
+    'lastMessageAt': '2026-10-20T12:00:00Z',
+  },
+];
+
+final Map<String, Object?> supportTicket = {
+  ...supportTickets.first,
+  'messages': [
+    {
+      'id': 'm1',
+      'fromStaff': false,
+      'text': 'Вчера были два лайка, сегодня их нет. Куда они делись?',
+      'createdAt': '2026-10-20T10:00:00Z',
+    },
+    {
+      'id': 'm2',
+      'fromStaff': true,
+      'text': 'Здравствуйте! Один человек скрыл анкету, второму вы уже ответили — он теперь в «Чатах».',
+      'createdAt': '2026-10-20T12:00:00Z',
+    },
+  ],
+};

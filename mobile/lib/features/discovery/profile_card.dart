@@ -6,28 +6,27 @@ import '../../core/models/public_profile.dart';
 import '../cosmetics/cosmetic_visuals.dart';
 import '../premium/premium_badge.dart';
 
+/// The whole public profile: photo carousel on top, then the facts and
+/// small titled sections (goals, status, about, interests, music, communication).
 class ProfileCard extends StatelessWidget {
   const ProfileCard({super.key, required this.profile, this.photoUrl});
 
   final PublicProfile profile;
 
-  /// Absolute URL of the primary photo, already resolved against the API origin.
-  final String? photoUrl;
+  /// Resolves a relative signed photo path to an absolute URL; null shows placeholders.
+  final String Function(String url)? photoUrl;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final title = [
       if (profile.displayName.isNotEmpty) profile.displayName else 'Без имени',
       if (profile.age != null) '${profile.age}',
     ].join(', ');
     final city = profile.city;
     final height = profile.heightCm;
-    final details = [
-      if (city != null && city.isNotEmpty) city,
-      if (height != null && height > 0) '$height см',
-    ].join(' · ');
-    final goals = profile.goals.map((goal) => goal.displayLabel).join(', ');
+    final zodiac = profile.zodiac;
     final status = profile.dailyStatusText;
     final about = profile.aboutText;
 
@@ -41,110 +40,340 @@ class ProfileCard extends StatelessWidget {
         ? null
         : ProfileStatusStyle.fromAttributes(statusDecoration.attributes);
 
-    final photo = AspectRatio(
-      aspectRatio: 4 / 3,
-      child: NetworkPhoto(url: photoUrl),
+    final resolve = photoUrl;
+    final carousel = PhotoCarousel(
+      urls: [
+        for (final photo in profile.photos)
+          resolve == null ? null : resolve(photo.url),
+      ],
     );
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (frame == null)
-            photo
-          else
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
-              child: FramedPhoto(frame: frame, child: photo),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (frame == null)
+          carousel
+        else
+          FramedPhoto(frame: frame, radius: Radii.lg, child: carousel),
+        const SizedBox(height: Gaps.md),
+        Wrap(
+          spacing: Gaps.sm,
+          runSpacing: Gaps.xs,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(title, style: theme.textTheme.headlineSmall),
+            if (profile.verified)
+              const Tooltip(
+                message: 'Селфи проверено модератором',
+                child: Icon(Icons.verified, color: Brand.verified, size: 24),
+              ),
+            if (profile.premium) const PremiumBadge(),
+          ],
+        ),
+        if (profileStatus != null) ...[
+          const SizedBox(height: Gaps.sm),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ProfileStatusChip(status: profileStatus),
+          ),
+        ],
+        const SizedBox(height: Gaps.sm),
+        Wrap(
+          spacing: Gaps.md,
+          runSpacing: Gaps.xs,
+          children: [
+            if (profile.compatibility != null)
+              _Fact(Icons.auto_awesome, '${profile.compatibility}% совпадение',
+                  color: scheme.primary),
+            if (profile.distanceKm != null)
+              _Fact(Icons.near_me_outlined, '~${profile.distanceKm} км')
+            else if (city != null && city.isNotEmpty)
+              _Fact(Icons.place_outlined, city),
+            if (profile.distanceKm != null && city != null && city.isNotEmpty)
+              _Fact(Icons.place_outlined, city),
+            if (height != null && height > 0) _Fact(Icons.height, '$height см'),
+            if (zodiac != null && zodiac.isNotEmpty)
+              _Fact(Icons.brightness_3_outlined, zodiac),
+          ],
+        ),
+        if (status != null && status.isNotEmpty) ...[
+          const SizedBox(height: Gaps.md),
+          Container(
+            padding: const EdgeInsets.all(Gaps.md),
+            decoration: BoxDecoration(
+              color: scheme.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(Radii.md),
             ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(title, style: theme.textTheme.titleLarge),
-                    if (profile.premium) const PremiumBadge(),
-                    if (profile.verified)
-                      const Tooltip(
-                        message: 'Селфи проверено модератором',
-                        child: Icon(Icons.verified, color: Brand.verified, size: 20),
-                      ),
-                    if (profile.compatibility != null)
-                      Chip(
-                        label: Text('${profile.compatibility}% совпадение'),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                  ],
+                Icon(Icons.wb_sunny_outlined, size: 20, color: scheme.primary),
+                const SizedBox(width: Gaps.sm),
+                Expanded(
+                  child: Text(
+                    status,
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(fontStyle: FontStyle.italic),
+                  ),
                 ),
-                if (profileStatus != null) ...[
-                  const SizedBox(height: 6),
-                  ProfileStatusChip(status: profileStatus),
-                  const SizedBox(height: 4),
-                ],
-                if (details.isNotEmpty)
-                  Text(
-                    details,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                if (goals.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.flag_outlined,
-                        size: 18,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          'Ищу: $goals',
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                if (status != null && status.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    '«$status»',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-                if (about != null && about.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(about),
-                ],
-                if (profile.tags.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final tag in profile.tags)
-                        Chip(
-                          label: Text(tag.label),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                    ],
-                  ),
-                ],
               ],
             ),
           ),
+        ],
+        if (profile.goals.isNotEmpty)
+          _Section(
+            title: 'Ищу',
+            child:
+                _Chips([for (final goal in profile.goals) goal.displayLabel]),
+          ),
+        if (about != null && about.isNotEmpty)
+          _Section(
+              title: 'О себе',
+              child: Text(about, style: theme.textTheme.bodyLarge)),
+        if (profile.interests.isNotEmpty)
+          _Section(
+            title: 'Интересы',
+            child: _Chips(
+                [for (final interest in profile.interests) interest.label]),
+          ),
+        if (profile.artists.isNotEmpty)
+          _Section(
+            title: 'Музыка',
+            child: _Chips([for (final artist in profile.artists) artist.name],
+                icon: Icons.music_note_rounded),
+          ),
+        if (profile.tags.isNotEmpty)
+          _Section(
+            title: 'Общение',
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final width = (constraints.maxWidth - Gaps.sm) / 2;
+                return Wrap(
+                  spacing: Gaps.sm,
+                  runSpacing: Gaps.sm,
+                  children: [
+                    for (final tag in profile.tags)
+                      SizedBox(
+                        width: width,
+                        child: _TagCard(
+                            category: tag.categoryLabel, label: tag.label),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Photos switched by swipe or by tapping the left / right third, with
+/// segment indicators on top.
+class PhotoCarousel extends StatefulWidget {
+  const PhotoCarousel({super.key, required this.urls});
+
+  /// Absolute URLs; null or an empty list shows a placeholder.
+  final List<String?> urls;
+
+  @override
+  State<PhotoCarousel> createState() => _PhotoCarouselState();
+}
+
+class _PhotoCarouselState extends State<PhotoCarousel> {
+  final PageController _controller = PageController();
+  int _index = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onTapUp(TapUpDetails details, double width) {
+    final count = widget.urls.length;
+    final x = details.localPosition.dx;
+    final target = x < width / 3
+        ? _index - 1
+        : x > width * 2 / 3
+            ? _index + 1
+            : _index;
+    if (target < 0 || target >= count || target == _index) return;
+    _controller.animateToPage(target,
+        duration: const Duration(milliseconds: 220), curve: Curves.easeOut);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final urls = widget.urls;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(Radii.lg),
+      child: AspectRatio(
+        aspectRatio: 4 / 5,
+        child: urls.isEmpty
+            ? const NetworkPhoto(url: null)
+            : LayoutBuilder(
+                builder: (context, constraints) => GestureDetector(
+                  onTapUp: (d) => _onTapUp(d, constraints.maxWidth),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      PageView.builder(
+                        controller: _controller,
+                        itemCount: urls.length,
+                        onPageChanged: (i) => setState(() => _index = i),
+                        itemBuilder: (context, i) => NetworkPhoto(url: urls[i]),
+                      ),
+                      if (urls.length > 1)
+                        Positioned(
+                          top: 10,
+                          left: 12,
+                          right: 12,
+                          child:
+                              PhotoSegments(count: urls.length, index: _index),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+/// Thin white bars over a photo: which of [count] photos is shown.
+class PhotoSegments extends StatelessWidget {
+  const PhotoSegments({super.key, required this.count, required this.index});
+
+  final int count;
+  final int index;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          for (var i = 0; i < count; i++)
+            Expanded(
+              child: Container(
+                height: 4,
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                decoration: BoxDecoration(
+                  color: i == index
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: 0.38),
+                  borderRadius: BorderRadius.circular(2),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x33000000), blurRadius: 2)
+                  ],
+                ),
+              ),
+            ),
+        ],
+      );
+}
+
+class _Fact extends StatelessWidget {
+  const _Fact(this.icon, this.text, {this.color});
+
+  final IconData icon;
+  final String text;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final c = color ?? theme.colorScheme.onSurfaceVariant;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18, color: c),
+        const SizedBox(width: Gaps.xs),
+        Text(text,
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(color: c, fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+}
+
+class _Section extends StatelessWidget {
+  const _Section({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: Gaps.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title.toUpperCase(),
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: Gaps.sm),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _Chips extends StatelessWidget {
+  const _Chips(this.labels, {this.icon});
+
+  final List<String> labels;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+        spacing: Gaps.sm,
+        runSpacing: Gaps.sm,
+        children: [
+          for (final label in labels)
+            Chip(
+              avatar: icon == null
+                  ? null
+                  : Icon(icon,
+                      size: 16, color: Theme.of(context).colorScheme.primary),
+              label: Text(label),
+              visualDensity: VisualDensity.compact,
+            ),
+        ],
+      );
+}
+
+class _TagCard extends StatelessWidget {
+  const _TagCard({required this.category, required this.label});
+
+  final String category;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(Radii.md),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (category.isNotEmpty)
+            Text(category,
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(color: scheme.onSurfaceVariant)),
+          Text(label, style: theme.textTheme.titleSmall),
         ],
       ),
     );

@@ -1,5 +1,6 @@
 import 'decoration.dart';
 import 'goal.dart';
+import 'interest.dart';
 import 'json_utils.dart';
 import 'photo.dart';
 import 'tag.dart';
@@ -23,6 +24,10 @@ class PublicProfile {
     this.verified = false,
     this.compatibility,
     this.distanceKm,
+    this.interests = const <Interest>[],
+    this.artists = const <Artist>[],
+    this.zodiac,
+    this.common = const <String>[],
   });
 
   final String id;
@@ -58,6 +63,15 @@ class PublicProfile {
   /// Whole km; only in the feed and only when both share their location.
   final int? distanceKm;
 
+  final List<Interest> interests;
+  final List<Artist> artists;
+
+  /// Sign name, only when the owner shows it.
+  final String? zodiac;
+
+  /// Feed only: up to 2 interests / artists / cards I share with this person.
+  final List<String> common;
+
   Photo? get primaryPhoto {
     if (photos.isEmpty) return null;
     for (final photo in photos) {
@@ -85,6 +99,10 @@ class PublicProfile {
       verified: asBool(json['verified']),
       compatibility: asIntOrNull(json['compatibility']),
       distanceKm: asIntOrNull(json['distanceKm']),
+      interests: asList<Interest>(json['interests'], Interest.fromJson),
+      artists: asList<Artist>(json['artists'], Artist.fromJson),
+      zodiac: asStringOrNull(json['zodiac']),
+      common: asStringList(json['common']),
     );
   }
 }

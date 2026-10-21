@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'social_test_card.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/theme/app_theme.dart';
+
 import '../../core/api/api_exception.dart';
 import '../../core/format.dart';
 import '../../core/models/achievement.dart';
@@ -28,9 +30,6 @@ class _TestPanelScreenState extends State<TestPanelScreen> {
   static const int _nextWeekDays = 7;
   static const int _maxDays = 3650;
 
-  final TextEditingController _codeController = TextEditingController();
-  final TextEditingController _quantityController =
-      TextEditingController(text: '1');
   final TextEditingController _premiumDaysController =
       TextEditingController(text: '7');
 
@@ -41,8 +40,6 @@ class _TestPanelScreenState extends State<TestPanelScreen> {
   /// A testing request is in flight; all actions are disabled meanwhile.
   bool _busy = false;
 
-  String? _codeError;
-  String? _quantityError;
   String? _premiumDaysError;
 
   @override
@@ -53,8 +50,6 @@ class _TestPanelScreenState extends State<TestPanelScreen> {
 
   @override
   void dispose() {
-    _codeController.dispose();
-    _quantityController.dispose();
     _premiumDaysController.dispose();
     super.dispose();
   }
@@ -137,39 +132,48 @@ class _TestPanelScreenState extends State<TestPanelScreen> {
 
   // ------------------------------------------------------------ Actions
 
-  void _grantItem() {
-    final form = _readItemForm(minQuantity: 1);
-    if (form == null) return;
-    _run(
-      () => widget.session.api.grantTestItem(form.code, form.quantity),
-      done: 'Начислено: ${form.code} ×${form.quantity}',
-    );
-  }
+  /// Cart «+»: one more unit (a cosmetic is simply granted).
+  void _increment(String code) => _run(
+        () => widget.session.api.grantTestItem(code, 1),
+        done: '$code +1',
+      );
 
-  void _setItemBalance() {
-    final form = _readItemForm(minQuantity: 0);
-    if (form == null) return;
-    _run(
-      () => widget.session.api.setTestItemBalance(form.code, form.quantity),
-      done: 'Баланс ${form.code}: ${form.quantity}',
-    );
-  }
+  /// Cart «−» / trash: sets the bought part; the premium allowance part
+  /// (periodicQuantity) cannot be changed by the testing API.
+  void _setBought(String code, int quantity) => _run(
+        () => widget.session.api.setTestItemBalance(code, quantity),
+        done: quantity == 0 ? 'Убрано: $code' : 'Баланс $code: $quantity',
+      );
 
-  ({String code, int quantity})? _readItemForm({required int minQuantity}) {
-    final code = _codeController.text.trim();
-    final quantity = int.tryParse(_quantityController.text.trim());
-    final codeError = code.isEmpty ? 'Укажите код предмета' : null;
-    final quantityError = (quantity == null || quantity < minQuantity)
-        ? 'Целое число не меньше $minQuantity'
-        : null;
-    setState(() {
-      _codeError = codeError;
-      _quantityError = quantityError;
-    });
-    if (codeError != null || quantityError != null || quantity == null) {
-      return null;
-    }
-    return (code: code, quantity: quantity);
+  Future<void> _addOther() async {
+    final controller = TextEditingController();
+    final code = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Код предмета'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          autocorrect: false,
+          textCapitalization: TextCapitalization.characters,
+          decoration: const InputDecoration(hintText: 'например, SUPERLIKE'),
+          onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: const Text('Добавить'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final trimmed = code?.trim() ?? '';
+    if (trimmed.isNotEmpty) _increment(trimmed);
   }
 
   void _addPremiumDays() {
@@ -219,13 +223,6 @@ class _TestPanelScreenState extends State<TestPanelScreen> {
         done: 'Выполнено: ${achievement.displayTitle}',
       );
     }
-  }
-
-  void _pickCode(String code) {
-    setState(() {
-      _codeController.text = code;
-      _codeError = null;
-    });
   }
 
   // ------------------------------------------------------------ UI
@@ -403,109 +400,95 @@ class _TestPanelScreenState extends State<TestPanelScreen> {
 
   Widget _buildItemsCard(BuildContext context, Wallet wallet) {
     final theme = Theme.of(context);
-    final choices = <String>[
-      ...stubItemCodes,
-      for (final item in wallet.items)
-        if (!stubItemCodes.contains(item.code)) item.code,
+    final owned = {for (final item in wallet.items) item.code};
+    final missing = [
+      for (final code in stubItemCodes)
+        if (!owned.contains(code)) code
     ];
 
     return _Section(
       title: 'Предметы',
       children: [
-        TextField(
-          controller: _codeController,
+        if (wallet.items.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: Gaps.sm),
+            child: Text('Кошелёк пуст'),
+          ),
+        for (final item in wallet.items) _buildCartRow(theme, wallet, item),
+        const SizedBox(height: Gaps.sm),
+        PopupMenuButton<String>(
           enabled: !_busy,
-          autocorrect: false,
-          textCapitalization: TextCapitalization.characters,
-          onChanged: (_) {
-            if (_codeError != null) setState(() => _codeError = null);
-          },
-          decoration: InputDecoration(
-            labelText: 'Код предмета',
-            hintText: 'выберите или введите',
-            isDense: true,
-            errorText: _codeError,
-            suffixIcon: PopupMenuButton<String>(
-              tooltip: 'Коды из каталога',
-              enabled: !_busy,
-              icon: const Icon(Icons.arrow_drop_down),
-              onSelected: _pickCode,
-              itemBuilder: (_) => [
-                for (final code in choices)
-                  PopupMenuItem<String>(value: code, child: Text(code)),
+          tooltip: 'Добавить предмет',
+          onSelected: (code) => code.isEmpty ? _addOther() : _increment(code),
+          itemBuilder: (_) => [
+            for (final code in missing)
+              PopupMenuItem<String>(value: code, child: Text(code)),
+            const PopupMenuItem<String>(value: '', child: Text('Другой код…')),
+          ],
+          child: IgnorePointer(
+            child: OutlinedButton.icon(
+              onPressed: _busy ? null : () {},
+              icon: const Icon(Icons.add_shopping_cart),
+              label: const Text('Добавить предмет'),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCartRow(ThemeData theme, Wallet wallet, WalletItem item) {
+    final bought = item.quantity - item.periodicQuantity;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: Gaps.xs),
+      child: Row(
+        children: [
+          ItemPreview(item: item),
+          const SizedBox(width: Gaps.sm + 4),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.displayTitle, style: theme.textTheme.titleSmall),
+                Text(
+                  _itemDetails(wallet, item),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ],
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+          if (item.isConsumable) ...[
+            IconButton(
+              tooltip: 'Меньше',
+              onPressed: (_busy || bought <= 0)
+                  ? null
+                  : () => _setBought(item.code, bought - 1),
+              icon: const Icon(Icons.remove_circle_outline),
+            ),
             SizedBox(
-              width: 120,
-              child: TextField(
-                controller: _quantityController,
-                enabled: !_busy,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                onChanged: (_) {
-                  if (_quantityError != null) {
-                    setState(() => _quantityError = null);
-                  }
-                },
-                decoration: InputDecoration(
-                  labelText: 'Количество',
-                  isDense: true,
-                  errorText: _quantityError,
-                  errorMaxLines: 2,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  FilledButton.tonal(
-                    onPressed: _busy ? null : _grantItem,
-                    child: const Text('Начислить'),
-                  ),
-                  OutlinedButton(
-                    onPressed: _busy ? null : _setItemBalance,
-                    child: const Text('Установить баланс'),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          '«Начислить» добавляет к балансу (≥ 1), «Установить баланс» задаёт '
-          'купленную часть точно (0 — убрать).',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 8),
-        if (wallet.items.isEmpty)
-          const Text('Кошелёк пуст')
-        else
-          for (final item in wallet.items)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              leading: ItemPreview(item: item),
-              title: Text(item.displayTitle),
-              subtitle: Text(_itemDetails(wallet, item)),
-              trailing: Text(
-                '×${item.quantity}',
+              width: 32,
+              child: Text(
+                '${item.quantity}',
+                textAlign: TextAlign.center,
                 style: theme.textTheme.titleMedium,
               ),
-              onTap: _busy ? null : () => _pickCode(item.code),
             ),
-      ],
+            IconButton(
+              tooltip: 'Больше',
+              onPressed: _busy ? null : () => _increment(item.code),
+              icon: const Icon(Icons.add_circle_outline),
+            ),
+          ],
+          IconButton(
+            tooltip: 'Убрать',
+            onPressed:
+                (_busy || bought <= 0) ? null : () => _setBought(item.code, 0),
+            icon: Icon(Icons.delete_outline, color: theme.colorScheme.error),
+          ),
+        ],
+      ),
     );
   }
 

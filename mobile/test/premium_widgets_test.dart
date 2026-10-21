@@ -15,7 +15,11 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 const _goals = [
-  {'code': 'SERIOUS_RELATIONSHIP', 'label': 'Серьёзные отношения', 'sortOrder': 1},
+  {
+    'code': 'SERIOUS_RELATIONSHIP',
+    'label': 'Серьёзные отношения',
+    'sortOrder': 1
+  },
   {'code': 'FAMILY', 'label': 'Семья', 'sortOrder': 2},
   {'code': 'CHAT', 'label': 'Общение', 'sortOrder': 5},
 ];
@@ -152,8 +156,11 @@ void main() {
       ),
     );
 
-    expect(find.text('Москва · 168 см'), findsOneWidget);
-    expect(find.text('Ищу: Серьёзные, Семья'), findsOneWidget);
+    expect(find.text('Москва'), findsOneWidget);
+    expect(find.text('168 см'), findsOneWidget);
+    expect(find.text('ИЩУ'), findsOneWidget);
+    expect(find.text('Серьёзные'), findsOneWidget);
+    expect(find.text('Семья'), findsOneWidget);
     expect(find.byType(PremiumBadge), findsOneWidget);
     expect(find.text('Премиум'), findsOneWidget);
   });
@@ -170,7 +177,7 @@ void main() {
     );
 
     expect(find.byType(PremiumBadge), findsNothing);
-    expect(find.textContaining('Ищу:'), findsNothing);
+    expect(find.text('ИЩУ'), findsNothing);
   });
 
   testWidgets(

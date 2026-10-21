@@ -13,11 +13,13 @@ import '../models/excluded_goals.dart';
 import '../models/exclusion_words.dart';
 import '../models/gacha.dart';
 import '../models/goal.dart';
+import '../models/interest.dart';
 import '../models/json_utils.dart';
 import '../models/my_profile.dart';
 import '../models/photo.dart';
 import '../models/public_profile.dart';
 import '../models/social.dart';
+import '../models/support.dart';
 import '../models/tag.dart';
 import '../models/testing_state.dart';
 import '../models/wallet.dart';
@@ -149,6 +151,9 @@ class DatingApiClient {
     bool clearSearchRadius = false,
     bool? invisible,
     bool? showPremiumBadge,
+    List<String>? interestCodes,
+    List<int>? artistIds,
+    bool? showZodiac,
     int? heightCm,
     bool clearHeight = false,
     List<String>? goalCodes,
@@ -177,6 +182,9 @@ class DatingApiClient {
         if (clearSearchRadius) 'clearSearchRadius': true,
         if (invisible != null) 'invisible': invisible,
         if (showPremiumBadge != null) 'showPremiumBadge': showPremiumBadge,
+        if (interestCodes != null) 'interestCodes': List<String>.of(interestCodes),
+        if (artistIds != null) 'artistIds': List<int>.of(artistIds),
+        if (showZodiac != null) 'showZodiac': showZodiac,
         if (heightCm != null) 'heightCm': heightCm,
         if (clearHeight) 'clearHeight': true,
         if (goalCodes != null) 'goalCodes': List<String>.of(goalCodes),
@@ -233,6 +241,22 @@ class DatingApiClient {
     final json = await _send('GET', '/tags', authenticated: false);
     if (json is! List) throw _badResponse();
     return json.whereType<Map<String, dynamic>>().map(Tag.fromJson).toList();
+  }
+
+  // ---------------------------------------------------- Interests, music
+
+  /// The interest dictionary grouped by category (public).
+  Future<List<InterestGroup>> getInterests() async {
+    final json = await _send('GET', '/interests', authenticated: false);
+    if (json is! List) throw _badResponse();
+    return json.whereType<Map<String, dynamic>>().map(InterestGroup.fromJson).toList();
+  }
+
+  /// Artist search; a miss may be looked up on MusicBrainz by the server.
+  Future<List<Artist>> searchArtists(String query) async {
+    final json = await _send('GET', '/artists', query: {'q': query});
+    if (json is! List) throw _badResponse();
+    return json.whereType<Map<String, dynamic>>().map(Artist.fromJson).toList();
   }
 
   // --------------------------------------------------------------- Goals
@@ -425,6 +449,24 @@ class DatingApiClient {
     }));
     return json['status'] == 'DISMISSED' ? asStringOrNull(json['note']) : null;
   }
+
+  // -------------------------------------------------------------- Support
+
+  Future<List<SupportTicket>> getSupportTickets() async {
+    final json = await _send('GET', '/support/tickets');
+    if (json is! List) throw _badResponse();
+    return json.whereType<Map<String, dynamic>>().map(SupportTicket.fromJson).toList();
+  }
+
+  Future<SupportTicket> getSupportTicket(String id) async =>
+      SupportTicket.fromJson(_expectMap(await _send('GET', '/support/tickets/${_segment(id)}')));
+
+  /// 429 RATE_LIMITED after 5 new tickets a day.
+  Future<SupportTicket> createSupportTicket(String category, String text) async => SupportTicket.fromJson(
+      _expectMap(await _send('POST', '/support/tickets', body: {'category': category, 'text': text})));
+
+  Future<SupportTicket> writeToSupport(String ticketId, String text) async => SupportTicket.fromJson(
+      _expectMap(await _send('POST', '/support/tickets/${_segment(ticketId)}/messages', body: {'text': text})));
 
   Future<List<Restriction>> getRestrictions() async {
     final json = await _send('GET', '/me/restrictions');

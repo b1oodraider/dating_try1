@@ -1,4 +1,5 @@
 import 'goal.dart';
+import 'interest.dart';
 import 'json_utils.dart';
 import 'photo.dart';
 import 'tag.dart';
@@ -45,6 +46,10 @@ class MyProfile {
     this.identityLocked = false,
     this.invisible = false,
     this.showPremiumBadge = true,
+    this.interests = const <Interest>[],
+    this.artists = const <Artist>[],
+    this.showZodiac = false,
+    this.zodiac,
     this.city,
     this.aboutText,
     this.dailyStatusText,
@@ -104,6 +109,15 @@ class MyProfile {
 
   /// Others see my premium badge.
   final bool showPremiumBadge;
+
+  final List<Interest> interests;
+  final List<Artist> artists;
+
+  /// Others see my zodiac sign.
+  final bool showZodiac;
+
+  /// My sign (from the birth date), always present when the date is set.
+  final String? zodiac;
   final String? aboutText;
   final String? dailyStatusText;
 
@@ -150,6 +164,10 @@ class MyProfile {
       identityLocked: asBool(json['identityLocked'], asString(json['publicationStatus'], 'DRAFT') != 'DRAFT'),
       invisible: asBool(json['invisible']),
       showPremiumBadge: json['showPremiumBadge'] != false,
+      interests: asList<Interest>(json['interests'], Interest.fromJson),
+      artists: asList<Artist>(json['artists'], Artist.fromJson),
+      showZodiac: asBool(json['showZodiac']),
+      zodiac: asStringOrNull(json['zodiac']),
       aboutText: asStringOrNull(json['aboutText']),
       dailyStatusText: asStringOrNull(json['dailyStatusText']),
       publicationStatus: asString(json['publicationStatus'], 'DRAFT'),

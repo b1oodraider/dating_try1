@@ -12,11 +12,13 @@ enum ProfileDetailsResult { like, superlike, pass, blocked, hidden }
 
 /// The whole profile in a bottom sheet, with report / block and (from the
 /// feed) the reaction buttons. Returns what the user chose, or null.
+/// [preview]: my own profile as others see it — a banner, no actions at all.
 Future<ProfileDetailsResult?> showProfileDetails(
   BuildContext context, {
   required DatingApiClient api,
   required PublicProfile profile,
   bool withReactions = false,
+  bool preview = false,
 }) {
   return showModalBottomSheet<ProfileDetailsResult>(
     context: context,
@@ -24,106 +26,124 @@ Future<ProfileDetailsResult?> showProfileDetails(
     useSafeArea: true,
     builder: (sheetContext) => DraggableScrollableSheet(
       expand: false,
-      initialChildSize: 0.9,
+      initialChildSize: 0.92,
       maxChildSize: 0.95,
       builder: (context, controller) => ListView(
         controller: controller,
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(Gaps.md, 0, Gaps.md, Gaps.lg),
         children: [
-          ProfileCard(
-            profile: profile,
-            photoUrl: profile.primaryPhoto == null
-                ? null
-                : api.resolveMediaUrl(profile.primaryPhoto!.url),
-          ),
-          for (final photo in profile.photos.where(
-              (p) => p.id != profile.primaryPhoto?.id))
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: AspectRatio(
-                  aspectRatio: 3 / 4,
-                  child: NetworkPhoto(url: api.resolveMediaUrl(photo.url)),
-                ),
+          if (preview)
+            Container(
+              margin: const EdgeInsets.only(bottom: Gaps.md),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: Gaps.md, vertical: Gaps.sm + 4),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(Radii.md),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.visibility_outlined,
+                      size: 20,
+                      color:
+                          Theme.of(context).colorScheme.onSecondaryContainer),
+                  const SizedBox(width: Gaps.sm),
+                  Expanded(
+                    child: Text(
+                      'Так вашу анкету видят другие',
+                      style: TextStyle(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSecondaryContainer),
+                    ),
+                  ),
+                ],
               ),
             ),
-          if (withReactions)
-            Row(
+          ProfileCard(profile: profile, photoUrl: api.resolveMediaUrl),
+          const SizedBox(height: Gaps.lg),
+          if (!preview) ...[
+            if (withReactions)
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(sheetContext)
+                          .pop(ProfileDetailsResult.pass),
+                      style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12)),
+                      child: const Text('Пропустить'),
+                    ),
+                  ),
+                  const SizedBox(width: Gaps.sm),
+                  IconButton.outlined(
+                    tooltip: 'Суперлайк',
+                    onPressed: () => Navigator.of(sheetContext)
+                        .pop(ProfileDetailsResult.superlike),
+                    icon:
+                        const Icon(Icons.star_rounded, color: Brand.superlike),
+                  ),
+                  const SizedBox(width: Gaps.sm),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => Navigator.of(sheetContext)
+                          .pop(ProfileDetailsResult.like),
+                      icon: const Icon(Icons.favorite),
+                      label: const Text('Нравится'),
+                    ),
+                  ),
+                ],
+              ),
+            const SizedBox(height: Gaps.sm),
+            Wrap(
+              alignment: WrapAlignment.center,
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => Navigator.of(sheetContext)
-                        .pop(ProfileDetailsResult.pass),
-                    icon: const Icon(Icons.close),
-                    label: const Text('Пропустить'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.outlined(
-                  tooltip: 'Суперлайк',
-                  onPressed: () => Navigator.of(sheetContext)
-                      .pop(ProfileDetailsResult.superlike),
-                  icon: const Icon(Icons.star_rounded, color: Brand.superlike),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: () => Navigator.of(sheetContext)
-                        .pop(ProfileDetailsResult.like),
-                    icon: const Icon(Icons.favorite),
-                    label: const Text('Нравится'),
-                  ),
-                ),
-              ],
-            ),
-          const SizedBox(height: 8),
-          Wrap(
-            alignment: WrapAlignment.center,
-            children: [
-              TextButton.icon(
-                onPressed: () async {
-                  try {
-                    await api.hide(profile.id);
-                    if (sheetContext.mounted) {
-                      Navigator.of(sheetContext).pop(ProfileDetailsResult.hidden);
+                TextButton.icon(
+                  onPressed: () async {
+                    try {
+                      await api.hide(profile.id);
+                      if (sheetContext.mounted) {
+                        Navigator.of(sheetContext)
+                            .pop(ProfileDetailsResult.hidden);
+                      }
+                    } catch (e) {
+                      if (!sheetContext.mounted) return;
+                      ScaffoldMessenger.of(sheetContext).showSnackBar(
+                          SnackBar(content: Text(describeError(e))));
                     }
-                  } catch (e) {
-                    if (!sheetContext.mounted) return;
-                    ScaffoldMessenger.of(sheetContext)
-                        .showSnackBar(SnackBar(content: Text(describeError(e))));
-                  }
-                },
-                icon: const Icon(Icons.visibility_off_outlined),
-                label: const Text('Не показывать'),
-              ),
-              TextButton.icon(
-                onPressed: () => showReportSheet(
-                  sheetContext,
-                  api: api,
-                  profileId: profile.id,
-                  name: profile.displayName,
+                  },
+                  icon: const Icon(Icons.visibility_off_outlined),
+                  label: const Text('Не показывать'),
                 ),
-                icon: const Icon(Icons.flag_outlined),
-                label: const Text('Пожаловаться'),
-              ),
-              TextButton.icon(
-                onPressed: () async {
-                  final blocked = await confirmAndBlock(
+                TextButton.icon(
+                  onPressed: () => showReportSheet(
                     sheetContext,
                     api: api,
                     profileId: profile.id,
                     name: profile.displayName,
-                  );
-                  if (blocked && sheetContext.mounted) {
-                    Navigator.of(sheetContext).pop(ProfileDetailsResult.blocked);
-                  }
-                },
-                icon: const Icon(Icons.block),
-                label: const Text('Заблокировать'),
-              ),
-            ],
-          ),
+                  ),
+                  icon: const Icon(Icons.flag_outlined),
+                  label: const Text('Пожаловаться'),
+                ),
+                TextButton.icon(
+                  onPressed: () async {
+                    final blocked = await confirmAndBlock(
+                      sheetContext,
+                      api: api,
+                      profileId: profile.id,
+                      name: profile.displayName,
+                    );
+                    if (blocked && sheetContext.mounted) {
+                      Navigator.of(sheetContext)
+                          .pop(ProfileDetailsResult.blocked);
+                    }
+                  },
+                  icon: const Icon(Icons.block),
+                  label: const Text('Заблокировать'),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     ),

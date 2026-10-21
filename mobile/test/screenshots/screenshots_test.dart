@@ -17,8 +17,16 @@ import 'package:dating_mobile/features/auth/otp_screen.dart';
 import 'package:dating_mobile/features/auth/phone_screen.dart';
 import 'package:dating_mobile/features/auth/session_controller.dart';
 import 'package:dating_mobile/features/discovery/discovery_screen.dart';
+import 'package:dating_mobile/core/models/my_profile.dart';
+import 'package:dating_mobile/features/discovery/profile_card.dart';
 import 'package:dating_mobile/features/discovery/profile_details_sheet.dart';
+import 'package:dating_mobile/features/discovery/profile_preview.dart';
+import 'package:dating_mobile/features/testing/test_panel_screen.dart';
 import 'package:dating_mobile/features/home/home_screen.dart';
+import 'package:dating_mobile/features/profile/profile_section_screen.dart';
+import 'package:dating_mobile/features/profile/profile_steps.dart';
+import 'package:dating_mobile/features/profile/profile_wizard.dart';
+import 'package:dating_mobile/features/support/support_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -70,7 +78,8 @@ Future<void> _loadFonts() async {
 }
 
 /// Mounts [home] at 390x844 @2x with fake network images.
-Future<void> _pump(WidgetTester tester, Widget home, {bool dark = false}) async {
+Future<void> _pump(WidgetTester tester, Widget home,
+    {bool dark = false}) async {
   HttpOverrides.global = _ImageHttpOverrides();
   // Overflow stripes are what a screenshot should show: log, don't fail.
   final reportError = FlutterError.onError;
@@ -85,7 +94,9 @@ Future<void> _pump(WidgetTester tester, Widget home, {bool dark = false}) async 
   addTearDown(() => FlutterError.onError = reportError);
   tester.view.physicalSize = const Size(780, 1688);
   tester.view.devicePixelRatio = 2;
-  if (dark) tester.platformDispatcher.platformBrightnessTestValue = ui.Brightness.dark;
+  if (dark) {
+    tester.platformDispatcher.platformBrightnessTestValue = ui.Brightness.dark;
+  }
   addTearDown(tester.view.reset);
   addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
   await tester.pumpWidget(
@@ -119,6 +130,27 @@ Future<void> _shot(WidgetTester tester, String name) async {
     await file.parent.create(recursive: true);
     await file.writeAsBytes(png!.buffer.asUint8List());
   });
+}
+
+/// The visible main list: the vertical scrollable with the most content.
+ScrollPosition _mainScrollPosition(WidgetTester tester) => find
+    .byType(Scrollable)
+    .evaluate()
+    .map((e) => (e as StatefulElement).state as ScrollableState)
+    .where((s) => s.position.axis == Axis.vertical)
+    .map((s) => s.position)
+    .reduce((a, b) => a.maxScrollExtent >= b.maxScrollExtent ? a : b);
+
+/// Scrolls the open bottom sheet's list (the last vertical scrollable) to [offset].
+void _scrollSheet(WidgetTester tester, double offset) {
+  final position = find
+      .byType(Scrollable)
+      .evaluate()
+      .map((e) => (e as StatefulElement).state as ScrollableState)
+      .where((s) => s.position.axis == Axis.vertical)
+      .last
+      .position;
+  position.jumpTo(offset.clamp(0, position.maxScrollExtent));
 }
 
 Future<void> _tapTab(WidgetTester tester, String label) async {
@@ -181,6 +213,34 @@ void main() {
     ));
     await _settle(tester);
     await _shot(tester, 'details');
+    await tester.tap(find.byType(PhotoCarousel), warnIfMissed: false);
+    await _settle(tester);
+    _scrollSheet(tester, 520);
+    await _settle(tester);
+    await _shot(tester, 'details_scrolled');
+    _scrollSheet(tester, 2000);
+    await _settle(tester);
+    await _shot(tester, 'details_bottom');
+  });
+
+  testWidgets('my profile as others', skip: skip, (tester) async {
+    final session = _session();
+    await _pump(tester, HomeScreen(session: session));
+    unawaited(showMyProfileAsOthers(
+      tester.element(find.byType(DiscoveryScreen)),
+      api: session.api,
+      profile: MyProfile.fromJson(fx.myProfile),
+    ));
+    await _settle(tester);
+    await _shot(tester, 'preview');
+  });
+
+  testWidgets('test panel', skip: skip, (tester) async {
+    await _pump(tester, TestPanelScreen(session: _session()));
+    final position = _mainScrollPosition(tester);
+    position.jumpTo(position.maxScrollExtent * 0.55);
+    await _settle(tester);
+    await _shot(tester, 'test_panel');
   });
 
   testWidgets('likes', skip: skip, (tester) async {
@@ -208,17 +268,48 @@ void main() {
     await _feed(tester);
     await _tapTab(tester, 'Профиль');
     await _shot(tester, 'profile');
-    // The visible tab's main list: the vertical scrollable with the most content.
-    final position = find
-        .byType(Scrollable)
-        .evaluate()
-        .map((e) => (e as StatefulElement).state as ScrollableState)
-        .where((s) => s.position.axis == Axis.vertical)
-        .map((s) => s.position)
-        .reduce((a, b) => a.maxScrollExtent >= b.maxScrollExtent ? a : b);
+    final position = _mainScrollPosition(tester);
     position.jumpTo(position.maxScrollExtent);
     await _settle(tester);
     await _shot(tester, 'profile_scrolled');
+  });
+
+  testWidgets('profile section', skip: skip, (tester) async {
+    final session = _session();
+    await _pump(
+        tester,
+        ProfileSectionScreen(
+          api: session.api,
+          step: profileSteps.firstWhere((s) => s.id == 'interests'),
+          profile: MyProfile.fromJson(fx.myProfile),
+        ));
+    await _shot(tester, 'section_interests');
+  });
+
+  testWidgets('wizard', skip: skip, (tester) async {
+    final session = _session();
+    await _pump(
+        tester,
+        ProfileWizardScreen(
+            api: session.api, profile: MyProfile.fromJson(fx.myProfile), mode: WizardMode.refill));
+    await _shot(tester, 'wizard_name');
+    await tester.tap(find.text('Оставить текущее'));
+    await _settle(tester);
+    await _shot(tester, 'wizard_seeking');
+  });
+
+  testWidgets('onboarding', skip: skip, (tester) async {
+    final session = _session();
+    await _pump(tester, OnboardingScreen(api: session.api, profile: MyProfile.fromJson(fx.myProfile)));
+    await _shot(tester, 'onboarding');
+  });
+
+  testWidgets('support', skip: skip, (tester) async {
+    final session = _session();
+    await _pump(tester, SupportScreen(api: session.api));
+    await _shot(tester, 'support');
+    await _pump(tester, TicketScreen(api: session.api, ticketId: 't1'));
+    await _shot(tester, 'ticket');
   });
 
   testWidgets('feed dark', skip: skip, (tester) async {
@@ -294,7 +385,9 @@ List<int> _photoBytes(Uri url) {
       : url.path;
   return _photoCache.putIfAbsent(key, () {
     final file = File('$_photosDir/$key');
-    return file.existsSync() ? file.readAsBytesSync() : _gradientPng(key.hashCode);
+    return file.existsSync()
+        ? file.readAsBytesSync()
+        : _gradientPng(key.hashCode);
   });
 }
 
@@ -326,7 +419,8 @@ List<int> _gradientPng(int seed) {
   ];
 }
 
-List<int> _u32(int v) => [(v >> 24) & 0xFF, (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF];
+List<int> _u32(int v) =>
+    [(v >> 24) & 0xFF, (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF];
 
 int _crc32(List<int> bytes) {
   var crc = 0xFFFFFFFF;

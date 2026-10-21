@@ -308,23 +308,7 @@ class _CardFace extends StatelessWidget {
                 top: 10,
                 left: 12,
                 right: 12,
-                child: Row(
-                  children: [
-                    for (var i = 0; i < photos.length; i++)
-                      Expanded(
-                        child: Container(
-                          height: 4,
-                          margin: const EdgeInsets.symmetric(horizontal: 2),
-                          decoration: BoxDecoration(
-                            color: i == photoIndex
-                                ? Colors.white
-                                : Colors.white.withValues(alpha: 0.38),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+                child: PhotoSegments(count: photos.length, index: photoIndex),
               ),
             if (profile.compatibility != null)
               Positioned(
@@ -418,14 +402,20 @@ class _CardFace extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                            if (profile.tags.isNotEmpty)
+                            if (profile.common.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(top: Gaps.sm + 2),
                                 child: Wrap(
                                   spacing: 6,
                                   runSpacing: 6,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
-                                    for (final tag in profile.tags.take(3)) _Pill(tag.label),
+                                    Text(
+                                      'Общее:',
+                                      style: theme.textTheme.labelLarge?.copyWith(color: Colors.white70),
+                                    ),
+                                    for (final thing in profile.common.take(2))
+                                      _Pill(thing, icon: Icons.favorite_rounded),
                                   ],
                                 ),
                               ),
