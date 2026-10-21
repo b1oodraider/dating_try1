@@ -540,9 +540,41 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           value: profile.locationShared,
           onChanged: _locating ? null : (on) => _toggleLocation(on),
         ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Невидимка'),
+          subtitle: Text(profile.premium
+              ? 'Анкету видят только те, кого вы лайкнули'
+              : 'Доступно с премиумом'),
+          value: profile.invisible && profile.premium,
+          onChanged: profile.premium && !_saving
+              ? (on) => _applyPrivacy(invisible: on)
+              : null,
+        ),
+        if (profile.premium)
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Показывать значок премиума'),
+            value: profile.showPremiumBadge,
+            onChanged: _saving ? null : (on) => _applyPrivacy(showPremiumBadge: on),
+          ),
         const SizedBox(height: 8),
       ],
     );
+  }
+
+  /// Applied at once, apart from the rest of the form.
+  Future<void> _applyPrivacy({bool? invisible, bool? showPremiumBadge}) async {
+    setState(() => _saving = true);
+    try {
+      final updated = await widget.session.api.updateMyProfile(
+          invisible: invisible, showPremiumBadge: showPremiumBadge);
+      if (mounted) setState(() => _profile = updated);
+    } catch (e) {
+      if (mounted) _snack(describeError(e));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   Future<void> _toggleLocation(bool on) async {

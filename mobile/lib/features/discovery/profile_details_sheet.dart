@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/api/api_exception.dart';
 import '../../core/models/public_profile.dart';
 import '../safety/report_sheet.dart';
 import 'profile_card.dart';
 
-enum ProfileDetailsResult { like, superlike, pass, blocked }
+/// [hidden]: «not interested», only I stop seeing the person.
+enum ProfileDetailsResult { like, superlike, pass, blocked, hidden }
 
 /// The whole profile in a bottom sheet, with report / block and (from the
 /// feed) the reaction buttons. Returns what the user chose, or null.
@@ -75,9 +77,25 @@ Future<ProfileDetailsResult?> showProfileDetails(
               ],
             ),
           const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          Wrap(
+            alignment: WrapAlignment.center,
             children: [
+              TextButton.icon(
+                onPressed: () async {
+                  try {
+                    await api.hide(profile.id);
+                    if (sheetContext.mounted) {
+                      Navigator.of(sheetContext).pop(ProfileDetailsResult.hidden);
+                    }
+                  } catch (e) {
+                    if (!sheetContext.mounted) return;
+                    ScaffoldMessenger.of(sheetContext)
+                        .showSnackBar(SnackBar(content: Text(describeError(e))));
+                  }
+                },
+                icon: const Icon(Icons.visibility_off_outlined),
+                label: const Text('Не показывать'),
+              ),
               TextButton.icon(
                 onPressed: () => showReportSheet(
                   sheetContext,

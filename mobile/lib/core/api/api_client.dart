@@ -16,6 +16,7 @@ import '../models/goal.dart';
 import '../models/json_utils.dart';
 import '../models/my_profile.dart';
 import '../models/photo.dart';
+import '../models/public_profile.dart';
 import '../models/social.dart';
 import '../models/tag.dart';
 import '../models/testing_state.dart';
@@ -146,6 +147,8 @@ class DatingApiClient {
     int? cityId,
     int? searchRadiusKm,
     bool clearSearchRadius = false,
+    bool? invisible,
+    bool? showPremiumBadge,
     int? heightCm,
     bool clearHeight = false,
     List<String>? goalCodes,
@@ -172,6 +175,8 @@ class DatingApiClient {
         if (cityId != null) 'cityId': cityId,
         if (searchRadiusKm != null) 'searchRadiusKm': searchRadiusKm,
         if (clearSearchRadius) 'clearSearchRadius': true,
+        if (invisible != null) 'invisible': invisible,
+        if (showPremiumBadge != null) 'showPremiumBadge': showPremiumBadge,
         if (heightCm != null) 'heightCm': heightCm,
         if (clearHeight) 'clearHeight': true,
         if (goalCodes != null) 'goalCodes': List<String>.of(goalCodes),
@@ -317,6 +322,16 @@ class DatingApiClient {
     return ReactionResult.fromJson(_expectMap(json));
   }
 
+  /// Premium UNDO_SWIPE: takes back my last like or pass; returns the profile
+  /// to put back on top of the deck.
+  Future<PublicProfile> undoLastReaction() async =>
+      PublicProfile.fromJson(_expectMap(await _send('POST', '/me/reactions/undo')));
+
+  /// Brings passed profiles back. Without premium only with [feedEmpty] and
+  /// once a day (409 FEED_NOT_EMPTY / 429 PASS_REFRESH_TOO_SOON).
+  Future<int> refreshPasses({required bool feedEmpty}) async => asInt(_expectMap(
+          await _send('POST', '/me/passes/refresh', query: {'feedEmpty': '$feedEmpty'}))['restored']);
+
   /// Time each card was on screen, for the like-spam rule (1..100 views).
   Future<void> sendProfileViews(List<Map<String, Object>> views) async {
     if (views.isEmpty) return;
@@ -384,6 +399,11 @@ class DatingApiClient {
   }
 
   // ------------------------------------------------------------- Safety
+
+  /// «Not interested»: only I stop seeing this person.
+  Future<void> hide(String profileId) async {
+    await _send('POST', '/accounts/${_segment(profileId)}/hide');
+  }
 
   Future<void> block(String profileId) async {
     await _send('POST', '/accounts/${_segment(profileId)}/block');

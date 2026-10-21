@@ -42,6 +42,8 @@ class MyProfile {
     this.cityId,
     this.searchRadiusKm,
     this.locationShared = false,
+    this.invisible = false,
+    this.showPremiumBadge = true,
     this.city,
     this.aboutText,
     this.dailyStatusText,
@@ -94,6 +96,12 @@ class MyProfile {
 
   /// An approximate device location is shared (distances in the feed).
   final bool locationShared;
+
+  /// Invisible mode (premium): only people I liked see me.
+  final bool invisible;
+
+  /// Others see my premium badge.
+  final bool showPremiumBadge;
   final String? aboutText;
   final String? dailyStatusText;
 
@@ -137,6 +145,8 @@ class MyProfile {
       cityId: asIntOrNull(json['cityId']),
       searchRadiusKm: asIntOrNull(json['searchRadiusKm']),
       locationShared: asBool(json['locationShared']),
+      invisible: asBool(json['invisible']),
+      showPremiumBadge: json['showPremiumBadge'] != false,
       aboutText: asStringOrNull(json['aboutText']),
       dailyStatusText: asStringOrNull(json['dailyStatusText']),
       publicationStatus: asString(json['publicationStatus'], 'DRAFT'),

@@ -411,6 +411,47 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
   }
 
+  /// Premium: puts my last swiped profile back on top of the deck.
+  Future<void> _undo() async {
+    try {
+      final profile = await widget.session.api.undoLastReaction();
+      if (!mounted) return;
+      setState(() {
+        _reacted.remove(profile.id);
+        _items.removeWhere((p) => p.id == profile.id);
+        _items.insert(0, profile);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      if (e is ApiException && e.isUnauthorized) return;
+      final message = e is ApiException && e.isPremiumRequired
+          ? 'Вернуть анкету можно с премиумом'
+          : describeError(e);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
+  /// Brings passed profiles back (free: when the feed ran out, once a day).
+  Future<void> _refreshPasses() async {
+    try {
+      final restored = await widget.session.api
+          .refreshPasses(feedEmpty: _items.isEmpty);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(restored == 0
+              ? 'Пропущенных анкет нет'
+              : 'Вернули пропущенных: $restored')));
+      _reacted.clear(); // likes stay excluded by the server
+      await _restartFeed();
+    } catch (e) {
+      if (!mounted) return;
+      if (e is ApiException && e.isUnauthorized) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(describeError(e))));
+    }
+  }
+
   static String _newKey() =>
       '${DateTime.now().microsecondsSinceEpoch}-${math.Random().nextInt(1 << 32)}';
 
@@ -423,7 +464,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       withReactions: true,
     );
     if (!mounted || result == null) return;
-    if (result == ProfileDetailsResult.blocked) {
+    if (result == ProfileDetailsResult.blocked ||
+        result == ProfileDetailsResult.hidden) {
       setState(() {
         _reacted.add(profile.id);
         _items.removeWhere((p) => p.id == profile.id);
@@ -446,6 +488,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       appBar: AppBar(
         title: const Text('Анкеты'),
         actions: [
+          IconButton(
+            tooltip: 'Вернуть последнюю анкету',
+            icon: const Icon(Icons.undo),
+            onPressed: _undo,
+          ),
           IconButton(
             tooltip: 'Фильтры',
             icon: Badge(
@@ -524,6 +571,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               FilledButton.tonal(
                 onPressed: _retry,
                 child: const Text('Обновить'),
+              ),
+              TextButton(
+                onPressed: _refreshPasses,
+                child: const Text('Показать пропущенных снова'),
               ),
               if (!_effectiveFilters.isEmpty)
                 TextButton(
