@@ -244,7 +244,6 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
                 decoration: InputDecoration(
                   labelText: 'Новое слово',
                   hintText: 'например, курю',
-                  border: const OutlineInputBorder(),
                   helperText: !_active
                       ? 'Доступно с премиумом'
                       : _limitReached

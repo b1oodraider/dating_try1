@@ -159,7 +159,6 @@ class _SocialTestCardState extends State<SocialTestCard> {
                 controller: _text,
                 decoration: const InputDecoration(
                   labelText: 'Сообщение от анкеты',
-                  border: OutlineInputBorder(),
                   isDense: true,
                 ),
               ),

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/api/realtime.dart';
 import '../../core/format.dart';
@@ -290,8 +291,9 @@ class _ChatScreenState extends State<ChatScreen> {
           SafeArea(
             top: false,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 4, 8),
+              padding: const EdgeInsets.fromLTRB(Gaps.md, Gaps.sm, Gaps.sm, Gaps.sm),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Expanded(
                     child: TextField(
@@ -300,20 +302,42 @@ class _ChatScreenState extends State<ChatScreen> {
                       maxLines: 4,
                       maxLength: 2000,
                       textCapitalization: TextCapitalization.sentences,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         hintText: 'Сообщение',
                         counterText: '',
-                        border: OutlineInputBorder(),
                         isDense: true,
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(Radii.lg),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(Radii.lg),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(Radii.lg),
+                          borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5),
+                        ),
                       ),
                       onSubmitted: (_) => _sendText(),
                     ),
                   ),
-                  IconButton(
-                    tooltip: 'Отправить',
-                    color: theme.colorScheme.primary,
-                    onPressed: _sending ? null : _sendText,
-                    icon: const Icon(Icons.send),
+                  const SizedBox(width: Gaps.sm),
+                  Tooltip(
+                    message: 'Отправить',
+                    child: DecoratedBox(
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: Brand.gradient,
+                      ),
+                      child: IconButton(
+                        onPressed: _sending ? null : _sendText,
+                        color: Colors.white,
+                        icon: const Icon(Icons.send_rounded, semanticLabel: 'Отправить'),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -343,15 +367,19 @@ class _Bubble extends StatelessWidget {
         onLongPress: onReport,
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 3),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.fromLTRB(14, 9, 12, 7),
           constraints: BoxConstraints(
             maxWidth: MediaQuery.of(context).size.width * 0.75,
           ),
           decoration: BoxDecoration(
-            color: mine
-                ? theme.colorScheme.primary
-                : theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(16),
+            gradient: mine ? Brand.gradient : null,
+            color: mine ? null : theme.colorScheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(20),
+              topRight: const Radius.circular(20),
+              bottomLeft: Radius.circular(mine ? 20 : 6),
+              bottomRight: Radius.circular(mine ? 6 : 20),
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -361,8 +389,9 @@ class _Bubble extends StatelessWidget {
                     ? '✨ ${message.sticker ?? ''}'
                     : (message.text ?? ''),
                 style: TextStyle(
-                  color: mine ? theme.colorScheme.onPrimary : null,
+                  color: mine ? Colors.white : theme.colorScheme.onSurface,
                   fontSize: message.isSticker ? 22 : 15,
+                  height: 1.35,
                 ),
               ),
               Row(
@@ -373,7 +402,7 @@ class _Bubble extends StatelessWidget {
                       formatDateTime(time).substring(11),
                       style: TextStyle(
                         fontSize: 10,
-                        color: mine ? Colors.white70 : Colors.black45,
+                        color: mine ? Colors.white70 : theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                   if (mine)

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../core/widgets/empty_state.dart';
+
+import '../../core/theme/app_theme.dart';
 import '../../core/api/realtime.dart';
 import '../../core/models/social.dart';
 import '../discovery/profile_card.dart';
@@ -31,30 +34,63 @@ class ChatsScreen extends StatelessWidget {
           if (controller.matches.isEmpty) {
             return RefreshIndicator(
               onRefresh: controller.load,
-              child: ListView(
-                children: [
-                  const SizedBox(height: 160),
-                  Center(
-                    child: Text(
-                      error ??
-                          'Пока нет пар.\nСтавьте лайки — при взаимной '
-                              'симпатии здесь появится диалог',
-                      textAlign: TextAlign.center,
+              child: LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: SizedBox(
+                    height: constraints.maxHeight,
+                    child: EmptyState(
+                      icon: Icons.chat_bubble_outline_rounded,
+                      title: error == null ? 'Пока нет пар' : 'Не удалось загрузить',
+                      message: error ??
+                          'Ставьте лайки — при взаимной симпатии здесь появится диалог.',
                     ),
                   ),
-                ],
+                ),
               ),
             );
           }
+          // New pairs without messages go to the row on top, conversations below.
+          final fresh = controller.matches.where((m) => m.lastMessage == null).toList();
+          final talks = controller.matches.where((m) => m.lastMessage != null).toList();
+          final theme = Theme.of(context);
           return RefreshIndicator(
             onRefresh: controller.load,
-            child: ListView.separated(
-              itemCount: controller.matches.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, index) =>
-                  _MatchTile(match: controller.matches[index], onTap: () {
-                openChat(context, controller.matches[index].id);
-              }, controller: controller),
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: Gaps.md),
+              children: [
+                if (fresh.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(Gaps.md, Gaps.sm, Gaps.md, Gaps.sm),
+                    child: Text('Новые пары', style: theme.textTheme.titleMedium),
+                  ),
+                  SizedBox(
+                    height: 112,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: Gaps.md),
+                      itemCount: fresh.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 14),
+                      itemBuilder: (context, index) => _NewPair(
+                        match: fresh[index],
+                        photoUrl: controller.api.resolveMediaUrl,
+                        onTap: () => openChat(context, fresh[index].id),
+                      ),
+                    ),
+                  ),
+                ],
+                if (talks.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(Gaps.md, Gaps.md, Gaps.md, Gaps.xs),
+                    child: Text('Сообщения', style: theme.textTheme.titleMedium),
+                  ),
+                for (final match in talks)
+                  _MatchTile(
+                    match: match,
+                    onTap: () => openChat(context, match.id),
+                    controller: controller,
+                  ),
+              ],
             ),
           );
         },
@@ -90,12 +126,14 @@ class _MatchTile extends StatelessWidget {
     final photo = profile.primaryPhoto;
     final last = match.lastMessage;
     final unread = match.unreadCount > 0;
+    final theme = Theme.of(context);
     return ListTile(
       onTap: onTap,
+      minVerticalPadding: 12,
       leading: ClipOval(
         child: SizedBox(
-          width: 52,
-          height: 52,
+          width: 56,
+          height: 56,
           child: NetworkPhoto(
             url: photo == null
                 ? null
@@ -111,7 +149,7 @@ class _MatchTile extends StatelessWidget {
           if (profile.verified)
             const Padding(
               padding: EdgeInsets.only(left: 4),
-              child: Icon(Icons.verified, size: 16, color: Colors.teal),
+              child: Icon(Icons.verified, size: 16, color: Brand.verified),
             ),
         ],
       ),
@@ -123,11 +161,68 @@ class _MatchTile extends StatelessWidget {
                 : (last.mine ? 'Вы: ' : '') + (last.text ?? ''),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: unread ? const TextStyle(fontWeight: FontWeight.bold) : null,
+        style: unread
+            ? theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface, fontWeight: FontWeight.w700)
+            : null,
       ),
       trailing: unread
-          ? Badge(label: Text('${match.unreadCount}'))
+          ? Badge(
+              label: Text('${match.unreadCount}'),
+              largeSize: 22,
+              padding: const EdgeInsets.symmetric(horizontal: 7),
+            )
           : null,
+    );
+  }
+}
+
+/// A new pair without messages: round photo with the brand ring and the name.
+class _NewPair extends StatelessWidget {
+  const _NewPair({required this.match, required this.photoUrl, required this.onTap});
+
+  final Match match;
+  final String Function(String url) photoUrl;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final photo = match.profile.primaryPhoto;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(Radii.md),
+      child: SizedBox(
+        width: 76,
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(3),
+              decoration: const BoxDecoration(shape: BoxShape.circle, gradient: Brand.gradient),
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Theme.of(context).colorScheme.surface,
+                ),
+                child: ClipOval(
+                  child: SizedBox(
+                    width: 64,
+                    height: 64,
+                    child: NetworkPhoto(url: photo == null ? null : photoUrl(photo.url)),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              match.profile.displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

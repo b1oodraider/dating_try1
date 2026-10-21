@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/format.dart';
@@ -137,22 +138,56 @@ class _GachaScreenState extends State<GachaScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(Gaps.md, Gaps.sm, Gaps.md, Gaps.lg),
         children: [
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.confirmation_number_outlined),
-              title: Text('Билеты: $_tickets'),
-              subtitle: shards == null
-                  ? null
-                  : Text('Осколки: ${shards.balance} '
-                      '(${shards.shardsPerTicket} = 1 билет)'),
-              trailing: shards != null && shards.affordableTickets > 0
-                  ? FilledButton.tonal(
+          Container(
+            margin: const EdgeInsets.only(bottom: Gaps.md),
+            padding: const EdgeInsets.all(Gaps.md + 4),
+            decoration: BoxDecoration(
+              gradient: Brand.gradient,
+              borderRadius: BorderRadius.circular(Radii.lg),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.confirmation_number_rounded, color: Colors.white, size: 32),
+                    const SizedBox(width: Gaps.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Билеты: $_tickets',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(color: Colors.white)),
+                          if (shards != null)
+                            Text(
+                              'Осколки: ${shards.balance} · ${shards.shardsPerTicket} = 1 билет',
+                              style: const TextStyle(color: Colors.white70),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (shards != null && shards.affordableTickets > 0) ...[
+                  const SizedBox(height: Gaps.md),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Brand.rose,
+                      ),
                       onPressed: _exchanging ? null : _exchange,
-                      child: Text('Обменять на ${shards.affordableTickets}'),
-                    )
-                  : null,
+                      child: Text('Обменять осколки на ${shards.affordableTickets} бил.'),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
           if (_banners.isEmpty)
@@ -183,7 +218,7 @@ class _BannerCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(Gaps.md + 4),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -193,9 +228,15 @@ class _BannerCard extends StatelessWidget {
                     child: Text(banner.title, style: theme.textTheme.titleLarge),
                   ),
                   if (banner.limited)
-                    const Chip(
-                      label: Text('Лимитный'),
-                      visualDensity: VisualDensity.compact,
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Brand.gold.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(100),
+                      ),
+                      child: Text('Лимитный',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                              color: const Color(0xFFB45309), fontWeight: FontWeight.w800)),
                     ),
                 ],
               ),
@@ -205,8 +246,18 @@ class _BannerCard extends StatelessWidget {
                   child: Text(banner.description!),
                 ),
               if (endsAt != null)
-                Text('До ${formatDateTime(endsAt)}',
-                    style: theme.textTheme.bodySmall),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Row(
+                    children: [
+                      Icon(Icons.schedule_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                      const SizedBox(width: 4),
+                      Text('До ${formatDateTime(endsAt)}',
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                    ],
+                  ),
+                ),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
@@ -216,11 +267,21 @@ class _BannerCard extends StatelessWidget {
                     _RewardChip(rarity: entry.rarity, reward: entry.reward),
                 ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                '1 крутка — ${banner.costPerPull} билет, '
-                '${banner.multiPullSize} круток — ${banner.multiPullCost}',
-                style: theme.textTheme.bodySmall,
+              const SizedBox(height: Gaps.md),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '1 крутка — ${banner.costPerPull} бил. · '
+                      '${banner.multiPullSize} круток — ${banner.multiPullCost}',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                  Text('Открыть',
+                      style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.primary)),
+                  Icon(Icons.chevron_right_rounded, color: theme.colorScheme.primary),
+                ],
               ),
             ],
           ),
@@ -254,7 +315,7 @@ class _RewardChip extends StatelessWidget {
             child: FittedBox(
               child: item != null
                   ? ItemPreview(item: item)
-                  : const Icon(Icons.workspace_premium, color: Colors.amber),
+                  : const Icon(Icons.workspace_premium, color: Brand.gold),
             ),
           ),
           const SizedBox(width: 6),
@@ -380,7 +441,7 @@ class _BannerScreenState extends State<BannerScreen> {
                         child: entry.reward.item != null
                             ? ItemPreview(item: entry.reward.item!)
                             : const Icon(Icons.workspace_premium,
-                                color: Colors.amber),
+                                color: Brand.gold),
                       ),
                     ),
                     title: Text(entry.reward.label),
@@ -491,7 +552,7 @@ class _ResultsSheet extends StatelessWidget {
                             child: r.reward.item != null
                                 ? ItemPreview(item: r.reward.item!)
                                 : const Icon(Icons.workspace_premium,
-                                    color: Colors.amber),
+                                    color: Brand.gold),
                           ),
                         ),
                         title: Text(r.reward.label),

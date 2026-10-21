@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_exception.dart';
+import '../../core/widgets/empty_state.dart';
 import '../../core/models/account.dart';
 import '../../core/models/discovery_filters.dart';
 import '../../core/models/public_profile.dart';
@@ -521,11 +522,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         title: const Text('Анкеты'),
         actions: [
           IconButton(
-            tooltip: 'Вернуть последнюю анкету',
-            icon: const Icon(Icons.undo),
-            onPressed: _undo,
-          ),
-          IconButton(
             tooltip: 'Фильтры',
             icon: Badge(
               isLabelVisible: !_effectiveFilters.isEmpty,
@@ -548,24 +544,17 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     final error = _error;
     if (error != null) {
       if (_needsProfile) {
-        return Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.person_search, size: 56),
-                const SizedBox(height: 12),
-                Text(error, textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: widget.onOpenProfile,
-                  child: const Text('Заполнить анкету'),
-                ),
-                TextButton(onPressed: _retry, child: const Text('Обновить')),
-              ],
+        return EmptyState(
+          icon: Icons.person_search_rounded,
+          title: 'Почти готово',
+          message: error,
+          actions: [
+            FilledButton(
+              onPressed: widget.onOpenProfile,
+              child: const Text('Заполнить анкету'),
             ),
-          ),
+            TextButton(onPressed: _retry, child: const Text('Обновить')),
+          ],
         );
       }
       return _ErrorView(message: error, onRetry: _retry);
@@ -578,30 +567,23 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
     final verifyToSeeMore = _verifyToSeeMore;
     if (_items.isEmpty && verifyToSeeMore != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.verified_user_outlined, size: 56),
-              const SizedBox(height: 12),
-              Text(verifyToSeeMore, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: _openVerification,
-                child: const Text('Подтвердить селфи'),
-              ),
-              TextButton(
-                onPressed: () {
-                  setState(() => _verifyToSeeMore = null);
-                  _retry();
-                },
-                child: const Text('Обновить'),
-              ),
-            ],
+      return EmptyState(
+        icon: Icons.verified_user_outlined,
+        title: 'На сегодня всё',
+        message: verifyToSeeMore,
+        actions: [
+          FilledButton(
+            onPressed: _openVerification,
+            child: const Text('Подтвердить селфи'),
           ),
-        ),
+          TextButton(
+            onPressed: () {
+              setState(() => _verifyToSeeMore = null);
+              _retry();
+            },
+            child: const Text('Обновить'),
+          ),
+        ],
       );
     }
 
@@ -613,38 +595,24 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (_loadingMore || _pending > 0) {
         return const Center(child: CircularProgressIndicator());
       }
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.travel_explore, size: 56),
-              const SizedBox(height: 12),
-              Text(
-                _reacted.isEmpty
-                    ? 'Пока нет подходящих анкет'
-                    : 'Вы посмотрели все анкеты',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 12),
-              FilledButton.tonal(
-                onPressed: _retry,
-                child: const Text('Обновить'),
-              ),
-              TextButton(
-                onPressed: _refreshPasses,
-                child: const Text('Показать пропущенных снова'),
-              ),
-              if (!_effectiveFilters.isEmpty)
-                TextButton(
-                  onPressed: _resetFilters,
-                  child: const Text('Сбросить фильтры'),
-                ),
-            ],
+      return EmptyState(
+        icon: Icons.travel_explore_rounded,
+        title: _reacted.isEmpty ? 'Пока нет подходящих анкет' : 'Вы посмотрели все анкеты',
+        message: _effectiveFilters.isEmpty
+            ? 'Загляните позже — новые люди появляются каждый день.'
+            : 'Попробуйте ослабить фильтры.',
+        actions: [
+          FilledButton(onPressed: _retry, child: const Text('Обновить')),
+          OutlinedButton(
+            onPressed: _refreshPasses,
+            child: const Text('Показать пропущенных снова'),
           ),
-        ),
+          if (!_effectiveFilters.isEmpty)
+            TextButton(
+              onPressed: _resetFilters,
+              child: const Text('Сбросить фильтры'),
+            ),
+        ],
       );
     }
 
@@ -654,6 +622,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       photoUrl: widget.session.api.resolveMediaUrl,
       onSwipe: _react,
       onOpenDetails: _openDetails,
+      onUndo: _undo,
     );
   }
 }
@@ -665,24 +634,10 @@ class _ErrorView extends StatelessWidget {
   final VoidCallback onRetry;
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.cloud_off, size: 48),
-            const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center),
-            const SizedBox(height: 16),
-            FilledButton.tonal(
-              onPressed: onRetry,
-              child: const Text('Повторить'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => EmptyState(
+        icon: Icons.wifi_off_rounded,
+        title: 'Не удалось загрузить',
+        message: message,
+        actions: [FilledButton(onPressed: onRetry, child: const Text('Повторить'))],
+      );
 }

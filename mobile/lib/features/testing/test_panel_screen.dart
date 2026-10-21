@@ -370,7 +370,6 @@ class _TestPanelScreenState extends State<TestPanelScreen> {
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 decoration: InputDecoration(
                   labelText: 'Дней',
-                  border: const OutlineInputBorder(),
                   isDense: true,
                   errorText: _premiumDaysError,
                   errorMaxLines: 2,
@@ -424,7 +423,6 @@ class _TestPanelScreenState extends State<TestPanelScreen> {
           decoration: InputDecoration(
             labelText: 'Код предмета',
             hintText: 'выберите или введите',
-            border: const OutlineInputBorder(),
             isDense: true,
             errorText: _codeError,
             suffixIcon: PopupMenuButton<String>(
@@ -457,7 +455,6 @@ class _TestPanelScreenState extends State<TestPanelScreen> {
                 },
                 decoration: InputDecoration(
                   labelText: 'Количество',
-                  border: const OutlineInputBorder(),
                   isDense: true,
                   errorText: _quantityError,
                   errorMaxLines: 2,

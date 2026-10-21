@@ -344,7 +344,6 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
         decoration: const InputDecoration(
           labelText: 'Город',
           hintText: 'Любой',
-          border: OutlineInputBorder(),
         ),
       ),
       const SizedBox(height: 16),

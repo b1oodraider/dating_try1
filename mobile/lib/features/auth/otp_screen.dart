@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/models/auth.dart';
 import 'session_controller.dart';
@@ -69,14 +70,16 @@ class _OtpScreenState extends State<OtpScreen> {
     final destination = widget.challenge.maskedPhone ?? widget.phone;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Код подтверждения')),
+      appBar: AppBar(),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(Gaps.lg, Gaps.sm, Gaps.lg, Gaps.lg),
           children: [
+            Text('Введите код', style: theme.textTheme.headlineMedium),
+            const SizedBox(height: Gaps.sm),
             Text(
-              'Мы отправили код на $destination',
-              style: theme.textTheme.bodyLarge,
+              'Мы отправили его на $destination',
+              style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
             if (devCode != null) ...[
               const SizedBox(height: 16),
@@ -103,9 +106,11 @@ class _OtpScreenState extends State<OtpScreen> {
               maxLength: 6,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               onSubmitted: (_) => _submit(),
+              textAlign: TextAlign.center,
+              style: theme.textTheme.headlineMedium?.copyWith(letterSpacing: 12),
               decoration: InputDecoration(
-                labelText: 'Код из SMS',
-                border: const OutlineInputBorder(),
+                hintText: '••••••',
+                counterText: '',
                 errorText: _error,
                 errorMaxLines: 3,
               ),

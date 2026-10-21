@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../core/models/public_profile.dart';
+import '../../core/theme/app_theme.dart';
 import '../premium/premium_badge.dart';
 import 'profile_card.dart';
 
@@ -18,6 +19,7 @@ class SwipeDeck extends StatefulWidget {
     required this.photoUrl,
     required this.onSwipe,
     required this.onOpenDetails,
+    this.onUndo,
   });
 
   final List<PublicProfile> profiles;
@@ -26,6 +28,9 @@ class SwipeDeck extends StatefulWidget {
   final String Function(String url) photoUrl;
   final void Function(PublicProfile profile, SwipeAction action) onSwipe;
   final void Function(PublicProfile profile) onOpenDetails;
+
+  /// Shows the «back» button in the action row (premium; the server answers 403 otherwise).
+  final VoidCallback? onUndo;
 
   @override
   State<SwipeDeck> createState() => SwipeDeckState();
@@ -130,7 +135,7 @@ class SwipeDeckState extends State<SwipeDeck>
       children: [
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            padding: const EdgeInsets.fromLTRB(Gaps.md, Gaps.xs, Gaps.md, 0),
             child: LayoutBuilder(
               builder: (context, constraints) => Stack(
                 children: [
@@ -179,19 +184,19 @@ class SwipeDeckState extends State<SwipeDeck>
                               ),
                               _Stamp(
                                 text: 'ЛАЙК',
-                                color: Colors.green,
+                                color: Brand.like,
                                 alignment: Alignment.topLeft,
                                 opacity: ((_drag.dx - 30) / 90).clamp(0.0, 1.0),
                               ),
                               _Stamp(
-                                text: 'ПРОПУСК',
-                                color: Colors.red,
+                                text: 'НЕТ',
+                                color: Brand.pass,
                                 alignment: Alignment.topRight,
                                 opacity: ((-_drag.dx - 30) / 90).clamp(0.0, 1.0),
                               ),
                               _Stamp(
                                 text: 'СУПЕРЛАЙК',
-                                color: Colors.blue,
+                                color: Brand.superlike,
                                 alignment: Alignment.bottomCenter,
                                 opacity: _drag.dx.abs() < 80
                                     ? ((-_drag.dy - 40) / 90).clamp(0.0, 1.0)
@@ -208,30 +213,39 @@ class SwipeDeckState extends State<SwipeDeck>
           ),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14),
+          padding: const EdgeInsets.fromLTRB(Gaps.md, Gaps.md, Gaps.md, Gaps.md),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
+              if (widget.onUndo != null)
+                _RoundButton(
+                  icon: Icons.replay_rounded,
+                  color: Brand.gold,
+                  tooltip: 'Вернуть последнюю анкету',
+                  size: 48,
+                  onPressed: widget.onUndo,
+                ),
               _RoundButton(
-                icon: Icons.close,
-                color: Colors.red,
+                icon: Icons.close_rounded,
+                color: Brand.pass,
                 tooltip: 'Пропустить',
+                size: 64,
                 onPressed: top == null ? null : () => swipe(SwipeAction.pass),
               ),
-              const SizedBox(width: 20),
               _RoundButton(
-                icon: Icons.star,
-                color: Colors.blue,
+                icon: Icons.star_rounded,
+                color: Brand.superlike,
                 tooltip: 'Суперлайк',
-                small: true,
+                size: 52,
                 onPressed:
                     top == null ? null : () => swipe(SwipeAction.superlike),
               ),
-              const SizedBox(width: 20),
               _RoundButton(
-                icon: Icons.favorite,
-                color: Colors.pink,
+                icon: Icons.favorite_rounded,
+                color: Brand.like,
                 tooltip: 'Нравится',
+                size: 64,
+                filled: true,
                 onPressed: top == null ? null : () => swipe(SwipeAction.like),
               ),
             ],
@@ -269,152 +283,203 @@ class _CardFace extends StatelessWidget {
       if (profile.heightCm != null) '${profile.heightCm} см',
     ].join(' · ');
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Opaque base: the card below must never show through a loading photo.
-          const ColoredBox(color: Colors.black),
-          NetworkPhoto(url: photo == null ? null : photoUrl(photo.url)),
-          if (photos.length > 1)
-            Positioned(
-              top: 8,
-              left: 10,
-              right: 10,
-              child: Row(
-                children: [
-                  for (var i = 0; i < photos.length; i++)
-                    Expanded(
-                      child: Container(
-                        height: 4,
-                        margin: const EdgeInsets.symmetric(horizontal: 2),
-                        decoration: BoxDecoration(
-                          color: i == photoIndex
-                              ? Colors.white
-                              : Colors.white.withValues(alpha: 0.4),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          Positioned(
-            top: 20,
-            right: 12,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (profile.compatibility != null)
-                  _Pill('${profile.compatibility}% совпадение'),
-                if (profile.verified) const _Pill('✓ Проверен'),
-              ],
-            ),
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(Radii.card),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
           ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: DecoratedBox(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [Colors.black87, Colors.transparent],
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 48, 8, 16),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(Radii.card),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Opaque base: the card below must never show through a loading photo.
+            const ColoredBox(color: Colors.black),
+            NetworkPhoto(url: photo == null ? null : photoUrl(photo.url)),
+            if (photos.length > 1)
+              Positioned(
+                top: 10,
+                left: 12,
+                right: 12,
                 child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Wrap(
-                            spacing: 8,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              Text(
-                                [
-                                  profile.displayName,
-                                  if (profile.age != null) '${profile.age}',
-                                ].join(', '),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 26,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              if (profile.premium) const PremiumBadge(),
-                            ],
+                    for (var i = 0; i < photos.length; i++)
+                      Expanded(
+                        child: Container(
+                          height: 4,
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          decoration: BoxDecoration(
+                            color: i == photoIndex
+                                ? Colors.white
+                                : Colors.white.withValues(alpha: 0.38),
+                            borderRadius: BorderRadius.circular(2),
                           ),
-                          if (details.isNotEmpty)
-                            Text(details,
-                                style: const TextStyle(color: Colors.white70)),
-                          if ((profile.dailyStatusText ?? '').isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 6),
-                              child: Text(
-                                '«${profile.dailyStatusText}»',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.amberAccent,
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                            ),
-                          if (profile.tags.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
-                                children: [
-                                  for (final tag in profile.tags.take(3))
-                                    _Pill(tag.label),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (onInfo != null)
-                      IconButton(
-                        tooltip: 'Подробнее',
-                        onPressed: onInfo,
-                        icon: const Icon(Icons.info_outline, color: Colors.white),
+                        ),
                       ),
                   ],
                 ),
               ),
+            if (profile.compatibility != null)
+              Positioned(
+                top: 24,
+                left: 12,
+                child: _Pill(
+                  '${profile.compatibility}% совпадение',
+                  icon: Icons.auto_awesome,
+                  gradient: Brand.gradient,
+                ),
+              ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: DecoratedBox(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    stops: [0, 0.55, 1],
+                    colors: [Color(0xE6000000), Color(0x80000000), Colors.transparent],
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(Gaps.md + 4, 64, Gaps.sm, Gaps.md + 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Wrap(
+                              spacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text.rich(
+                                  TextSpan(children: [
+                                    TextSpan(
+                                      text: profile.displayName,
+                                      style: const TextStyle(fontWeight: FontWeight.w800),
+                                    ),
+                                    if (profile.age != null)
+                                      TextSpan(
+                                        text: '  ${profile.age}',
+                                        style: const TextStyle(fontWeight: FontWeight.w400),
+                                      ),
+                                  ]),
+                                  style: theme.textTheme.headlineMedium?.copyWith(
+                                    color: Colors.white,
+                                    fontSize: 30,
+                                  ),
+                                ),
+                                if (profile.verified)
+                                  const Tooltip(
+                                    message: 'Селфи проверено модератором',
+                                    child: Icon(Icons.verified, color: Brand.verified, size: 26),
+                                  ),
+                                if (profile.premium) const PremiumBadge(),
+                              ],
+                            ),
+                            if (details.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.place_outlined, size: 16, color: Colors.white70),
+                                    const SizedBox(width: 4),
+                                    Flexible(
+                                      child: Text(
+                                        details,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if ((profile.dailyStatusText ?? '').isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: Gaps.sm),
+                                child: Text(
+                                  '«${profile.dailyStatusText}»',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: const Color(0xFFFFD7A8),
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ),
+                            if (profile.tags.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: Gaps.sm + 2),
+                                child: Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: [
+                                    for (final tag in profile.tags.take(3)) _Pill(tag.label),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (onInfo != null)
+                        IconButton(
+                          tooltip: 'Подробнее',
+                          onPressed: onInfo,
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.white.withValues(alpha: 0.18),
+                          ),
+                          icon: const Icon(Icons.keyboard_arrow_up_rounded, color: Colors.white, size: 28),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
 class _Pill extends StatelessWidget {
-  const _Pill(this.text);
+  const _Pill(this.text, {this.icon, this.gradient});
 
   final String text;
+  final IconData? icon;
+  final Gradient? gradient;
 
   @override
   Widget build(BuildContext context) => Container(
-        margin: const EdgeInsets.only(bottom: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.black54,
-          borderRadius: BorderRadius.circular(12),
+          color: gradient == null ? Colors.white.withValues(alpha: 0.2) : null,
+          gradient: gradient,
+          borderRadius: BorderRadius.circular(100),
         ),
-        child: Text(text,
-            style: const TextStyle(color: Colors.white, fontSize: 12)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 14, color: Colors.white),
+              const SizedBox(width: 4),
+            ],
+            Text(text,
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+          ],
+        ),
       );
 }
 
@@ -440,20 +505,29 @@ class _Stamp extends StatelessWidget {
         padding: const EdgeInsets.all(28),
         child: Opacity(
           opacity: opacity,
-          child: Container(
+          child: Transform.rotate(
+            angle: alignment == Alignment.topLeft
+                ? -0.25
+                : alignment == Alignment.topRight
+                    ? 0.25
+                    : 0,
+            child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.15),
               border: Border.all(color: color, width: 4),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
               text,
               style: TextStyle(
                 color: color,
-                fontSize: 28,
+                fontSize: 30,
                 fontWeight: FontWeight.w900,
+                letterSpacing: 1,
               ),
             ),
+          ),
           ),
         ),
       ),
@@ -461,33 +535,66 @@ class _Stamp extends StatelessWidget {
   }
 }
 
+/// Round action button: white (surface) disc with a coloured icon and a soft shadow; [filled] uses the
+/// brand gradient instead (the main action).
 class _RoundButton extends StatelessWidget {
   const _RoundButton({
     required this.icon,
     required this.color,
     required this.tooltip,
     required this.onPressed,
-    this.small = false,
+    required this.size,
+    this.filled = false,
   });
 
   final IconData icon;
   final Color color;
   final String tooltip;
   final VoidCallback? onPressed;
-  final bool small;
+  final double size;
+  final bool filled;
 
   @override
   Widget build(BuildContext context) {
-    final size = small ? 52.0 : 64.0;
-    return SizedBox(
-      width: size,
-      height: size,
-      child: IconButton.outlined(
-        tooltip: tooltip,
-        onPressed: onPressed,
-        iconSize: small ? 26 : 32,
-        color: color,
-        icon: Icon(icon),
+    final scheme = Theme.of(context).colorScheme;
+    final enabled = onPressed != null;
+    return Tooltip(
+      message: tooltip,
+      child: Semantics(
+        button: true,
+        label: tooltip,
+        enabled: enabled,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 150),
+          opacity: enabled ? 1 : 0.45,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: filled ? Brand.gradient : null,
+              color: filled ? null : scheme.surfaceContainerLowest,
+              boxShadow: [
+                BoxShadow(
+                  color: (filled ? Brand.like : Colors.black).withValues(alpha: filled ? 0.35 : 0.12),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Material(
+              type: MaterialType.transparency,
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: onPressed,
+                child: SizedBox(
+                  width: size,
+                  height: size,
+                  child: Icon(icon, size: size * 0.5, color: filled ? Colors.white : color),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

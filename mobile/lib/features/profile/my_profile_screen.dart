@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/format.dart';
 import '../../core/models/account.dart';
@@ -305,73 +306,30 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(Gaps.md, Gaps.sm, Gaps.md, Gaps.xl),
         children: [
           for (final r in _restrictions)
             Card(
-              color: Colors.amber.shade100,
+              color: theme.colorScheme.errorContainer,
               child: ListTile(
-                leading: const Icon(Icons.shield_outlined),
+                leading: Icon(Icons.shield_outlined, color: theme.colorScheme.onErrorContainer),
                 title: Text(_restrictionText[r.kind] ?? r.kind),
                 subtitle: Text(r.endsAt == null
                     ? 'До решения модератора'
                     : 'До ${formatDateTime(r.endsAt!)}'),
               ),
             ),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          profile.isPublished
-                              ? 'Анкета опубликована'
-                              : profile.publicationStatus == 'HIDDEN'
-                                  ? 'Анкета скрыта'
-                                  : 'Черновик',
-                          style: theme.textTheme.titleMedium,
-                        ),
-                      ),
-                      Text('${profile.completenessPercent}%'),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  LinearProgressIndicator(
-                      value: profile.completenessPercent / 100),
-                  if (profile.missingForPublish.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        'Для публикации нужно: ${profile.missingForPublish.map((f) => _missingText[f] ?? f).join(', ')}',
-                        style: TextStyle(color: theme.colorScheme.error),
-                      ),
-                    ),
-                  for (final tip in pendingTips.take(3))
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text('• ${tip.text} (+${tip.weight}%)'),
-                    ),
-                  const SizedBox(height: 8),
-                  FilledButton(
-                    onPressed: _saving ? null : _togglePublished,
-                    child: Text(profile.isPublished
-                        ? 'Скрыть анкету'
-                        : 'Опубликовать'),
-                  ),
-                ],
-              ),
-            ),
+          _Header(
+            profile: profile,
+            photoUrl: widget.session.api.resolveMediaUrl,
+            missing: profile.missingForPublish.map((f) => _missingText[f] ?? f).toList(),
+            tips: pendingTips.take(2).map((t) => '${t.text} (+${t.weight}%)').toList(),
+            onTogglePublished: _saving ? null : _togglePublished,
           ),
-          const SizedBox(height: 12),
-          Text('Фото (${profile.photos.length}/${MyProfile.maxPhotos})',
-              style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
+          const SizedBox(height: Gaps.lg),
+          _Section('Фото · ${profile.photos.length} из ${MyProfile.maxPhotos}'),
           SizedBox(
-            height: 128,
+            height: 140,
             child: ListView(
               scrollDirection: Axis.horizontal,
               children: [
@@ -390,10 +348,10 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                       child: Stack(
                         children: [
                           ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(Radii.md),
                             child: SizedBox(
-                              width: 96,
-                              height: 128,
+                              width: 105,
+                              height: 140,
                               child: NetworkPhoto(
                                   url: widget.session.api
                                       .resolveMediaUrl(photo.url)),
@@ -403,7 +361,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                             const Positioned(
                               left: 4,
                               top: 4,
-                              child: Icon(Icons.star, color: Colors.amber),
+                              child: Icon(Icons.star_rounded, color: Brand.gold),
                             ),
                           if (photo.underReview)
                             Positioned(
@@ -429,28 +387,47 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                   ),
                 if (profile.photos.length < MyProfile.maxPhotos)
                   SizedBox(
-                    width: 96,
-                    child: OutlinedButton(
-                      onPressed: _uploading ? null : _addPhoto,
-                      child: _uploading
-                          ? const CircularProgressIndicator()
-                          : const Icon(Icons.add_a_photo_outlined),
+                    width: 105,
+                    child: Material(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(Radii.md),
+                        side: BorderSide(
+                            color: theme.colorScheme.primary.withValues(alpha: 0.35), width: 1.5),
+                      ),
+                      child: InkWell(
+                        customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.md)),
+                        onTap: _uploading ? null : _addPhoto,
+                        child: Center(
+                          child: _uploading
+                              ? const CircularProgressIndicator()
+                              : Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.add_a_photo_outlined, color: theme.colorScheme.primary),
+                                    const SizedBox(height: 6),
+                                    Text('Добавить',
+                                        style: theme.textTheme.labelLarge
+                                            ?.copyWith(color: theme.colorScheme.primary)),
+                                  ],
+                                ),
+                        ),
+                      ),
                     ),
                   ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: Gaps.lg),
+          const _Section('Обо мне'),
           _field(_name, 'Имя', 'displayName'),
           _buildIdentity(profile, theme),
           _buildPlace(profile, theme),
           _field(_about, 'О себе', 'aboutText', lines: 4, maxLength: 1000),
           _field(_status, 'Статус на сегодня (24 часа)', 'dailyStatusText',
               maxLength: 200),
-          const SizedBox(height: 8),
-          Text('Карточки общения (до ${MyProfile.maxTags})',
-              style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
+          const SizedBox(height: Gaps.sm),
+          const _Section('Карточки общения · до ${MyProfile.maxTags}'),
           Wrap(
             spacing: 6,
             runSpacing: 6,
@@ -470,15 +447,20 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                 ),
             ],
           ),
-          const SizedBox(height: 16),
-          FilledButton.tonal(
+          const SizedBox(height: Gaps.lg),
+          FilledButton(
             onPressed: _saving ? null : _save,
-            child: Text(_saving ? 'Сохраняем…' : 'Сохранить'),
+            child: Text(_saving ? 'Сохраняем…' : 'Сохранить изменения'),
           ),
-          const Divider(height: 32),
+          const SizedBox(height: Gaps.xl),
+          const _Section('Настройки'),
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
           ListTile(
             leading: Icon(profile.verified ? Icons.verified : Icons.camera_front_outlined,
-                color: profile.verified ? Colors.teal : null),
+                color: profile.verified ? Brand.verified : null),
             title: Text(profile.verified
                 ? 'Селфи проверено'
                 : 'Пройти проверку селфи'),
@@ -503,6 +485,9 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
               title: const Text('Тест-панель'),
               onTap: () => _push(TestPanelScreen(session: widget.session)),
             ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -519,7 +504,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             decoration: InputDecoration(
               labelText: 'Город',
               errorText: _fieldErrors['cityId'] ?? _fieldErrors['city'],
-              border: const OutlineInputBorder(),
               suffixIcon: const Icon(Icons.search),
             ),
             child: InkWell(
@@ -668,7 +652,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                   ? 'Можно уточнить дату, но не возраст'
                   : 'Покажем только возраст${profile.age == null ? '' : ' (${profile.age})'}',
               errorText: _fieldErrors['birthDate'],
-              border: const OutlineInputBorder(),
             ),
           ),
         ),
@@ -726,7 +709,6 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           decoration: InputDecoration(
             labelText: label,
             errorText: _fieldErrors[field],
-            border: const OutlineInputBorder(),
           ),
         ),
       );
@@ -744,5 +726,144 @@ class _DateMask extends TextInputFormatter {
     }
     final text = buffer.toString();
     return TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+  }
+}
+
+class _Section extends StatelessWidget {
+  const _Section(this.title);
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: Gaps.sm + 2),
+        child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+      );
+}
+
+/// My photo with a completeness ring, the publication state and what is left to do.
+class _Header extends StatelessWidget {
+  const _Header({
+    required this.profile,
+    required this.photoUrl,
+    required this.missing,
+    required this.tips,
+    required this.onTogglePublished,
+  });
+
+  final MyProfile profile;
+  final String Function(String url) photoUrl;
+  final List<String> missing;
+  final List<String> tips;
+  final VoidCallback? onTogglePublished;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final photo = profile.photos.isEmpty ? null : profile.photos.first;
+    final percent = profile.completenessPercent;
+    final (label, color) = profile.isPublished
+        ? ('Опубликована', const Color(0xFF16A34A))
+        : profile.publicationStatus == 'HIDDEN'
+            ? ('Скрыта', scheme.onSurfaceVariant)
+            : ('Черновик', Brand.gold);
+    return Container(
+      padding: const EdgeInsets.all(Gaps.md + 4),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(Radii.card),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 84,
+                height: 84,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CircularProgressIndicator(
+                      value: percent / 100,
+                      strokeWidth: 4,
+                      strokeCap: StrokeCap.round,
+                      backgroundColor: scheme.outlineVariant,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(7),
+                      child: ClipOval(
+                        child: NetworkPhoto(url: photo == null ? null : photoUrl(photo.url)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: Gaps.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      [
+                        (profile.displayName ?? '').isNotEmpty ? profile.displayName! : 'Без имени',
+                        if (profile.age != null) '${profile.age}',
+                      ].join(', '),
+                      style: theme.textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: Gaps.sm,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(100),
+                          ),
+                          child: Text(label,
+                              style: theme.textTheme.labelMedium
+                                  ?.copyWith(color: color, fontWeight: FontWeight.w700)),
+                        ),
+                        Text('Заполнено на $percent%',
+                            style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (missing.isNotEmpty) ...[
+            const SizedBox(height: Gaps.md),
+            Text('Для публикации нужно: ${missing.join(', ')}',
+                style: theme.textTheme.bodyMedium?.copyWith(color: scheme.error)),
+          ],
+          for (final tip in tips)
+            Padding(
+              padding: const EdgeInsets.only(top: Gaps.sm),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.lightbulb_outline_rounded, size: 18, color: Brand.gold),
+                  const SizedBox(width: Gaps.sm),
+                  Expanded(child: Text(tip, style: theme.textTheme.bodyMedium)),
+                ],
+              ),
+            ),
+          const SizedBox(height: Gaps.md),
+          SizedBox(
+            width: double.infinity,
+            child: profile.isPublished
+                ? OutlinedButton(onPressed: onTogglePublished, child: const Text('Скрыть анкету'))
+                : FilledButton(onPressed: onTogglePublished, child: const Text('Опубликовать')),
+          ),
+        ],
+      ),
+    );
   }
 }

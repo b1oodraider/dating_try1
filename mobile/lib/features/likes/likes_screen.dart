@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_theme.dart';
+import '../../core/widgets/empty_state.dart';
+
 import '../../core/api/api_client.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/api/realtime.dart';
@@ -143,99 +146,240 @@ class _LikesScreenState extends State<LikesScreen> {
   Widget _buildBody() {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_premiumRequired) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'Кто вас лайкнул, видно с премиумом.\n'
-            'Без него эти люди встретятся вам в ленте.',
-            textAlign: TextAlign.center,
-          ),
-        ),
+      return const EmptyState(
+        icon: Icons.lock_outline_rounded,
+        title: 'Кто вас лайкнул — с премиумом',
+        message: 'Без премиума эти люди всё равно встретятся вам в ленте.',
       );
     }
     final error = _error;
     if (error != null) {
-      return Center(
-        child: TextButton(
-          onPressed: _load,
-          child: Text('$error\nПовторить', textAlign: TextAlign.center),
-        ),
+      return EmptyState(
+        icon: Icons.wifi_off_rounded,
+        title: 'Не удалось загрузить',
+        message: error,
+        actions: [FilledButton(onPressed: _load, child: const Text('Повторить'))],
       );
     }
     if (_likes.isEmpty) {
       return RefreshIndicator(
         onRefresh: _load,
-        child: ListView(
-          children: const [
-            SizedBox(height: 160),
-            Center(child: Text('Пока новых симпатий нет')),
-          ],
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: SizedBox(
+              height: constraints.maxHeight,
+              child: const EmptyState(
+                icon: Icons.favorite_border_rounded,
+                title: 'Пока новых симпатий нет',
+                message: 'Заполненная анкета с несколькими фото собирает больше лайков.',
+              ),
+            ),
+          ),
         ),
       );
     }
+    final more = _likes.length < _total;
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(8),
-        itemCount: _likes.length + (_likes.length < _total ? 1 : 0),
-        itemBuilder: (context, index) {
-          if (index == _likes.length) {
-            return Center(
-              child: TextButton(
-                onPressed: _loadingMore ? null : _loadMore,
-                child: Text(_loadingMore ? 'Загрузка…' : 'Показать ещё'),
+      child: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(Gaps.md, Gaps.sm, Gaps.md, Gaps.md),
+            sliver: SliverGrid.builder(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 0.68,
               ),
-            );
-          }
-          final like = _likes[index];
-          final profile = like.profile;
-          final photo = profile.primaryPhoto;
-          return Card(
-            child: ListTile(
-              onTap: () => showProfileDetails(context,
-                  api: widget.api, profile: profile),
-              leading: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: SizedBox(
-                  width: 56,
-                  height: 72,
-                  child: NetworkPhoto(
-                    url: photo == null
-                        ? null
-                        : widget.api.resolveMediaUrl(photo.url),
+              itemCount: _likes.length,
+              itemBuilder: (context, index) => _LikeCard(
+                like: _likes[index],
+                photoUrl: widget.api.resolveMediaUrl,
+                onOpen: () => showProfileDetails(context,
+                    api: widget.api, profile: _likes[index].profile),
+                onPass: () => _answer(_likes[index], false),
+                onLike: () => _answer(_likes[index], true),
+              ),
+            ),
+          ),
+          if (more)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: Gaps.lg),
+                child: Center(
+                  child: TextButton(
+                    onPressed: _loadingMore ? null : _loadMore,
+                    child: Text(_loadingMore ? 'Загрузка…' : 'Показать ещё'),
                   ),
                 ),
               ),
-              title: Text([
-                profile.displayName,
-                if (profile.age != null) '${profile.age}',
-              ].join(', ')),
-              subtitle: Text([
-                if (like.superlike) '⭐ Суперлайк',
-                if (profile.compatibility != null)
-                  '${profile.compatibility}% совпадение',
-                if ((profile.city ?? '').isNotEmpty) profile.city!,
-              ].join(' · ')),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    tooltip: 'Пропустить',
-                    icon: const Icon(Icons.close),
-                    onPressed: () => _answer(like, false),
-                  ),
-                  IconButton.filled(
-                    tooltip: 'Ответить взаимностью',
-                    icon: const Icon(Icons.favorite),
-                    onPressed: () => _answer(like, true),
-                  ),
-                ],
-              ),
             ),
-          );
-        },
+        ],
       ),
     );
   }
+}
+
+/// A person who liked me: photo with name, and «no» / «like back» right on the card.
+class _LikeCard extends StatelessWidget {
+  const _LikeCard({
+    required this.like,
+    required this.photoUrl,
+    required this.onOpen,
+    required this.onPass,
+    required this.onLike,
+  });
+
+  final ReceivedLike like;
+  final String Function(String url) photoUrl;
+  final VoidCallback onOpen;
+  final VoidCallback onPass;
+  final VoidCallback onLike;
+
+  @override
+  Widget build(BuildContext context) {
+    final profile = like.profile;
+    final photo = profile.primaryPhoto;
+    final theme = Theme.of(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(Radii.lg),
+      child: Material(
+        color: Colors.black,
+        child: InkWell(
+          onTap: onOpen,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              NetworkPhoto(url: photo == null ? null : photoUrl(photo.url)),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.center,
+                    colors: [Color(0xD9000000), Colors.transparent],
+                  ),
+                ),
+              ),
+              if (like.superlike)
+                Positioned(
+                  top: Gaps.sm,
+                  left: Gaps.sm,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Brand.superlike,
+                      borderRadius: BorderRadius.circular(100),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.star_rounded, size: 14, color: Colors.white),
+                        SizedBox(width: 2),
+                        Text('Суперлайк',
+                            style: TextStyle(
+                                color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                  ),
+                ),
+              Positioned(
+                left: Gaps.sm + 4,
+                right: Gaps.sm,
+                bottom: Gaps.sm,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            [
+                              profile.displayName,
+                              if (profile.age != null) '${profile.age}',
+                            ].join(', '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium?.copyWith(color: Colors.white),
+                          ),
+                        ),
+                        if (profile.verified)
+                          const Padding(
+                            padding: EdgeInsets.only(left: 4),
+                            child: Icon(Icons.verified, size: 16, color: Brand.verified),
+                          ),
+                      ],
+                    ),
+                    if (profile.compatibility != null)
+                      Text('${profile.compatibility}% совпадение',
+                          style: theme.textTheme.bodySmall?.copyWith(color: Colors.white70)),
+                    const SizedBox(height: Gaps.sm),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _CardAction(
+                            icon: Icons.close_rounded,
+                            tooltip: 'Пропустить',
+                            onPressed: onPass,
+                          ),
+                        ),
+                        const SizedBox(width: Gaps.sm),
+                        Expanded(
+                          child: _CardAction(
+                            icon: Icons.favorite_rounded,
+                            tooltip: 'Ответить взаимностью',
+                            onPressed: onLike,
+                            gradient: Brand.gradient,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CardAction extends StatelessWidget {
+  const _CardAction({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    this.gradient,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+  final Gradient? gradient;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: tooltip,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: gradient,
+            color: gradient == null ? Colors.white.withValues(alpha: 0.22) : null,
+            borderRadius: BorderRadius.circular(100),
+          ),
+          child: Material(
+            type: MaterialType.transparency,
+            shape: const StadiumBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onPressed,
+              child: SizedBox(
+                height: 40,
+                child: Icon(icon, color: Colors.white, size: 22, semanticLabel: tooltip),
+              ),
+            ),
+          ),
+        ),
+      );
 }

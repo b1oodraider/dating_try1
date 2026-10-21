@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/models/public_profile.dart';
@@ -63,7 +64,7 @@ Future<ProfileDetailsResult?> showProfileDetails(
                   tooltip: 'Суперлайк',
                   onPressed: () => Navigator.of(sheetContext)
                       .pop(ProfileDetailsResult.superlike),
-                  icon: const Icon(Icons.star, color: Colors.blue),
+                  icon: const Icon(Icons.star_rounded, color: Brand.superlike),
                 ),
                 const SizedBox(width: 8),
                 Expanded(

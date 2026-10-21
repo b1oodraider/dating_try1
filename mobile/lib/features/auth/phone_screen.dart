@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/models/auth.dart';
 import 'otp_screen.dart';
@@ -68,17 +69,43 @@ class _PhoneScreenState extends State<PhoneScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Вход')),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(Gaps.lg, 56, Gaps.lg, Gaps.lg),
           children: [
-            Text(
-              'Введите номер телефона — мы отправим код подтверждения.',
-              style: Theme.of(context).textTheme.bodyLarge,
+            Center(
+              child: Container(
+                width: 88,
+                height: 88,
+                decoration: BoxDecoration(
+                  gradient: Brand.gradient,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Brand.rose.withValues(alpha: 0.35),
+                      blurRadius: 24,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 44),
+              ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: Gaps.xl),
+            Text(
+              'Найдите своего человека',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.headlineMedium,
+            ),
+            const SizedBox(height: Gaps.sm),
+            Text(
+              'Введите номер телефона — пришлём код для входа.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: Gaps.xl),
             TextField(
               controller: _phoneController,
               enabled: !_submitting,
@@ -93,12 +120,12 @@ class _PhoneScreenState extends State<PhoneScreen> {
               decoration: InputDecoration(
                 labelText: 'Телефон',
                 hintText: '+7 999 123-45-67',
-                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.phone_iphone_rounded),
                 errorText: _error,
                 errorMaxLines: 3,
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: Gaps.md),
             FilledButton(
               onPressed: _submitting ? null : _submit,
               child: _submitting

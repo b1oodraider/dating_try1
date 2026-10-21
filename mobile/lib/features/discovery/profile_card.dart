@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../core/models/decoration.dart';
 import '../../core/models/public_profile.dart';
 import '../cosmetics/cosmetic_visuals.dart';
@@ -73,7 +74,7 @@ class ProfileCard extends StatelessWidget {
                     if (profile.verified)
                       const Tooltip(
                         message: 'Селфи проверено модератором',
-                        child: Icon(Icons.verified, color: Colors.teal, size: 20),
+                        child: Icon(Icons.verified, color: Brand.verified, size: 20),
                       ),
                     if (profile.compatibility != null)
                       Chip(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'core/theme/app_theme.dart';
 import 'features/auth/phone_screen.dart';
 import 'features/auth/session_controller.dart';
 import 'features/home/home_screen.dart';
@@ -46,13 +47,12 @@ class _DatingAppState extends State<DatingApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Dating MVP',
+      title: 'Dating',
       navigatorKey: _navigatorKey,
       scaffoldMessengerKey: _messengerKey,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.pink),
-        useMaterial3: true,
-      ),
+      theme: buildLightTheme(),
+      darkTheme: buildDarkTheme(),
+      themeMode: ThemeMode.system,
       home: AuthGate(session: widget.session),
     );
   }

@@ -132,7 +132,6 @@ class _ReportSheetState extends State<_ReportSheet> {
                 maxLines: 3,
                 decoration: const InputDecoration(
                   labelText: 'Комментарий (необязательно)',
-                  border: OutlineInputBorder(),
                 ),
               ),
               if (_error != null)

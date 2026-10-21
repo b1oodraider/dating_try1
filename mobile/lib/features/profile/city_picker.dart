@@ -72,7 +72,6 @@ class _CityPickerState extends State<_CityPicker> {
                   labelText: 'Город',
                   hintText: 'Например, Питер или Казань',
                   prefixIcon: Icon(Icons.search),
-                  border: OutlineInputBorder(),
                 ),
                 onChanged: _onChanged,
               ),
