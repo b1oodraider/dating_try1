@@ -107,7 +107,8 @@ jobs:
       - run: |
           cp apk/app-release.apk web/dating.apk
           # The app compares this build number with its own («Проверить обновления»).
-          echo "{\"build\": ${{ github.run_number }}, \"apk\": \"/dating.apk\"}" > web/app-version.json
+          SHA=$(sha256sum web/dating.apk | cut -d' ' -f1)
+          echo "{\"build\": ${{ github.run_number }}, \"apk\": \"/dating.apk\", \"sha256\": \"$SHA\"}" > web/app-version.json
       - name: Ship to the server
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}

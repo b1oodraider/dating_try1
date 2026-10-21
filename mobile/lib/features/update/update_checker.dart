@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:ota_update/ota_update.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api/api_client.dart';
@@ -11,12 +13,15 @@ import '../../core/api/api_exception.dart';
 
 /// A newer APK published by CI next to the web app.
 class UpdateInfo {
-  const UpdateInfo({required this.build, required this.apkUrl});
+  const UpdateInfo({required this.build, required this.apkUrl, this.sha256});
 
   final int build;
 
   /// Absolute download URL.
   final String apkUrl;
+
+  /// Checked after download when present (CI writes it).
+  final String? sha256;
 }
 
 /// Reads `<api origin>/app-version.json` (`{"build": 42, "apk": "/dating.apk"}`)
@@ -40,10 +45,14 @@ Future<UpdateInfo?> checkForUpdate(DatingApiClient api,
   final installed =
       int.tryParse((await PackageInfo.fromPlatform()).buildNumber) ?? 0;
   if (build <= installed) return null;
-  return UpdateInfo(build: build, apkUrl: api.resolveMediaUrl(apk));
+  final sha = json['sha256'];
+  return UpdateInfo(
+      build: build,
+      apkUrl: api.resolveMediaUrl(apk),
+      sha256: sha is String && sha.length == 64 ? sha : null);
 }
 
-/// «Доступно обновление» with «Скачать», which opens the APK in the browser.
+/// «Доступно обновление» with «Обновить»: downloads the APK inside the app and opens the system installer.
 Future<void> showUpdateDialog(BuildContext context, UpdateInfo info) =>
     showDialog<void>(
       context: context,
@@ -51,23 +60,22 @@ Future<void> showUpdateDialog(BuildContext context, UpdateInfo info) =>
         icon: const Icon(Icons.system_update_rounded),
         title: const Text('Доступно обновление'),
         content: Text('Вышла новая версия приложения (сборка ${info.build}). '
-            'Скачайте APK и установите его поверх текущего.'),
+            'Скачаем и предложим установить — данные и вход сохранятся.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('Позже'),
           ),
           FilledButton(
-            onPressed: () async {
+            onPressed: () {
               Navigator.of(dialogContext).pop();
-              final opened = await launchUrl(Uri.parse(info.apkUrl),
-                  mode: LaunchMode.externalApplication);
-              if (!opened && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('Не удалось открыть ссылку на APK')));
-              }
+              showDialog<void>(
+                context: context,
+                barrierDismissible: false,
+                builder: (_) => _InstallDialog(info: info),
+              );
             },
-            child: const Text('Скачать'),
+            child: const Text('Обновить'),
           ),
         ],
       ),
@@ -117,4 +125,95 @@ class _CheckForUpdatesTileState extends State<CheckForUpdatesTile> {
             : null,
         onTap: _checking ? null : _check,
       );
+}
+
+/// Download progress; the system installer takes over when the file is ready. On failure the APK can still be
+/// opened in the browser.
+class _InstallDialog extends StatefulWidget {
+  const _InstallDialog({required this.info});
+
+  final UpdateInfo info;
+
+  @override
+  State<_InstallDialog> createState() => _InstallDialogState();
+}
+
+class _InstallDialogState extends State<_InstallDialog> {
+  StreamSubscription<OtaEvent>? _events;
+  double? _progress;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    try {
+      _events = OtaUpdate()
+          .execute(widget.info.apkUrl,
+              destinationFilename: 'dating-update.apk', sha256checksum: widget.info.sha256)
+          .listen(_onEvent, onError: (Object e) => _fail('$e'));
+    } catch (e) {
+      _error = '$e';
+    }
+  }
+
+  void _onEvent(OtaEvent event) {
+    if (!mounted) return;
+    switch (event.status) {
+      case OtaStatus.DOWNLOADING:
+        setState(() => _progress = (double.tryParse(event.value ?? '') ?? 0) / 100);
+      case OtaStatus.INSTALLING:
+      case OtaStatus.INSTALLATION_DONE:
+      case OtaStatus.CANCELED:
+        Navigator.of(context).pop();
+      case OtaStatus.PERMISSION_NOT_GRANTED_ERROR:
+        _fail('Разрешите установку из этого приложения в настройках Android и попробуйте снова');
+      case OtaStatus.CHECKSUM_ERROR:
+        _fail('Файл скачался с ошибкой, попробуйте ещё раз');
+      default:
+        _fail(event.value ?? event.status.name);
+    }
+  }
+
+  void _fail(String message) {
+    if (mounted) setState(() => _error = message);
+  }
+
+  @override
+  void dispose() {
+    _events?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final error = _error;
+    final progress = _progress;
+    return AlertDialog(
+      title: Text(error == null ? 'Скачиваем обновление' : 'Не получилось обновить'),
+      content: error == null
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LinearProgressIndicator(value: progress),
+                const SizedBox(height: 12),
+                Text(progress == null ? 'Подключаемся…' : '${(progress * 100).round()}%'),
+              ],
+            )
+          : Text(error),
+      actions: [
+        if (error != null)
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              launchUrl(Uri.parse(widget.info.apkUrl), mode: LaunchMode.externalApplication);
+            },
+            child: const Text('Скачать в браузере'),
+          ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(error == null ? 'Скрыть' : 'Закрыть'),
+        ),
+      ],
+    );
+  }
 }
