@@ -47,4 +47,10 @@ tasks.withType(JavaCompile).configureEach {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // CI keeps no test reports: print the full assertion message and stack trace of a failure in the log.
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+        showStandardStreams = false
+    }
 }
