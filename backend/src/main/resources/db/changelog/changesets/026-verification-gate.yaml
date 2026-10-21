@@ -1,0 +1,69 @@
+databaseChangeLog:
+  # docs/matching.md, part 1: verification as a gate. Likes of an unverified account wait here and are sent when
+  # the selfie is approved; a queued like dies after app.verification-gate.queued-like-ttl, time under review
+  # does not count. The liked profile leaves the liker's feed as with a normal like.
+  - changeSet:
+      id: 026-verification-gate
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE queued_likes (
+                actor_account_id  UUID NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+                target_account_id UUID NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+                liked_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                PRIMARY KEY (actor_account_id, target_account_id)
+              )
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE FUNCTION social_hides_profile(viewer UUID, owner UUID, pass_ttl_seconds BIGINT)
+              RETURNS BOOLEAN
+              LANGUAGE sql STABLE AS $$
+                SELECT EXISTS (
+                         SELECT 1 FROM profile_reactions r
+                         WHERE r.actor_account_id = viewer AND r.target_account_id = owner
+                           AND (r.type <> 'PASS' OR r.reacted_at > now() - make_interval(secs => pass_ttl_seconds)))
+                    OR EXISTS (
+                         SELECT 1 FROM account_blocks b
+                         WHERE (b.blocker_account_id = viewer AND b.blocked_account_id = owner)
+                            OR (b.blocker_account_id = owner AND b.blocked_account_id = viewer))
+                    OR EXISTS (
+                         SELECT 1 FROM profile_hides h
+                         WHERE h.viewer_account_id = viewer AND h.hidden_account_id = owner)
+                    OR EXISTS (
+                         SELECT 1 FROM queued_likes l
+                         WHERE l.actor_account_id = viewer AND l.target_account_id = owner)
+              $$
+        # Seconds the account's selfies spent under review since the like (the queue clock is paused then).
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE FUNCTION review_seconds_since(account UUID, since TIMESTAMPTZ)
+              RETURNS DOUBLE PRECISION LANGUAGE sql STABLE AS $$
+                SELECT COALESCE(sum(GREATEST(0, EXTRACT(EPOCH FROM
+                         LEAST(COALESCE(v.decided_at, now()), now()) - GREATEST(v.submitted_at, since)))), 0)
+                  FROM verification_requests v
+                 WHERE v.account_id = account AND v.submitted_at IS NOT NULL
+              $$
+      rollback:
+        - sql:
+            splitStatements: false
+            sql: |
+              DROP FUNCTION review_seconds_since(UUID, TIMESTAMPTZ);
+              CREATE OR REPLACE FUNCTION social_hides_profile(viewer UUID, owner UUID, pass_ttl_seconds BIGINT)
+              RETURNS BOOLEAN
+              LANGUAGE sql STABLE AS $$
+                SELECT EXISTS (
+                         SELECT 1 FROM profile_reactions r
+                         WHERE r.actor_account_id = viewer AND r.target_account_id = owner
+                           AND (r.type <> 'PASS' OR r.reacted_at > now() - make_interval(secs => pass_ttl_seconds)))
+                    OR EXISTS (
+                         SELECT 1 FROM account_blocks b
+                         WHERE (b.blocker_account_id = viewer AND b.blocked_account_id = owner)
+                            OR (b.blocker_account_id = owner AND b.blocked_account_id = viewer))
+                    OR EXISTS (
+                         SELECT 1 FROM profile_hides h
+                         WHERE h.viewer_account_id = viewer AND h.hidden_account_id = owner)
+              $$;
+              DROP TABLE queued_likes;

@@ -261,6 +261,50 @@ public class SocialRepository {
                 .param("a", account).update();
     }
 
+    // ---------------------------------------------------------------- verification gate
+
+    /** Test accounts are exempt from the gate. */
+    public boolean verifiedOrTest(UUID account) {
+        return jdbc.sql("""
+                        SELECT a.test_account OR p.verified_at IS NOT NULL
+                          FROM accounts a LEFT JOIN profiles p ON p.account_id = a.id
+                         WHERE a.id = :a
+                        """)
+                .param("a", account).query(Boolean.class).optional().orElse(false);
+    }
+
+    public void queueLike(UUID actor, UUID target) {
+        jdbc.sql("INSERT INTO queued_likes (actor_account_id, target_account_id) VALUES (:a, :t) ON CONFLICT DO NOTHING")
+                .param("a", actor).param("t", target).update();
+    }
+
+    /**
+     * Removes the actor's queued likes and returns the targets still worth a like: not expired (review time
+     * does not count), the target active, published and not blocked either way.
+     */
+    public List<UUID> takeQueuedLikes(UUID actor, long ttlSeconds) {
+        List<UUID> alive = jdbc.sql("""
+                        SELECT l.target_account_id FROM queued_likes l
+                          JOIN accounts a ON a.id = l.target_account_id AND a.status = 'ACTIVE'
+                          JOIN profiles p ON p.account_id = a.id
+                               AND p.publication_status = 'PUBLISHED' AND p.visibility_status = 'PUBLIC'
+                         WHERE l.actor_account_id = :actor
+                           AND l.liked_at + make_interval(secs => :ttl + review_seconds_since(:actor, l.liked_at)) > now()
+                           AND NOT EXISTS (SELECT 1 FROM account_blocks b
+                                            WHERE (b.blocker_account_id = :actor AND b.blocked_account_id = a.id)
+                                               OR (b.blocker_account_id = a.id AND b.blocked_account_id = :actor))
+                         ORDER BY l.liked_at
+                        """)
+                .param("actor", actor).param("ttl", ttlSeconds).query(UUID.class).list();
+        jdbc.sql("DELETE FROM queued_likes WHERE actor_account_id = :actor").param("actor", actor).update();
+        return alive;
+    }
+
+    /** shortcut: queued likes of people who never verify stay a month (they hide profiles from their feed). */
+    public int dropOldQueuedLikes() {
+        return jdbc.sql("DELETE FROM queued_likes WHERE liked_at < now() - interval '30 days'").update();
+    }
+
     // ---------------------------------------------------------------- hides
 
     /** One-sided: I stop seeing the person; they lose nothing. */
@@ -330,6 +374,8 @@ public class SocialRepository {
         jdbc.sql("DELETE FROM profile_hides WHERE viewer_account_id = :id OR hidden_account_id = :id")
                 .param("id", accountId).update();
         jdbc.sql("DELETE FROM social_account_state WHERE account_id = :id").param("id", accountId).update();
+        jdbc.sql("DELETE FROM queued_likes WHERE actor_account_id = :id OR target_account_id = :id")
+                .param("id", accountId).update();
     }
 
     // ---------------------------------------------------------------- mapping

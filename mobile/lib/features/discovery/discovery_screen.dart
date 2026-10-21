@@ -9,6 +9,7 @@ import '../../core/models/public_profile.dart';
 import '../../core/models/wallet.dart';
 import '../auth/session_controller.dart';
 import '../chat/match_dialog.dart';
+import '../safety/verification_screen.dart';
 import 'discovery_filters_screen.dart';
 import 'profile_details_sheet.dart';
 import 'swipe_deck.dart';
@@ -52,6 +53,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   /// The feed refused: my gender, who I look for or birth date are missing.
   bool _needsProfile = false;
+
+  /// Unverified and the daily views are used up (429 DAILY_VIEWS_LIMIT).
+  String? _verifyToSeeMore;
+
+  /// The «your like waits for verification» hint was shown in this session.
+  bool _queuedHintShown = false;
 
   /// The server had nothing beyond the cards already in the deck.
   bool _exhausted = false;
@@ -135,6 +142,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (generation != _generation) return;
       // On 401 the SessionController already switches to the login screen.
       if (e is ApiException && e.isUnauthorized) return;
+      if (_dailyLimitOn(e)) return;
       if (_lockAdvancedFiltersOn(e)) {
         await _loadFirstPage();
         return;
@@ -248,6 +256,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       if (!mounted) return;
       if (generation != _generation) return;
       if (e is ApiException && e.isUnauthorized) return;
+      if (_dailyLimitOn(e)) return;
       if (_lockAdvancedFiltersOn(e)) {
         await _restartFeed(refreshState: false);
         return;
@@ -382,6 +391,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         SwipeAction.pass => api.pass(profile.id),
       };
       if (!mounted) return;
+      if (result.queued && !_queuedHintShown) {
+        _queuedHintShown = true;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Лайк отправится, когда подтвердите селфи'),
+          action: SnackBarAction(label: 'Подтвердить', onPressed: _openVerification),
+        ));
+      }
       final matchId = result.matchId;
       if (result.matched && matchId != null) {
         showMatchDialog(
@@ -450,6 +466,22 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(describeError(e))));
     }
+  }
+
+  void _openVerification() {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => VerificationScreen(api: widget.session.api)));
+  }
+
+  /// True when [error] is the daily limit of an unverified account.
+  bool _dailyLimitOn(Object error) {
+    if (error is! ApiException || error.code != 'DAILY_VIEWS_LIMIT') return false;
+    setState(() {
+      _verifyToSeeMore = error.message;
+      _loading = false;
+      _loadingMore = false;
+    });
+    return true;
   }
 
   static String _newKey() =>
@@ -543,6 +575,35 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _maybeRefill();
     });
+
+    final verifyToSeeMore = _verifyToSeeMore;
+    if (_items.isEmpty && verifyToSeeMore != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.verified_user_outlined, size: 56),
+              const SizedBox(height: 12),
+              Text(verifyToSeeMore, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: _openVerification,
+                child: const Text('Подтвердить селфи'),
+              ),
+              TextButton(
+                onPressed: () {
+                  setState(() => _verifyToSeeMore = null);
+                  _retry();
+                },
+                child: const Text('Обновить'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     if (_items.isEmpty) {
       final loadMoreError = _loadMoreError;

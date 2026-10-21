@@ -293,6 +293,8 @@ export interface ProfileTip {
 export interface ReactionResult {
   matched: boolean;
   matchId?: string;
+  /** The like waits until my selfie is verified. */
+  queued?: boolean;
 }
 
 export type MessageType = 'TEXT' | 'STICKER';

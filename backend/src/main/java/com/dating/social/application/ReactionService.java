@@ -1,7 +1,9 @@
 package com.dating.social.application;
 
 import com.dating.safety.application.LikeSpamDetector;
+import com.dating.safety.application.AccountVerifiedEvent;
 import com.dating.safety.application.RestrictionGuard;
+import com.dating.safety.application.VerificationGateProperties;
 import com.dating.safety.domain.RestrictionKind;
 import com.dating.common.errors.ApiException;
 import com.dating.economy.application.EconomyService;
@@ -11,7 +13,9 @@ import com.dating.social.domain.MatchInfo;
 import com.dating.social.domain.ReactionType;
 import com.dating.social.persistence.SocialRepository;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +50,7 @@ public class ReactionService {
     private final LikeSpamDetector likeSpamDetector;
     private final FeatureAccess featureAccess;
     private final PublicProfileAssembler profiles;
+    private final VerificationGateProperties gate;
 
     /** Undos in a row; the window does not slide with undos (after 2 undos, 3 more, not 5). */
     static final int MAX_UNDOS_IN_ROW = 5;
@@ -56,7 +61,8 @@ public class ReactionService {
                            EconomyService economyService, ApplicationEventPublisher eventPublisher,
                            ProductEventPublisher productEvents, RestrictionGuard restrictionGuard,
                            LikeSpamDetector likeSpamDetector, FeatureAccess featureAccess,
-                           PublicProfileAssembler profiles) {
+                           PublicProfileAssembler profiles, VerificationGateProperties gate) {
+        this.gate = gate;
         this.featureAccess = featureAccess;
         this.profiles = profiles;
         this.restrictionGuard = restrictionGuard;
@@ -73,7 +79,31 @@ public class ReactionService {
     public ReactionResultDto like(UUID me, UUID profileId) {
         restrictionGuard.requireAllowed(me, RestrictionKind.LIKES);
         SocialTargets.Counterpart target = targets.requireDiscoverable(me, profileId);
+        if (gate.enabled() && !repository.verifiedOrTest(me)) {
+            if (repository.findReaction(me, target.accountId()).filter(ReactionType::isLike).isPresent()) {
+                return ReactionResultDto.notMatched(); // liked before the gate applied (e.g. a new photo)
+            }
+            repository.queueLike(me, target.accountId());
+            likeSpamDetector.onReaction(me, target.accountId(), ReactionType.LIKE.name());
+            productEvents.publish("like_queued", Map.of());
+            return ReactionResultDto.queuedUntilVerified();
+        }
         return react(me, target.accountId(), ReactionType.LIKE, null);
+    }
+
+    /** Selfie approved: queued likes still alive go out as normal likes (matches, pushes). */
+    @EventListener
+    public void onVerified(AccountVerifiedEvent event) {
+        UUID actor = event.accountId();
+        for (UUID target : repository.takeQueuedLikes(actor, gate.queuedLikeTtl().toSeconds())) {
+            react(actor, target, ReactionType.LIKE, null);
+        }
+    }
+
+    @Scheduled(cron = "0 40 3 * * *", zone = "UTC")
+    @Transactional
+    public void dropOldQueuedLikes() {
+        repository.dropOldQueuedLikes();
     }
 
     /**
@@ -84,6 +114,9 @@ public class ReactionService {
     public ReactionResultDto superlike(UUID me, UUID profileId, String idempotencyKey) {
         restrictionGuard.requireAllowed(me, RestrictionKind.LIKES);
         SocialTargets.Counterpart target = targets.requireDiscoverable(me, profileId);
+        if (gate.enabled() && !repository.verifiedOrTest(me)) {
+            throw ApiException.forbidden("VERIFICATION_REQUIRED", "Суперлайк доступен после подтверждения селфи");
+        }
         return react(me, target.accountId(), ReactionType.SUPERLIKE,
                 "superlike:" + target.accountId() + ":" + idempotencyKey);
     }

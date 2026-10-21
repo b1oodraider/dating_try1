@@ -57,6 +57,7 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
   const accountId = account?.id ?? null;
 
   const { showToast } = useToast();
+  const queuedHintShownRef = useRef(false);
   const [profiles, setProfiles] = useState<PublicProfile[]>([]);
   const [totalElements, setTotalElements] = useState(0);
   /** The server had nothing beyond the cards already in the deck. */
@@ -354,6 +355,10 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
           : kind === 'superlike'
           ? await api.superlikeProfile(target.id, crypto.randomUUID())
           : await api.passProfile(target.id);
+      if (res.queued && !queuedHintShownRef.current) {
+        queuedHintShownRef.current = true;
+        showToast('Лайк отправится, когда подтвердите селфи (Профиль → «Верификация по селфи»)', 'success');
+      }
       if (res.matched) {
         setMatchedProfile(target);
         setMatchId(res.matchId);

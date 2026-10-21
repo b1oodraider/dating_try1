@@ -3,16 +3,20 @@ import 'public_profile.dart';
 
 /// Answer of like / super like / pass (contract `ReactionResult`).
 class ReactionResult {
-  const ReactionResult({required this.matched, this.matchId});
+  const ReactionResult({required this.matched, this.matchId, this.queued = false});
 
   final bool matched;
 
   /// Only when [matched].
   final String? matchId;
 
+  /// The like waits until my selfie is verified.
+  final bool queued;
+
   factory ReactionResult.fromJson(Map<String, dynamic> json) => ReactionResult(
         matched: asBool(json['matched']),
         matchId: asStringOrNull(json['matchId']),
+        queued: asBool(json['queued']),
       );
 }
 

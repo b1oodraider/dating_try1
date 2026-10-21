@@ -86,6 +86,15 @@ public class BehaviorRepository {
                 .param("viewer", viewer).param("targets", targets).update();
     }
 
+    public int distinctShownSince(UUID viewer, java.time.Instant since) {
+        return jdbc.sql("""
+                        SELECT count(DISTINCT target_account_id) FROM feed_impressions
+                         WHERE viewer_account_id = :viewer AND shown_at >= :since
+                        """)
+                .param("viewer", viewer).param("since", java.sql.Timestamp.from(since))
+                .query(Integer.class).single();
+    }
+
     public void recordActiveDay(UUID accountId, LocalDate day) {
         jdbc.sql("INSERT INTO account_activity_days (account_id, day) VALUES (:account, :day) ON CONFLICT DO NOTHING")
                 .param("account", accountId).param("day", day).update();

@@ -59,6 +59,14 @@ public class BehaviorService {
         repository.recordImpressions(viewer, shownAccounts);
     }
 
+    /** Distinct profiles served to the viewer since midnight (Moscow time). */
+    public int profilesShownToday(UUID viewer) {
+        return repository.distinctShownSince(viewer,
+                LocalDate.now(MOSCOW).atStartOfDay(MOSCOW).toInstant());
+    }
+
+    private static final java.time.ZoneId MOSCOW = java.time.ZoneId.of("Europe/Moscow");
+
     @Transactional
     public void recordViews(UUID viewer, List<BehaviorRepository.View> views) {
         repository.recordViews(viewer, views);

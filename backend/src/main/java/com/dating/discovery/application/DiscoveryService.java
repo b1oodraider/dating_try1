@@ -2,6 +2,7 @@ package com.dating.discovery.application;
 
 import com.dating.profiles.application.CompatibilityService;
 import com.dating.safety.application.BehaviorService;
+import com.dating.safety.application.VerificationGateProperties;
 import com.dating.accounts.domain.Account;
 import com.dating.accounts.domain.AccountStatus;
 import com.dating.discovery.api.DiscoveryPageResponseDto;
@@ -31,6 +32,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,12 +62,15 @@ public class DiscoveryService {
     private final BehaviorService behavior;
     private final CompatibilityService compatibilityService;
     private final CityRepository cities;
+    private final VerificationGateProperties gate;
 
     public DiscoveryService(ProfileRepository profileRepository, ProfilePhotoQuery photoQuery,
                             ExclusionWordsService exclusionWords, ProfileDecorationQuery decorationQuery,
                             AccountService accountService, ExcludedGoalsService excludedGoals,
                             FeatureAccess featureAccess, DiscoveryBoosts boosts, BehaviorService behavior,
-                            CompatibilityService compatibilityService, CityRepository cities) {
+                            CompatibilityService compatibilityService, CityRepository cities,
+                            VerificationGateProperties gate) {
+        this.gate = gate;
         this.cities = cities;
         this.behavior = behavior;
         this.compatibilityService = compatibilityService;
@@ -98,6 +103,19 @@ public class DiscoveryService {
                 .and(notInvisibleTo(callerAccountId));
         if (!viewerIsTestAccount) { // seed profiles of test accounts never log in
             spec = spec.and(recentlyActive());
+        }
+        if (gate.enabled() && !viewerIsTestAccount) {
+            spec = spec.and((root, q, cb) -> cb.isNotNull(root.get("verifiedAt")));
+            if (!viewer.isVerified()) {
+                int left = gate.dailyViews() - behavior.profilesShownToday(callerAccountId);
+                if (left <= 0) {
+                    throw ApiException.withDetails("DAILY_VIEWS_LIMIT", "Без подтверждения селфи можно посмотреть "
+                            + gate.dailyViews() + " анкет в день. Пройдите проверку — и ограничений не будет",
+                            HttpStatus.TOO_MANY_REQUESTS, Map.of("limit", gate.dailyViews()));
+                }
+                // shortcut: a smaller last page shifts offsets of later pages; clients refill from page 0 anyway
+                pageRequest = PageRequest.of(query.page(), Math.min(query.limit(), left));
+            }
         }
         spec = spec.and(contributedExclusions(callerAccountId));
         Integer cityId = query.cityId();

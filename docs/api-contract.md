@@ -388,6 +388,15 @@ GET /me/likes/received?page=0&limit=20   page < 0 → 0; limit <= 0 → 20, capp
   403 PREMIUM_REQUIRED details.feature = 'WHO_LIKED_ME' (only while WHO_LIKED_ME is in Wallet.premiumFeatures; free otherwise)
 GET /me/likes/received/count             200 { count, superlikeCount }   (always available, no premium)
 
+## Verification gate (app.verification-gate, on by default; test accounts exempt)
+- Feeds of real users show only profiles with a verified selfie (MyProfile.verified).
+- An unverified viewer sees at most 50 distinct profiles a day (Moscow day):
+  GET /discovery/profiles → 429 DAILY_VIEWS_LIMIT details.limit (the last page may be shorter).
+- An unverified like is queued: 200 { matched: false, queued: true }. Nobody is told, no match yet, the profile leaves
+  my feed. On selfie approval queued likes go out as normal likes (match, push). A queued like dies 24 h after it was
+  made; time while a selfie waits for review does not count.
+- Super like while unverified: 403 VERIFICATION_REQUIRED.
+
 ## Going back in the feed (auth)
 POST /me/reactions/undo   premium UNDO_SWIPE; takes back my newest like or pass  200 PublicProfile (show it again)
   403 PREMIUM_REQUIRED details.feature='UNDO_SWIPE' ; 409 NOTHING_TO_UNDO ; 409 UNDO_LIMIT_REACHED (5 in a row; any new

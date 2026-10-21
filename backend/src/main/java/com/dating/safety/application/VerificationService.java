@@ -81,11 +81,14 @@ public class VerificationService {
     private final ProfileRepository profileRepository;
     private final RoleAccess roleAccess;
     private final AdminAuditLog auditLog;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     public VerificationService(VerificationRepository repository, RestrictionRepository restrictions,
                                SanctionService sanctionService, FileStorageService fileStorage,
                                MediaProperties mediaProperties, PhotoQueryService photoQuery,
-                               ProfileRepository profileRepository, RoleAccess roleAccess, AdminAuditLog auditLog) {
+                               ProfileRepository profileRepository, RoleAccess roleAccess, AdminAuditLog auditLog,
+                               org.springframework.context.ApplicationEventPublisher events) {
+        this.events = events;
         this.repository = repository;
         this.restrictions = restrictions;
         this.sanctionService = sanctionService;
@@ -233,6 +236,7 @@ public class VerificationService {
         fileStorage.deleteAfterCommit(List.of(request.selfieKey()));
         if (approve) {
             repository.setVerified(request.accountId(), true);
+            events.publishEvent(new AccountVerifiedEvent(request.accountId()));
             for (Restriction r : restrictions.active(request.accountId())) {
                 if (r.kind() == RestrictionKind.VERIFICATION_REQUIRED) {
                     sanctionService.lift(r.id(), actor, "selfie verified");

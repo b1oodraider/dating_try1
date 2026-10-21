@@ -21,6 +21,8 @@ app:
         quantity: 1
         period: WEEKLY
         mode: ADD
+  verification-gate:
+    enabled: false # on in VerificationGateIntegrationTest; other tests use unverified users
   testing:
     enabled: true
     test-phones: >-

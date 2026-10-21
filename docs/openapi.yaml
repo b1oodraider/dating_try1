@@ -306,6 +306,7 @@ paths:
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/PremiumRequired' }
+        '429': { description: 'DAILY_VIEWS_LIMIT — без подтверждённого селфи до 50 анкет в день (details.limit)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /me/exclusion-words:
     get:
@@ -571,7 +572,7 @@ paths:
               schema: { $ref: '#/components/schemas/ReactionResult' }
         '400': { description: 'VALIDATION_ERROR | SELF_ACTION', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { description: 'ACCOUNT_RESTRICTED (details.kind = LIKES, details.until)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: 'ACCOUNT_RESTRICTED (details.kind = LIKES, details.until) | VERIFICATION_REQUIRED (селфи не подтверждено)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '404': { description: 'PROFILE_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '409': { $ref: '#/components/responses/InsufficientBalance' }
 
@@ -3111,6 +3112,7 @@ components:
       properties:
         matched: { type: boolean }
         matchId: { type: string, format: uuid, description: Только при matched true }
+        queued: { type: boolean, description: 'true — лайк ждёт подтверждения моего селфи (шлюз верификации); иначе поля нет' }
 
     ReceivedLikesPage:
       type: object
