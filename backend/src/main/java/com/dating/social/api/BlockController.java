@@ -22,6 +22,12 @@ public class BlockController {
         this.blockService = blockService;
     }
 
+    @PostMapping("/api/v1/accounts/{profileId}/hide")
+    public ResponseEntity<Void> hide(@AuthenticationPrincipal AuthenticatedUser user, @PathVariable UUID profileId) {
+        blockService.hide(user.accountId(), profileId);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/api/v1/accounts/{profileId}/block")
     public ResponseEntity<Void> block(@AuthenticationPrincipal AuthenticatedUser user, @PathVariable UUID profileId) {
         blockService.block(user.accountId(), profileId);

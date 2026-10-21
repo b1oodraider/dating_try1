@@ -15,6 +15,15 @@ public final class PremiumFeatures {
     /** The list of people who liked me (GET /me/likes/received); the count is always free. */
     public static final String WHO_LIKED_ME = "WHO_LIKED_ME";
 
+    /** Go back to the last swiped profiles (up to 5 in a row). */
+    public static final String UNDO_SWIPE = "UNDO_SWIPE";
+
+    /** Bring passed profiles back at any time (without it: only when the feed ran out, once a day). */
+    public static final String PASS_REFRESH = "PASS_REFRESH";
+
+    /** Invisible mode: the profile is shown only to people its owner liked. */
+    public static final String INVISIBLE = "INVISIBLE";
+
     private PremiumFeatures() {
     }
 }

@@ -97,7 +97,8 @@ class AdminEconomyIntegrationTest extends AdminTestSupport {
         try {
             admin(get("/api/v1/admin/premium"), null)
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.current.features", contains("TEST_PREMIUM_FEATURE", "ADVANCED_FILTERS", "EXCLUSION_WORDS")))
+                    .andExpect(jsonPath("$.current.features", contains("TEST_PREMIUM_FEATURE", "ADVANCED_FILTERS", "EXCLUSION_WORDS",
+                            "UNDO_SWIPE", "PASS_REFRESH", "INVISIBLE")))
                     .andExpect(jsonPath("$.current.featuresOverridden").value(false))
                     .andExpect(jsonPath("$.defaults.allowances[*].itemCode", contains("TEST_SUPERLIKE", "TEST_TICKET")));
             assertFalse(featureAccess.isAllowed(freeId, "TEST_PREMIUM_FEATURE"));

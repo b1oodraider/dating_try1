@@ -60,7 +60,8 @@ app:
     # Feature codes reserved for premium (checked via FeatureAccess.require). Empty until decided.
     # ADVANCED_FILTERS: search by height/goals + excluded goals; EXCLUSION_WORDS: saved exclusion words.
     # Remove a code to make the feature free. The premium badge is shown for any active premium.
-    premium-features: [ADVANCED_FILTERS, EXCLUSION_WORDS]
+    # UNDO_SWIPE: back to the last swiped profiles; PASS_REFRESH: passed profiles back any time; INVISIBLE: invisible mode.
+    premium-features: [ADVANCED_FILTERS, EXCLUSION_WORDS, UNDO_SWIPE, PASS_REFRESH, INVISIBLE]
     # Consumables granted to premium users every period (into the PERIODIC bucket, spent first).
     #   period: DAILY | WEEKLY | MONTHLY (UTC calendar)
     #   mode:   TOP_UP refills up to quantity (unused units do not pile up); ADD adds quantity every period
@@ -99,8 +100,9 @@ app:
     seed-auto-reply: ${APP_TESTING_SEED_AUTO_REPLY:false}
     seed-auto-reply-delay: 3s
   social:
-    # A "pass" hides the profile from the feed for this long, then it can be shown again.
-    pass-ttl: 30d
+    # A "pass" hides the profile from the feed for this long: in effect until the person brings passed profiles
+    # back themselves (docs/matching.md, part 4).
+    pass-ttl: 3650d
     reports-per-hour: 20
   chat:
     messages-per-minute: 30

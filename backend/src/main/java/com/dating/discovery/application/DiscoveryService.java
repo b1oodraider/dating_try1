@@ -34,6 +34,8 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -92,7 +94,11 @@ public class DiscoveryService {
         Specification<Profile> spec = Specification.where(isVisible())
                 .and(ownerIsActive(viewerIsTestAccount))
                 .and(notOwnedBy(callerAccountId))
-                .and(mutualMatch(viewer, query));
+                .and(mutualMatch(viewer, query))
+                .and(notInvisibleTo(callerAccountId));
+        if (!viewerIsTestAccount) { // seed profiles of test accounts never log in
+            spec = spec.and(recentlyActive());
+        }
         spec = spec.and(contributedExclusions(callerAccountId));
         Integer cityId = query.cityId();
         if (cityId == null && query.city() != null) {
@@ -320,6 +326,24 @@ public class DiscoveryService {
             return cb.exists(account);
         };
     }
+
+    /** Invisible mode works only while premium is on, and never hides from people the owner liked. */
+    private static Specification<Profile> notInvisibleTo(UUID viewerAccountId) {
+        return (root, q, cb) -> cb.or(
+                cb.isFalse(root.get("invisible")),
+                cb.isFalse(cb.function("has_premium", Boolean.class, root.get("accountId"))),
+                cb.isTrue(cb.function("has_liked", Boolean.class, root.get("accountId"), cb.literal(viewerAccountId))));
+    }
+
+    /** Active within {@link #ACTIVE_WITHIN_DAYS} days, or the profile is newer than that. */
+    private static Specification<Profile> recentlyActive() {
+        return (root, q, cb) -> cb.or(
+                cb.isTrue(cb.function("active_within_days", Boolean.class, root.get("accountId"),
+                        cb.literal(ACTIVE_WITHIN_DAYS))),
+                cb.greaterThan(root.get("createdAt"), Instant.now().minus(Duration.ofDays(ACTIVE_WITHIN_DAYS))));
+    }
+
+    static final int ACTIVE_WITHIN_DAYS = 30;
 
     private static Specification<Profile> notOwnedBy(UUID accountId) {
         return (root, q, cb) -> cb.notEqual(root.get("accountId"), accountId);

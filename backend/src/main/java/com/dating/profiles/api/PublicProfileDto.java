@@ -61,7 +61,7 @@ public record PublicProfileDto(
                 decorations,
                 profile.getHeightCm(),
                 ProfileService.goalsOf(profile),
-                premium,
+                premium && profile.isShowPremiumBadge(),
                 profile.isVerified(),
                 compatibility,
                 boosted,

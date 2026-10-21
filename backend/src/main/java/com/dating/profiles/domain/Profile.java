@@ -65,6 +65,14 @@ public class Profile extends AssignedIdEntity {
     @Column(name = "search_radius_km")
     private Integer searchRadiusKm;
 
+    /** Invisible mode (premium): shown only to people this profile liked; ignored while premium is off. */
+    @Column(name = "invisible", nullable = false)
+    private boolean invisible;
+
+    /** Show the premium badge to others (the owner may hide it). */
+    @Column(name = "show_premium_badge", nullable = false)
+    private boolean showPremiumBadge = true;
+
     @Column(name = "about_text", length = 1000)
     private String aboutText;
 
@@ -232,6 +240,24 @@ public class Profile extends AssignedIdEntity {
 
     public void setSearchRadiusKm(Integer searchRadiusKm) {
         this.searchRadiusKm = searchRadiusKm;
+        touch();
+    }
+
+    public boolean isInvisible() {
+        return invisible;
+    }
+
+    public void setInvisible(boolean invisible) {
+        this.invisible = invisible;
+        touch();
+    }
+
+    public boolean isShowPremiumBadge() {
+        return showPremiumBadge;
+    }
+
+    public void setShowPremiumBadge(boolean showPremiumBadge) {
+        this.showPremiumBadge = showPremiumBadge;
         touch();
     }
 

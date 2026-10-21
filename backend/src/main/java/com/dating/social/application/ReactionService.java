@@ -15,6 +15,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.dating.common.entitlements.FeatureAccess;
+import com.dating.common.entitlements.PremiumFeatures;
+import com.dating.profiles.api.PublicProfileDto;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -40,11 +44,21 @@ public class ReactionService {
     private final ProductEventPublisher productEvents;
     private final RestrictionGuard restrictionGuard;
     private final LikeSpamDetector likeSpamDetector;
+    private final FeatureAccess featureAccess;
+    private final PublicProfileAssembler profiles;
+
+    /** Undos in a row; the window does not slide with undos (after 2 undos, 3 more, not 5). */
+    static final int MAX_UNDOS_IN_ROW = 5;
+    /** A free refresh of passed profiles (without premium) at most this often. */
+    static final java.time.Duration FREE_PASS_REFRESH_EVERY = java.time.Duration.ofDays(1);
 
     public ReactionService(SocialRepository repository, SocialTargets targets, MatchService matchService,
                            EconomyService economyService, ApplicationEventPublisher eventPublisher,
                            ProductEventPublisher productEvents, RestrictionGuard restrictionGuard,
-                           LikeSpamDetector likeSpamDetector) {
+                           LikeSpamDetector likeSpamDetector, FeatureAccess featureAccess,
+                           PublicProfileAssembler profiles) {
+        this.featureAccess = featureAccess;
+        this.profiles = profiles;
         this.restrictionGuard = restrictionGuard;
         this.likeSpamDetector = likeSpamDetector;
         this.repository = repository;
@@ -113,6 +127,63 @@ public class ReactionService {
         return repository.deleteReactionsOf(me, passesOnly);
     }
 
+    /**
+     * Premium (UNDO_SWIPE): takes back my newest like or pass and returns that profile, so the feed can show it
+     * again. Up to {@link #MAX_UNDOS_IN_ROW} in a row; a new reaction resets the count. A super like (it spent an
+     * item) and a like that made a match cannot be taken back.
+     */
+    @Transactional
+    public PublicProfileDto undoLastReaction(UUID me) {
+        featureAccess.require(me, PremiumFeatures.UNDO_SWIPE);
+        int undone = repository.lockUndoneInRow(me);
+        if (undone >= MAX_UNDOS_IN_ROW) {
+            throw new ApiException("UNDO_LIMIT_REACHED", "Можно вернуть не больше " + MAX_UNDOS_IN_ROW
+                    + " анкет подряд", HttpStatus.CONFLICT);
+        }
+        SocialRepository.LatestReaction latest = repository.latestReactionOf(me)
+                .orElseThrow(() -> new ApiException("NOTHING_TO_UNDO", "Нечего возвращать", HttpStatus.CONFLICT));
+        repository.lockPair(me, latest.target());
+        if (latest.type() == ReactionType.SUPERLIKE || repository.findActiveMatchBetween(me, latest.target()).isPresent()) {
+            throw new ApiException("CANNOT_UNDO", "Суперлайк и лайк, ставший мэтчем, вернуть нельзя",
+                    HttpStatus.CONFLICT);
+        }
+        repository.deleteReaction(me, latest.target());
+        repository.setUndoneInRow(me, undone + 1);
+        productEvents.publish("reaction_undone", Map.of("type", latest.type().name()));
+        PublicProfileDto profile = profiles.byAccountIds(me, List.of(latest.target())).get(latest.target());
+        if (profile == null) {
+            throw new ApiException("PROFILE_NOT_FOUND", "Анкета больше недоступна", HttpStatus.NOT_FOUND);
+        }
+        return profile;
+    }
+
+    /**
+     * Brings my passed profiles back to the feed. With premium (PASS_REFRESH) any time; without it only when
+     * the feed ran out ({@code feedEmpty}) and at most once a day.
+     *
+     * @return how many profiles came back
+     */
+    @Transactional
+    public int refreshPasses(UUID me, boolean feedEmpty) {
+        if (!featureAccess.isAllowed(me, PremiumFeatures.PASS_REFRESH)) {
+            if (!feedEmpty) {
+                throw ApiException.withDetails("FEED_NOT_EMPTY", "Вернуть пропущенных можно, когда анкеты закончатся "
+                        + "(с премиумом — в любой момент)", HttpStatus.CONFLICT, Map.of("feature", PremiumFeatures.PASS_REFRESH));
+            }
+            repository.lockUndoneInRow(me); // serializes two refreshes of one account
+            java.util.Optional<java.time.Instant> last = repository.lastFreePassRefresh(me);
+            if (last.isPresent() && last.get().plus(FREE_PASS_REFRESH_EVERY).isAfter(java.time.Instant.now())) {
+                throw ApiException.withDetails("PASS_REFRESH_TOO_SOON", "Без премиума пропущенных можно вернуть раз в день",
+                        HttpStatus.TOO_MANY_REQUESTS,
+                        Map.of("retryAt", last.get().plus(FREE_PASS_REFRESH_EVERY).toString()));
+            }
+            repository.markFreePassRefresh(me);
+        }
+        int restored = repository.deleteReactionsOf(me, true);
+        productEvents.publish("passes_refreshed", Map.of("count", restored));
+        return restored;
+    }
+
     private ReactionResultDto react(UUID actor, UUID target, ReactionType type, String spendKey) {
         repository.lockPair(actor, target);
         ReactionType current = repository.findReaction(actor, target).orElse(null);
@@ -122,6 +193,7 @@ public class ReactionService {
                 throw new ApiException("ALREADY_LIKED", "Вы уже лайкнули эту анкету", HttpStatus.CONFLICT);
             }
             repository.upsertReaction(actor, target, ReactionType.PASS); // a repeated pass restarts the TTL
+            repository.setUndoneInRow(actor, 0);
             likeSpamDetector.onReaction(actor, target, ReactionType.PASS.name());
             productEvents.publish("profile_passed", Map.of());
             return ReactionResultDto.notMatched();
@@ -141,6 +213,7 @@ public class ReactionService {
             economyService.spend(actor, SUPERLIKE_ITEM, 1, target.toString(), spendKey);
         }
         repository.upsertReaction(actor, target, type);
+        repository.setUndoneInRow(actor, 0);
         likeSpamDetector.onReaction(actor, target, type.name());
         productEvents.publish(type == ReactionType.SUPERLIKE ? "profile_superliked" : "profile_liked", Map.of());
 

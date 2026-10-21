@@ -73,5 +73,11 @@ public record ProfileUpdateDto(
         Integer searchRadiusKm,
 
         /** true removes the radius (search the city / the whole country). */
-        Boolean clearSearchRadius
+        Boolean clearSearchRadius,
+
+        /** Invisible mode; turning it on needs premium (INVISIBLE). */
+        Boolean invisible,
+
+        /** Show my premium badge to others. */
+        Boolean showPremiumBadge
 ) {}

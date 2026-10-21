@@ -59,6 +59,24 @@ public class PushDeviceRepository {
                 .list();
     }
 
+    /**
+     * Accounts with a published profile and a push device whose last active day was exactly {@code daysAgo}
+     * days ago (one reminder per threshold; test accounts are skipped).
+     */
+    public List<UUID> inactiveFor(int daysAgo) {
+        return jdbc.sql("""
+                        SELECT a.id FROM accounts a
+                          JOIN profiles p ON p.account_id = a.id AND p.publication_status = 'PUBLISHED'
+                         WHERE a.status = 'ACTIVE' AND NOT a.test_account
+                           AND EXISTS (SELECT 1 FROM push_devices d WHERE d.account_id = a.id)
+                           AND (SELECT max(day) FROM account_activity_days ad WHERE ad.account_id = a.id)
+                               = current_date - :days
+                        """)
+                .param("days", daysAgo)
+                .query(UUID.class)
+                .list();
+    }
+
     public void delete(String token) {
         jdbc.sql("DELETE FROM push_devices WHERE token = :token").param("token", token).update();
     }

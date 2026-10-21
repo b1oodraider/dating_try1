@@ -47,3 +47,5 @@ databaseChangeLog:
       file: db/changelog/changesets/023-cities-geo.yaml
   - include:
       file: db/changelog/changesets/024-feed-score.yaml
+  - include:
+      file: db/changelog/changesets/025-hide-undo-invisible.yaml

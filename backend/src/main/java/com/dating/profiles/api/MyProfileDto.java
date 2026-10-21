@@ -46,6 +46,8 @@ public record MyProfileDto(
         Integer cityId,
         Integer searchRadiusKm,
         boolean locationShared,
+        boolean invisible,
+        boolean showPremiumBadge,
         Instant createdAt,
         Instant updatedAt
 ) {}

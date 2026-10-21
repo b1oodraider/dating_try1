@@ -4,6 +4,7 @@ import com.dating.accounts.application.AccountDeletedEvent;
 import com.dating.common.errors.ApiException;
 import com.dating.productevents.application.ProductEventPublisher;
 import com.dating.common.entitlements.FeatureAccess;
+import com.dating.common.entitlements.PremiumFeatures;
 import com.dating.profiles.api.GoalDto;
 import com.dating.profiles.api.MyProfileDto;
 import com.dating.profiles.domain.RelationshipGoal;
@@ -223,6 +224,15 @@ public class ProfileService {
         } else if (dto.searchRadiusKm() != null) {
             profile.setSearchRadiusKm(dto.searchRadiusKm());
         }
+        if (Boolean.TRUE.equals(dto.invisible())) {
+            featureAccess.require(profile.getAccountId(), PremiumFeatures.INVISIBLE);
+        }
+        if (dto.invisible() != null) {
+            profile.setInvisible(dto.invisible());
+        }
+        if (dto.showPremiumBadge() != null) {
+            profile.setShowPremiumBadge(dto.showPremiumBadge());
+        }
         if (dto.aboutText() != null) {
             String about = dto.aboutText().trim();
             profile.setAboutText(about.isEmpty() ? null : about);
@@ -385,6 +395,8 @@ public class ProfileService {
                 profile.getCityId(),
                 profile.getSearchRadiusKm(),
                 profile.hasLocation(),
+                profile.isInvisible(),
+                profile.isShowPremiumBadge(),
                 profile.getCreatedAt(),
                 profile.getUpdatedAt()
         );

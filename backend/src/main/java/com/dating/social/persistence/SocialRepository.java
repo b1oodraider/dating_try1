@@ -209,6 +209,66 @@ public class SocialRepository {
                 .update() == 1;
     }
 
+    // ---------------------------------------------------------------- undo and pass refresh
+
+    public record LatestReaction(UUID target, ReactionType type) {
+    }
+
+    public Optional<LatestReaction> latestReactionOf(UUID actor) {
+        return jdbc.sql("""
+                        SELECT target_account_id, type FROM profile_reactions
+                         WHERE actor_account_id = :actor ORDER BY reacted_at DESC LIMIT 1
+                        """)
+                .param("actor", actor)
+                .query((rs, n) -> new LatestReaction(rs.getObject(1, UUID.class), ReactionType.valueOf(rs.getString(2))))
+                .optional();
+    }
+
+    public void deleteReaction(UUID actor, UUID target) {
+        jdbc.sql("DELETE FROM profile_reactions WHERE actor_account_id = :actor AND target_account_id = :target")
+                .param("actor", actor).param("target", target).update();
+    }
+
+    /** Undos since the last new reaction; locks the account's row (created on first use) until the transaction ends. */
+    public int lockUndoneInRow(UUID account) {
+        jdbc.sql("INSERT INTO social_account_state (account_id) VALUES (:a) ON CONFLICT DO NOTHING")
+                .param("a", account).update();
+        return jdbc.sql("SELECT undone_in_row FROM social_account_state WHERE account_id = :a FOR UPDATE")
+                .param("a", account).query(Integer.class).single();
+    }
+
+    public void setUndoneInRow(UUID account, int count) {
+        jdbc.sql("""
+                        INSERT INTO social_account_state (account_id, undone_in_row) VALUES (:a, :n)
+                        ON CONFLICT (account_id) DO UPDATE SET undone_in_row = EXCLUDED.undone_in_row
+                        """)
+                .param("a", account).param("n", count).update();
+    }
+
+    public Optional<Instant> lastFreePassRefresh(UUID account) {
+        return jdbc.sql("SELECT last_free_pass_refresh FROM social_account_state WHERE account_id = :a")
+                .param("a", account)
+                .query((rs, n) -> Optional.ofNullable(instant(rs, 1)))
+                .optional()
+                .flatMap(o -> o);
+    }
+
+    public void markFreePassRefresh(UUID account) {
+        jdbc.sql("""
+                        INSERT INTO social_account_state (account_id, last_free_pass_refresh) VALUES (:a, now())
+                        ON CONFLICT (account_id) DO UPDATE SET last_free_pass_refresh = now()
+                        """)
+                .param("a", account).update();
+    }
+
+    // ---------------------------------------------------------------- hides
+
+    /** One-sided: I stop seeing the person; they lose nothing. */
+    public void insertHide(UUID viewer, UUID hidden) {
+        jdbc.sql("INSERT INTO profile_hides (viewer_account_id, hidden_account_id) VALUES (:v, :h) ON CONFLICT DO NOTHING")
+                .param("v", viewer).param("h", hidden).update();
+    }
+
     // ---------------------------------------------------------------- blocks
 
     public void insertBlock(UUID blocker, UUID blocked) {
@@ -267,6 +327,9 @@ public class SocialRepository {
                 .param("id", accountId).update();
         jdbc.sql("DELETE FROM account_blocks WHERE blocker_account_id = :id OR blocked_account_id = :id")
                 .param("id", accountId).update();
+        jdbc.sql("DELETE FROM profile_hides WHERE viewer_account_id = :id OR hidden_account_id = :id")
+                .param("id", accountId).update();
+        jdbc.sql("DELETE FROM social_account_state WHERE account_id = :id").param("id", accountId).update();
     }
 
     // ---------------------------------------------------------------- mapping

@@ -28,6 +28,17 @@ public class BlockService {
         this.productEvents = productEvents;
     }
 
+    /**
+     * «Hide»: I stop seeing the person in the feed and in «who liked me»; they lose nothing and are not told.
+     * Idempotent.
+     */
+    @Transactional
+    public void hide(UUID me, UUID profileId) {
+        SocialTargets.Counterpart target = targets.requireCounterpart(me, profileId);
+        repository.insertHide(me, target.accountId());
+        productEvents.publish("profile_hidden_by_viewer", Map.of());
+    }
+
     /** Idempotent: blocking twice is fine. */
     @Transactional
     public void block(UUID me, UUID profileId) {

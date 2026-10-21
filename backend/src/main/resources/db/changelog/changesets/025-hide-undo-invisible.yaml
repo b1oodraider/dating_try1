@@ -1,0 +1,75 @@
+databaseChangeLog:
+  # docs/matching.md: «hide» separate from «block», premium undo of swipes, refreshing passed profiles,
+  # invisible mode and the premium badge switch.
+  - changeSet:
+      id: 025-hide-undo-invisible
+      author: dating-team
+      changes:
+        # «Hide» is one-sided: I stop seeing the person; they lose nothing (unlike a block, which works both ways).
+        - sql:
+            sql: >
+              CREATE TABLE profile_hides (
+                viewer_account_id UUID NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+                hidden_account_id UUID NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+                hidden_at         TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                PRIMARY KEY (viewer_account_id, hidden_account_id)
+              )
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE OR REPLACE FUNCTION social_hides_profile(viewer UUID, owner UUID, pass_ttl_seconds BIGINT)
+              RETURNS BOOLEAN
+              LANGUAGE sql STABLE AS $$
+                SELECT EXISTS (
+                         SELECT 1 FROM profile_reactions r
+                         WHERE r.actor_account_id = viewer AND r.target_account_id = owner
+                           AND (r.type <> 'PASS' OR r.reacted_at > now() - make_interval(secs => pass_ttl_seconds)))
+                    OR EXISTS (
+                         SELECT 1 FROM account_blocks b
+                         WHERE (b.blocker_account_id = viewer AND b.blocked_account_id = owner)
+                            OR (b.blocker_account_id = owner AND b.blocked_account_id = viewer))
+                    OR EXISTS (
+                         SELECT 1 FROM profile_hides h
+                         WHERE h.viewer_account_id = viewer AND h.hidden_account_id = owner)
+              $$
+        # Undo: how many reactions were undone since the last new one (5 at most, the window does not slide
+        # with undos); the last free refresh of passed profiles.
+        - sql:
+            sql: >
+              CREATE TABLE social_account_state (
+                account_id               UUID PRIMARY KEY REFERENCES accounts (id) ON DELETE CASCADE,
+                undone_in_row            INT NOT NULL DEFAULT 0,
+                last_free_pass_refresh   TIMESTAMP WITH TIME ZONE
+              )
+        - sql:
+            sql: >
+              ALTER TABLE profiles
+                ADD COLUMN invisible BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN show_premium_badge BOOLEAN NOT NULL DEFAULT TRUE
+        # Invisible (premium) profiles are shown only to people their owner liked; premium is checked at read time,
+        # so the mode simply stops working when premium ends.
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE FUNCTION has_premium(account UUID)
+              RETURNS BOOLEAN LANGUAGE sql STABLE AS $$
+                SELECT EXISTS (SELECT 1 FROM premium_entitlements e
+                                WHERE e.account_id = account AND e.premium_until > now())
+              $$
+        # Feed shows only people active in the last N days (an abandoned profile wastes likes).
+        - sql:
+            splitStatements: false
+            sql: |
+              CREATE FUNCTION active_within_days(account UUID, days INT)
+              RETURNS BOOLEAN LANGUAGE sql STABLE AS $$
+                SELECT EXISTS (SELECT 1 FROM account_activity_days d
+                                WHERE d.account_id = account AND d.day >= current_date - days)
+              $$
+      rollback:
+        - sql:
+            sql: >
+              DROP FUNCTION active_within_days(UUID, INT);
+              DROP FUNCTION has_premium(UUID);
+              ALTER TABLE profiles DROP COLUMN show_premium_badge, DROP COLUMN invisible;
+              DROP TABLE social_account_state;
+              DROP TABLE profile_hides

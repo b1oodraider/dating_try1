@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
@@ -68,6 +69,23 @@ public class PushService {
         notifyLater(event.targetAccountId(), event.superlike()
                 ? new PushMessage("Суперлайк", "Кто-то отправил вам суперлайк", Map.of("type", "like_received", "superlike", "true"))
                 : new PushMessage("Новый лайк", "Кому-то понравилась ваша анкета", Map.of("type", "like_received", "superlike", "false")));
+    }
+
+    /** Days without activity after which the profile leaves the feed (DiscoveryService.ACTIVE_WITHIN_DAYS). */
+    static final int HIDDEN_AFTER_DAYS = 30;
+
+    /** Reminds 7, 3 and 1 day before an inactive profile leaves the feed (docs/matching.md, part 4). */
+    @Scheduled(cron = "0 0 9 * * *", zone = "Europe/Moscow")
+    public void remindInactive() {
+        for (int daysLeft : new int[]{7, 3, 1}) {
+            PushMessage message = new PushMessage("Вас скоро перестанут показывать",
+                    daysLeft == 1 ? "Зайдите сегодня, иначе анкета пропадёт из ленты"
+                            : "Анкета пропадёт из ленты через " + daysLeft + " дн. — загляните, вас ждут",
+                    Map.of("type", "inactivity_reminder"));
+            for (UUID account : repository.inactiveFor(HIDDEN_AFTER_DAYS - daysLeft)) {
+                deliver(account, message);
+            }
+        }
     }
 
     private void notifyLater(UUID accountId, PushMessage message) {

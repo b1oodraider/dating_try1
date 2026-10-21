@@ -192,8 +192,8 @@ class SocialChatIntegrationTest extends IntegrationTestBase {
         like(blocker, me).andExpect(status().isNotFound());
         like(me, blocker).andExpect(status().isNotFound());
 
-        // A pass expires after app.social.pass-ttl (30 days by default).
-        jdbc.update("UPDATE profile_reactions SET reacted_at = now() - interval '31 days' WHERE actor_account_id = ?",
+        // A pass expires after app.social.pass-ttl (10 years by default: in effect until the person refreshes).
+        jdbc.update("UPDATE profile_reactions SET reacted_at = now() - interval '3651 days' WHERE actor_account_id = ?",
                 me.accountId());
         assertEquals(List.of(passed.profileId().toString(), fresh.profileId().toString()).stream().sorted().toList(),
                 feed(me, city).stream().sorted().toList());

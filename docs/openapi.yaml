@@ -623,6 +623,48 @@ paths:
                   superlikeCount: { type: integer, format: int64 }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /accounts/{profileId}/hide:
+    parameters:
+      - { $ref: '#/components/parameters/ProfileId' }
+    post:
+      summary: Скрыть человека только для себя (в пути — id анкеты)
+      description: Идемпотентно. Пропадает из моей ленты и «кто меня лайкнул»; человек ничего не узнаёт и меня видит.
+      responses:
+        '204': { description: OK }
+        '400': { description: 'SELF_ACTION', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 'PROFILE_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /me/reactions/undo:
+    post:
+      summary: Вернуть последнюю свайпнутую анкету (премиум UNDO_SWIPE)
+      description: Отменяет мой последний лайк или пропуск. До 5 подряд; новый свайп обнуляет счёт. Суперлайк и лайк, ставший мэтчем, не возвращаются.
+      responses:
+        '200': { description: Анкета, которую снова показать, content: { application/json: { schema: { $ref: '#/components/schemas/PublicProfile' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'PREMIUM_REQUIRED (details.feature = UNDO_SWIPE)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: 'PROFILE_NOT_FOUND', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: 'NOTHING_TO_UNDO | UNDO_LIMIT_REACHED | CANNOT_UNDO', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /me/passes/refresh:
+    post:
+      summary: Вернуть всех пропущенных в ленту
+      description: С премиумом PASS_REFRESH — в любой момент; без него — только когда лента закончилась (feedEmpty=true) и раз в сутки.
+      parameters:
+        - { name: feedEmpty, in: query, schema: { type: boolean, default: false } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { description: 'FEED_NOT_EMPTY (details.feature = PASS_REFRESH)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { description: 'PASS_REFRESH_TOO_SOON (details.retryAt)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
   /accounts/{profileId}/block:
     parameters:
       - { $ref: '#/components/parameters/ProfileId' }
@@ -2888,6 +2930,8 @@ components:
         cityId: { type: [integer, 'null'], description: Город из справочника }
         searchRadiusKm: { type: [integer, 'null'], description: Радиус поиска; null — без радиуса }
         locationShared: { type: boolean, description: Поделился приблизительным местоположением }
+        invisible: { type: boolean, description: 'Невидимка: видят только те, кого я лайкнул (работает, пока есть премиум)' }
+        showPremiumBadge: { type: boolean, description: Показывать другим бейдж премиума }
         decorations: { $ref: '#/components/schemas/Decorations' }
         heightCm: { type: [integer, 'null'] }
         goals: { type: array, items: { $ref: '#/components/schemas/Goal' } }
@@ -2910,7 +2954,7 @@ components:
         decorations: { $ref: '#/components/schemas/Decorations' }
         heightCm: { type: [integer, 'null'] }
         goals: { type: array, items: { $ref: '#/components/schemas/Goal' } }
-        premium: { type: boolean, description: Бейдж премиума }
+        premium: { type: boolean, description: 'Бейдж премиума (false, если владелец скрыл его)' }
         verified: { type: boolean, description: Селфи подтверждено модератором }
         compatibility:
           type: [integer, 'null']
@@ -2937,6 +2981,8 @@ components:
         cityId: { type: integer, description: 'Город из GET /cities; неизвестный — 400 fieldErrors.cityId' }
         searchRadiusKm: { type: integer, minimum: 1, maximum: 20000 }
         clearSearchRadius: { type: boolean }
+        invisible: { type: boolean, description: 'Включение — премиум INVISIBLE (иначе 403 PREMIUM_REQUIRED)' }
+        showPremiumBadge: { type: boolean }
         city: { type: string, minLength: 1, maxLength: 60 }
         aboutText: { type: string, maxLength: 1000, description: Пустая строка очищает }
         tagCodes: { type: array, maxItems: 10, items: { type: string } }

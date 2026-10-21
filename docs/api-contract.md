@@ -388,7 +388,23 @@ GET /me/likes/received?page=0&limit=20   page < 0 → 0; limit <= 0 → 20, capp
   403 PREMIUM_REQUIRED details.feature = 'WHO_LIKED_ME' (only while WHO_LIKED_ME is in Wallet.premiumFeatures; free otherwise)
 GET /me/likes/received/count             200 { count, superlikeCount }   (always available, no premium)
 
+## Going back in the feed (auth)
+POST /me/reactions/undo   premium UNDO_SWIPE; takes back my newest like or pass  200 PublicProfile (show it again)
+  403 PREMIUM_REQUIRED details.feature='UNDO_SWIPE' ; 409 NOTHING_TO_UNDO ; 409 UNDO_LIMIT_REACHED (5 in a row; any new
+  swipe resets the count) ; 409 CANNOT_UNDO (a super like, or a like that made a match)
+POST /me/passes/refresh?feedEmpty=false   brings all my passed profiles back  200 { restored: int }
+  With premium PASS_REFRESH: any time. Without: only with feedEmpty=true (the client's feed ran out), once per 24h:
+  409 FEED_NOT_EMPTY details.feature='PASS_REFRESH' ; 429 PASS_REFRESH_TOO_SOON details.retryAt
+A pass no longer returns by itself (app.social.pass-ttl = 10 years).
+
+Feed visibility: profiles inactive for 30 days (no activity day; profiles younger than 30 days are kept) leave the feed
+of real users; a push `inactivity_reminder` goes 7, 3 and 1 day before. Invisible profiles (MyProfile.invisible, premium
+INVISIBLE; ignored while premium is off) are shown only to people their owner liked. MyProfile.showPremiumBadge=false
+makes PublicProfile.premium false for others.
+
 ## Blocks and reports (auth)
+POST /accounts/{profileId}/hide    (PROFILE id) 204 ; 404 PROFILE_NOT_FOUND ; 400 SELF_ACTION
+  Idempotent. «Not interested»: only I stop seeing the person (feed and received likes); they are not told and still see me.
 POST /accounts/{profileId}/block   (path takes the PROFILE id) 204 ; 404 PROFILE_NOT_FOUND ; 400 SELF_ACTION
   Idempotent. Works on any existing profile of an active account of the same kind (also hidden ones). Hides both people
   from each other everywhere (feed, received likes, matches) and closes their active match silently (both get `match_closed`).

@@ -101,6 +101,27 @@ class PushIntegrationTest extends IntegrationTestBase {
                 .content("{\"provider\": \"FCM\", \"token\": \"x\"}")).andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void inactiveProfilesAreRemindedBeforeLeavingTheFeed() throws Exception {
+        User sleeper = user(uniqueCity(), "Соня");
+        String deviceToken = "fcm-" + UUID.randomUUID();
+        register(sleeper, "FCM", deviceToken).andExpect(status().isNoContent());
+        jdbc.update("DELETE FROM account_activity_days WHERE account_id = ?", sleeper.accountId());
+        jdbc.update("INSERT INTO account_activity_days (account_id, day) VALUES (?, current_date - 27)", sleeper.accountId());
+
+        pushService.remindInactive();
+        PushStub.Push reminder = PushStub.next(deviceToken, WAIT);
+        assertNotNull(reminder, "3 days before the profile leaves the feed");
+        assertTrue(reminder.body().contains("\"type\":\"inactivity_reminder\""), reminder.body());
+
+        jdbc.update("INSERT INTO account_activity_days (account_id, day) VALUES (?, current_date - 26)", sleeper.accountId());
+        pushService.remindInactive();
+        assertNull(PushStub.next(deviceToken, 500), "no reminder between thresholds");
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.dating.push.application.PushService pushService;
+
     private void waitUntilDeviceGone(String token) throws InterruptedException {
         for (int i = 0; i < 100; i++) {
             if (jdbc.queryForObject("SELECT count(*) FROM push_devices WHERE token = ?", Integer.class, token) == 0) {
