@@ -28,6 +28,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-liquibase'
     runtimeOnly 'org.postgresql:postgresql'
 
+    // Face detection (YuNet) and comparison (SFace) on photo upload, CPU only (docs/trust-safety.md)
+    implementation 'org.openpnp:opencv:4.9.0-0'
+
     // Testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'

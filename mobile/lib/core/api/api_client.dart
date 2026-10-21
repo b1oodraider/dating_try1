@@ -440,9 +440,11 @@ class DatingApiClient {
           _expectMap(await _send('GET', '/me/verification')));
 
   /// The open request (same gesture) or a new one with a random gesture.
+  /// The user must have agreed to comparing their photos (400 CONSENT_REQUIRED).
   Future<VerificationRequest> requestVerification() async =>
-      VerificationRequest.fromJson(
-          _expectMap(await _send('POST', '/me/verification')));
+      VerificationRequest.fromJson(_expectMap(await _send(
+          'POST', '/me/verification',
+          body: {'faceComparisonConsent': true})));
 
   Future<VerificationRequest> submitSelfie(
           String requestId, List<int> bytes, String filename) async =>

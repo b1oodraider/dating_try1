@@ -118,7 +118,7 @@ class VerificationGateIntegrationTest extends AdminTestSupport {
     }
 
     private String submitSelfie(User user) throws Exception {
-        String id = com.jayway.jsonpath.JsonPath.read(body(as(user.token(), post("/api/v1/me/verification"), null)
+        String id = com.jayway.jsonpath.JsonPath.read(body(as(user.token(), post("/api/v1/me/verification"), "{\"faceComparisonConsent\": true}")
                 .andExpect(status().isOk()).andReturn()), "$.id");
         mvc.perform(multipart("/api/v1/me/verification/" + id + "/selfie")
                         .file(new MockMultipartFile("file", "selfie.png", "image/png", TestImages.png(4, 4)))

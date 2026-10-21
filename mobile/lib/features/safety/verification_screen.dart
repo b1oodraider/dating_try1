@@ -19,6 +19,7 @@ class VerificationScreen extends StatefulWidget {
 class _VerificationScreenState extends State<VerificationScreen> {
   VerificationState? _state;
   bool _busy = true;
+  bool _consent = false;
   String? _error;
 
   @override
@@ -104,10 +105,20 @@ class _VerificationScreenState extends State<VerificationScreen> {
           Text('Прошлая проверка не пройдена: '
               '${current!.rejectReason ?? 'без комментария'}'),
         const Text('Модератор сравнит селфи с фото анкеты и поставит значок '
-            '«Проверен». Автоматического распознавания лиц нет.'),
-        const SizedBox(height: 16),
+            '«Проверен». Новые фото потом автоматически сравниваются с '
+            'подтверждёнными; несовпавшие посмотрит модератор.'),
+        const SizedBox(height: 8),
+        CheckboxListTile(
+          contentPadding: EdgeInsets.zero,
+          controlAffinity: ListTileControlAffinity.leading,
+          value: _consent,
+          onChanged: (v) => setState(() => _consent = v ?? false),
+          title: const Text('Согласен(на) на сравнение моих фотографий с селфи '
+              'и между собой для защиты от фейков'),
+        ),
+        const SizedBox(height: 8),
         FilledButton(
-          onPressed: _busy ? null : _start,
+          onPressed: _busy || !_consent ? null : _start,
           child: const Text('Начать проверку'),
         ),
       ];

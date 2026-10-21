@@ -405,6 +405,24 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                               top: 4,
                               child: Icon(Icons.star, color: Colors.amber),
                             ),
+                          if (photo.underReview)
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              child: Tooltip(
+                                message: 'Лицо не совпало с подтверждёнными '
+                                    'фото. Другие увидят фото после проверки',
+                                child: Container(
+                                  color: Colors.black54,
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  child: const Text('На проверке',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                          color: Colors.white, fontSize: 12)),
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),

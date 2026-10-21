@@ -18,6 +18,17 @@ public interface ProfilePhotoRepository extends JpaRepository<ProfilePhoto, UUID
 
     List<ProfilePhoto> findAllByProfileIdInAndDeletedAtIsNullOrderBySortOrderAsc(Collection<UUID> profileIds);
 
+    /** What others see: photos under face review are left out. */
+    List<ProfilePhoto> findAllByProfileIdInAndDeletedAtIsNullAndFaceReviewIsNullOrderBySortOrderAsc(
+            Collection<UUID> profileIds);
+
+    List<ProfilePhoto> findAllByProfileIdAndDeletedAtIsNullAndFaceReferenceTrue(UUID profileId);
+
+    List<ProfilePhoto> findAllByFaceReviewAndDeletedAtIsNullOrderByCreatedAtAsc(String faceReview,
+                                                                                 org.springframework.data.domain.Pageable page);
+
+    long countByFaceReviewAndDeletedAtIsNull(String faceReview);
+
     List<ProfilePhoto> findAllByProfileId(UUID profileId);
 
     Optional<ProfilePhoto> findByIdAndProfileIdAndDeletedAtIsNull(UUID id, UUID profileId);

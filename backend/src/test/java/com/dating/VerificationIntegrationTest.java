@@ -38,10 +38,10 @@ class VerificationIntegrationTest extends AdminTestSupport {
         discovery(viewer.token(), city, null, null, 50).andExpect(jsonPath("$.items[*].id", not(hasItem(anna.profileId()))));
 
         String first = startVerification(anna);
-        as(anna.token(), post("/api/v1/me/verification"), null)
+        as(anna.token(), post("/api/v1/me/verification"), "{\"faceComparisonConsent\": true}")
                 .andExpect(jsonPath("$.id").value(first)); // the open request comes back, same gesture
         uploadSelfie(anna, first).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PENDING"));
-        as(anna.token(), post("/api/v1/me/verification"), null).andExpect(status().isConflict())
+        as(anna.token(), post("/api/v1/me/verification"), "{\"faceComparisonConsent\": true}").andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VERIFICATION_PENDING"));
 
         as(anna.token(), get("/api/v1/admin/verifications"), null).andExpect(status().isForbidden());
@@ -74,7 +74,7 @@ class VerificationIntegrationTest extends AdminTestSupport {
         as(anna.token(), get("/api/v1/me/restrictions"), null).andExpect(jsonPath("$.length()").value(0));
         discovery(viewer.token(), city, null, null, 50)
                 .andExpect(jsonPath("$.items[?(@.id == '" + anna.profileId() + "')].verified", hasItem(true)));
-        as(anna.token(), post("/api/v1/me/verification"), null).andExpect(jsonPath("$.code").value("ALREADY_VERIFIED"));
+        as(anna.token(), post("/api/v1/me/verification"), "{\"faceComparisonConsent\": true}").andExpect(jsonPath("$.code").value("ALREADY_VERIFIED"));
         assertEquals(0, jdbc.queryForObject("""
                 SELECT count(*) FROM verification_requests WHERE account_id = ? AND selfie_key IS NOT NULL""",
                 Integer.class, anna.accountId()), "no selfie is kept after decisions");
@@ -95,11 +95,11 @@ class VerificationIntegrationTest extends AdminTestSupport {
                         .andExpect(jsonPath("$.code").value("VERIFICATION_EXPIRED"));
             }
         }
-        as(bob.token(), post("/api/v1/me/verification"), null).andExpect(status().isTooManyRequests());
+        as(bob.token(), post("/api/v1/me/verification"), "{\"faceComparisonConsent\": true}").andExpect(status().isTooManyRequests());
     }
 
     private String startVerification(User user) throws Exception {
-        return readId(as(user.token(), post("/api/v1/me/verification"), null)
+        return readId(as(user.token(), post("/api/v1/me/verification"), "{\"faceComparisonConsent\": true}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("AWAITING_SELFIE"))
                 .andExpect(jsonPath("$.instruction").exists()));

@@ -39,7 +39,7 @@ public class PhotoQueryService implements ProfilePhotoQuery {
         if (profileIds.isEmpty()) {
             return Map.of();
         }
-        return photoRepository.findAllByProfileIdInAndDeletedAtIsNullOrderBySortOrderAsc(profileIds)
+        return photoRepository.findAllByProfileIdInAndDeletedAtIsNullAndFaceReviewIsNullOrderBySortOrderAsc(profileIds)
                 .stream()
                 .collect(Collectors.groupingBy(ProfilePhoto::getProfileId,
                         Collectors.mapping(this::toDto, Collectors.toList())));
@@ -59,7 +59,8 @@ public class PhotoQueryService implements ProfilePhotoQuery {
                 photo.getSizeBytes(),
                 photo.getSortOrder(),
                 photo.isPrimary(),
-                photo.getCreatedAt()
+                photo.getCreatedAt(),
+                photo.isUnderFaceReview()
         );
     }
 }

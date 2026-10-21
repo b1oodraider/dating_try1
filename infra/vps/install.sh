@@ -47,6 +47,16 @@ if [ ! -f "$TS_DIR/ru_ru.dict" ]; then
   echo "0963e4a7c06f922fe6e415c8303c20995a617e1d1c2acfae8b819c2f89c52101  $TS_DIR/ru_ru.dict" | sha256sum -c -
 fi
 
+# --- face models for the photo check (OpenCV Zoo: YuNet MIT, SFace Apache-2.0)
+MODELS_DIR="$APP_DIR/models"
+ZOO=https://github.com/opencv/opencv_zoo/raw/main/models
+mkdir -p "$MODELS_DIR"
+[ -f "$MODELS_DIR/face_detection_yunet_2023mar.onnx" ] || curl -fsSL -o "$MODELS_DIR/face_detection_yunet_2023mar.onnx"   "$ZOO/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+[ -f "$MODELS_DIR/face_recognition_sface_2021dec.onnx" ] || curl -fsSL -o "$MODELS_DIR/face_recognition_sface_2021dec.onnx"   "$ZOO/face_recognition_sface/face_recognition_sface_2021dec.onnx"
+echo "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4  $MODELS_DIR/face_detection_yunet_2023mar.onnx" | sha256sum -c -
+echo "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79  $MODELS_DIR/face_recognition_sface_2021dec.onnx" | sha256sum -c -
+chmod 644 "$MODELS_DIR"/*.onnx
+
 # --- database (PostgreSQL listens on localhost only by default)
 systemctl enable --now postgresql >/dev/null
 sudo -u postgres psql -q -v ON_ERROR_STOP=1 <<SQL
@@ -78,6 +88,7 @@ APP_TESTING_ENABLED=$APP_TESTING_ENABLED
 APP_TESTING_TEST_PHONES="$APP_TESTING_TEST_PHONES"
 APP_TESTING_OTP_CODE=$APP_TESTING_OTP_CODE
 APP_TESTING_SEED_AUTO_REPLY=true
+APP_FACES_MODEL_DIR=$APP_DIR/models
 SERVER_ADDRESS=127.0.0.1
 SERVER_FORWARD_HEADERS_STRATEGY=framework
 EOF

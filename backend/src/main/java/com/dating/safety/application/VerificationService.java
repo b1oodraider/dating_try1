@@ -81,12 +81,15 @@ public class VerificationService {
     private final RoleAccess roleAccess;
     private final AdminAuditLog auditLog;
     private final org.springframework.context.ApplicationEventPublisher events;
+    private final com.dating.media.application.MediaService mediaService;
 
     public VerificationService(VerificationRepository repository, RestrictionRepository restrictions,
                                SanctionService sanctionService, FileStorageService fileStorage,
                                MediaProperties mediaProperties, PhotoQueryService photoQuery,
                                ProfileRepository profileRepository, RoleAccess roleAccess, AdminAuditLog auditLog,
-                               org.springframework.context.ApplicationEventPublisher events) {
+                               org.springframework.context.ApplicationEventPublisher events,
+                               com.dating.media.application.MediaService mediaService) {
+        this.mediaService = mediaService;
         this.events = events;
         this.repository = repository;
         this.restrictions = restrictions;
@@ -114,7 +117,11 @@ public class VerificationService {
      * @throws ApiException 409 ALREADY_VERIFIED | VERIFICATION_PENDING, 429 RATE_LIMITED (3 requests a day)
      */
     @Transactional
-    public RequestView start(UUID accountId) {
+    public RequestView start(UUID accountId, boolean faceComparisonConsent) {
+        if (!faceComparisonConsent) {
+            throw ApiException.badRequest("CONSENT_REQUIRED",
+                    "Нужно согласие на сравнение ваших фотографий с селфи и между собой");
+        }
         repository.lockAccount(accountId);
         repository.expireStale(accountId);
         if (repository.verifiedAt(accountId).isPresent()) {
@@ -235,6 +242,7 @@ public class VerificationService {
         fileStorage.deleteAfterCommit(List.of(request.selfieKey()));
         if (approve) {
             repository.setVerified(request.accountId(), true);
+            mediaService.markCurrentPhotosAsReference(request.accountId());
             events.publishEvent(new AccountVerifiedEvent(request.accountId()));
             for (Restriction r : restrictions.active(request.accountId())) {
                 if (r.kind() == RestrictionKind.VERIFICATION_REQUIRED) {

@@ -32,6 +32,7 @@ import type {
   Message,
   MyProfile,
   Photo,
+  PhotoReviewItem,
   ProfileUpdate,
   ReactionResult,
   ReadState,
@@ -706,8 +707,9 @@ export const api = {
     );
   },
 
+  /** The server requires explicit consent to face comparison (400 CONSENT_REQUIRED otherwise). */
   requestVerification(): Promise<VerificationRequest> {
-    return request<VerificationRequest>('/me/verification', { method: 'POST' });
+    return request<VerificationRequest>('/me/verification', { method: 'POST', body: { faceComparisonConsent: true } });
   },
 
   submitSelfie(id: string, file: File): Promise<VerificationRequest> {
@@ -775,6 +777,17 @@ export const api = {
     },
     decideVerification(requestId: string, approve: boolean, reason?: string): Promise<VerificationReview> {
       return request(`/admin/verifications/${id(requestId)}/decision`, { method: 'POST', body: { approve, reason } });
+    },
+
+    listPhotoReviews(query: { page?: number; limit?: number }, signal?: AbortSignal): Promise<AdminPage<PhotoReviewItem>> {
+      const params = new URLSearchParams();
+      params.set('page', String(query.page ?? 0));
+      params.set('limit', String(query.limit ?? 20));
+      return request(`/admin/photo-reviews?${params.toString()}`, { signal });
+    },
+    /** Approve: the photo becomes visible. Reject: the photo is deleted. */
+    decidePhotoReview(photoId: string, approve: boolean): Promise<void> {
+      return request(`/admin/photo-reviews/${id(photoId)}/decision`, { method: 'POST', body: { approve } });
     },
 
     /** The API takes the phone as a query parameter (ADMIN). */

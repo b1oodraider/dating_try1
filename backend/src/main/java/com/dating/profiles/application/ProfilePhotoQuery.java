@@ -13,8 +13,10 @@ import java.util.UUID;
  */
 public interface ProfilePhotoQuery {
 
+    /** All my photos, including the ones under face review (owner and moderator views). */
     List<PhotoDto> photosOf(UUID profileId);
 
+    /** What other people see: photos under face review are left out. */
     Map<UUID, List<PhotoDto>> photosOf(Collection<UUID> profileIds);
 
     long countPhotos(UUID profileId);

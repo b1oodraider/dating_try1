@@ -34,6 +34,8 @@ public class MediaService {
     private final MediaProperties properties;
     private final ProductEventPublisher productEvents;
     private final ApplicationEventPublisher eventPublisher;
+    private final FaceAnalyzer faces;
+    private final FaceProperties faceProperties;
 
     public MediaService(ProfilePhotoRepository photoRepository,
                         FileStorageService fileStorage,
@@ -42,7 +44,11 @@ public class MediaService {
                         PhotoUrlSigner urlSigner,
                         MediaProperties properties,
                         ProductEventPublisher productEvents,
-                        ApplicationEventPublisher eventPublisher) {
+                        ApplicationEventPublisher eventPublisher,
+                        FaceAnalyzer faces,
+                        FaceProperties faceProperties) {
+        this.faces = faces;
+        this.faceProperties = faceProperties;
         this.eventPublisher = eventPublisher;
         this.photoRepository = photoRepository;
         this.fileStorage = fileStorage;
@@ -89,6 +95,13 @@ public class MediaService {
             throw ApiException.unsupportedMediaType("Файл повреждён или не является изображением");
         }
 
+        FaceAnalyzer.Scan scan = faces.scan(cleaned);
+        if (scan != null && !scan.hasFace()) {
+            throw ApiException.badRequest("NO_FACE_ON_PHOTO",
+                    "На фото не видно лица. Загрузите фото, где хорошо видно вас");
+        }
+        boolean toReview = profile.isVerified() && !matchesReference(profile.getId(), scan);
+
         String storageKey = fileStorage.save(cleaned, format.extension());
         ProfilePhoto photo = new ProfilePhoto(
                 UUID.randomUUID(),
@@ -101,10 +114,49 @@ public class MediaService {
         );
         PhotoFingerprint fingerprint = PhotoFingerprint.of(cleaned);
         photo.setFingerprint(fingerprint.sha256(), fingerprint.dhash());
+        if (toReview) {
+            photo.sendToFaceReview();
+            productEvents.publish("photo_sent_to_face_review", Map.of());
+        }
         photoRepository.save(photo);
         productEvents.publish("profile_photo_added", Map.of("photoCount", currentCount + 1));
         eventPublisher.publishEvent(new ProfilePhotoAddedEvent(accountId, photo.getId(), currentCount + 1));
         return photoQuery.toDto(photo);
+    }
+
+    /**
+     * The new face is close enough to a face on one of the reference photos. Unknown (check off, undecodable)
+     * or no reference left → false, so a person decides.
+     */
+    private boolean matchesReference(UUID profileId, FaceAnalyzer.Scan scan) {
+        if (scan == null) {
+            return false;
+        }
+        for (ProfilePhoto reference : photoRepository.findAllByProfileIdAndDeletedAtIsNullAndFaceReferenceTrue(profileId)) {
+            byte[] bytes = fileStorage.find(reference.getStorageKey()).map(MediaService::readOrNull).orElse(null);
+            FaceAnalyzer.Scan known = bytes == null ? null : faces.scan(bytes);
+            if (known != null && FaceAnalyzer.similarity(scan, known) >= faceProperties.matchThreshold()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static byte[] readOrNull(Path path) {
+        try {
+            return java.nio.file.Files.readAllBytes(path);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** Selfie approved: the photos in the profile now are what later photos are compared with. */
+    @Transactional
+    public void markCurrentPhotosAsReference(UUID accountId) {
+        profileService.findProfile(accountId).ifPresent(profile ->
+                photoRepository.findAllByProfileIdAndDeletedAtIsNullOrderBySortOrderAsc(profile.getId()).stream()
+                        .filter(p -> !p.isUnderFaceReview())
+                        .forEach(ProfilePhoto::approveFace));
     }
 
     @Transactional(readOnly = true)
@@ -130,6 +182,11 @@ public class MediaService {
         ProfilePhoto photo = photoRepository.findByIdAndProfileIdAndDeletedAtIsNull(photoId, profile.getId())
                 .orElseThrow(() -> ApiException.notFound("PHOTO_NOT_FOUND", "Фотография не найдена"));
 
+        removePhoto(profile, photo);
+    }
+
+    /** Deletes the photo and keeps the profile consistent (a primary photo, a published profile has a photo). */
+    void removePhoto(Profile profile, ProfilePhoto photo) {
         photo.markDeleted();
         photoRepository.saveAndFlush(photo);
         fileStorage.deleteAfterCommit(List.of(photo.getStorageKey()));

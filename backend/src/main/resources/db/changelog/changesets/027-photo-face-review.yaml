@@ -1,0 +1,32 @@
+databaseChangeLog:
+  # Every photo must show a person (YuNet). A new photo of a verified person is compared with the photos that were
+  # in the profile when the selfie was approved (reference photos); no match → hidden until a moderator decides.
+  # Face vectors are never stored: they are computed for one comparison and dropped.
+  - changeSet:
+      id: 027-photo-face-review
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE profile_photos
+                ADD COLUMN face_review VARCHAR(10) CHECK (face_review IN ('PENDING')),
+                ADD COLUMN face_reference BOOLEAN NOT NULL DEFAULT FALSE
+        - sql:
+            sql: >
+              CREATE INDEX idx_profile_photos_face_review ON profile_photos (created_at)
+              WHERE face_review = 'PENDING' AND deleted_at IS NULL
+        # Consent to comparing my photos (152-ФЗ), given when starting selfie verification.
+        - sql:
+            sql: ALTER TABLE verification_requests ADD COLUMN face_consent_at TIMESTAMP WITH TIME ZONE
+        # Already verified profiles: their current photos become the reference.
+        - sql:
+            sql: >
+              UPDATE profile_photos ph SET face_reference = TRUE
+                FROM profiles p
+               WHERE p.id = ph.profile_id AND p.verified_at IS NOT NULL AND ph.deleted_at IS NULL
+      rollback:
+        - sql:
+            sql: >
+              ALTER TABLE verification_requests DROP COLUMN face_consent_at;
+              DROP INDEX idx_profile_photos_face_review;
+              ALTER TABLE profile_photos DROP COLUMN face_reference, DROP COLUMN face_review

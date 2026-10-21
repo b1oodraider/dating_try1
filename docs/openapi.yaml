@@ -1396,9 +1396,18 @@ paths:
       summary: Начать подтверждение (случайный жест)
       description: |
         Возвращает открытый запрос (с тем же жестом) или создаёт новый. Модератор сравнивает селфи с фото анкеты
-        вручную (без автоматического сравнения лиц); селфи удаляется сразу после решения. Одобрение даёт бейдж verified
-        и снимает VERIFICATION_REQUIRED; новое фото в анкете снимает бейдж. 409 ALREADY_VERIFIED | VERIFICATION_PENDING,
-        429 — больше 3 запросов в сутки.
+        вручную; селфи удаляется сразу после решения. Одобрение даёт бейдж verified, снимает VERIFICATION_REQUIRED
+        и делает текущие фото эталонными (с ними автоматически сравниваются новые). Нужно согласие на сравнение фото
+        (400 CONSENT_REQUIRED). 409 ALREADY_VERIFIED | VERIFICATION_PENDING, 429 — больше 3 запросов в сутки.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [faceComparisonConsent]
+              properties:
+                faceComparisonConsent: { type: boolean, enum: [true] }
       responses:
         '200':
           description: OK
@@ -1436,6 +1445,61 @@ paths:
         '409': { $ref: '#/components/responses/Error' }
         '413': { $ref: '#/components/responses/Error' }
         '415': { $ref: '#/components/responses/Error' }
+
+  /admin/photo-reviews:
+    get:
+      tags: [admin]
+      summary: Новые фото верифицированных, где лицо не совпало (MODERATOR / ADMIN)
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 50 } }
+      responses:
+        '200':
+          description: Старые первыми
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        photoId: { type: string, format: uuid }
+                        accountId: { type: string, format: uuid }
+                        profileId: { type: string, format: uuid }
+                        displayName: { type: [string, 'null'] }
+                        photo: { $ref: '#/components/schemas/Photo' }
+                        references: { type: array, items: { $ref: '#/components/schemas/Photo' } }
+                        uploadedAt: { type: string, format: date-time }
+                  page: { type: integer }
+                  limit: { type: integer }
+                  totalElements: { type: integer, format: int64 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: ROLE_REQUIRED, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/photo-reviews/{photoId}/decision:
+    post:
+      tags: [admin]
+      summary: 'Тот же человек (фото видно и становится эталоном) или нет (фото удаляется)'
+      parameters:
+        - { name: photoId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approve]
+              properties:
+                approve: { type: boolean }
+      responses:
+        '204': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: ROLE_REQUIRED, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: PHOTO_NOT_FOUND, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: PHOTO_NOT_UNDER_REVIEW, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /admin/verifications:
     get:
@@ -2890,6 +2954,7 @@ components:
         sortOrder: { type: integer }
         isPrimary: { type: boolean }
         createdAt: { type: string, format: date-time }
+        underReview: { type: boolean, description: 'Лицо не совпало с эталонными фото верифицированного: видят только владелец и модераторы до решения' }
 
     MyProfile:
       type: object

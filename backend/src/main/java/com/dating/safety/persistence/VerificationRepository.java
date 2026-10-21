@@ -45,11 +45,12 @@ public class VerificationRepository {
                 .param("account", accountId).update();
     }
 
+    /** The caller has the user's consent to comparing their photos (stored as face_consent_at). */
     public Request create(UUID accountId, Gesture gesture, int minutesToUpload) {
         UUID id = UUID.randomUUID();
         jdbc.sql("""
-                        INSERT INTO verification_requests (id, account_id, gesture, status, expires_at)
-                        VALUES (:id, :account, :gesture, 'AWAITING_SELFIE', now() + make_interval(mins => :minutes))
+                        INSERT INTO verification_requests (id, account_id, gesture, status, expires_at, face_consent_at)
+                        VALUES (:id, :account, :gesture, 'AWAITING_SELFIE', now() + make_interval(mins => :minutes), now())
                         """)
                 .param("id", id).param("account", accountId).param("gesture", gesture.name())
                 .param("minutes", minutesToUpload).update();

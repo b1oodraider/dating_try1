@@ -23,6 +23,10 @@ import java.util.UUID;
 @RequestMapping("/api/v1")
 public class VerificationController {
 
+    /** @param faceComparisonConsent consent to comparing my photos with the selfie and with each other (152-ФЗ) */
+    public record StartRequest(Boolean faceComparisonConsent) {
+    }
+
     public record DecisionRequest(
             @NotNull(message = "Укажите решение") Boolean approve,
             @Size(max = 500, message = "Причина не должна превышать 500 символов") String reason
@@ -41,8 +45,9 @@ public class VerificationController {
     }
 
     @PostMapping("/me/verification")
-    public VerificationService.RequestView start(@AuthenticationPrincipal AuthenticatedUser user) {
-        return service.start(user.accountId());
+    public VerificationService.RequestView start(@AuthenticationPrincipal AuthenticatedUser user,
+                                                 @RequestBody(required = false) StartRequest request) {
+        return service.start(user.accountId(), request != null && Boolean.TRUE.equals(request.faceComparisonConsent()));
     }
 
     @PostMapping(value = "/me/verification/{requestId}/selfie", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

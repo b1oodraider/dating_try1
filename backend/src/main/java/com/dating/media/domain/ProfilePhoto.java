@@ -43,6 +43,14 @@ public class ProfilePhoto extends AssignedIdEntity {
     @Column(name = "dhash", updatable = false)
     private Long dhash;
 
+    /** 'PENDING': the face did not match the reference photos, hidden from others until a moderator decides. */
+    @Column(name = "face_review", length = 10)
+    private String faceReview;
+
+    /** Compared against new photos: was in the profile when the selfie was approved, or approved by a moderator. */
+    @Column(name = "face_reference", nullable = false)
+    private boolean faceReference;
+
     protected ProfilePhoto() {
     }
 
@@ -102,6 +110,24 @@ public class ProfilePhoto extends AssignedIdEntity {
 
     public Instant getDeletedAt() {
         return deletedAt;
+    }
+
+    public boolean isUnderFaceReview() {
+        return "PENDING".equals(faceReview);
+    }
+
+    public void sendToFaceReview() {
+        this.faceReview = "PENDING";
+    }
+
+    /** Approved (by the selfie or by a moderator): visible and used as a reference for later photos. */
+    public void approveFace() {
+        this.faceReview = null;
+        this.faceReference = true;
+    }
+
+    public boolean isFaceReference() {
+        return faceReference;
     }
 
     public void markDeleted() {

@@ -20,6 +20,8 @@ export interface Photo {
   sortOrder: number;
   isPrimary: boolean;
   createdAt: string;
+  /** The face did not match the owner's verified photos: only the owner (and moderators) see it until a moderator checks it. */
+  underReview: boolean;
 }
 
 /** Relationship goal from the reference list (GET /goals). */
@@ -601,6 +603,17 @@ export interface AdminPage<T> {
   page: number;
   limit: number;
   totalElements: number;
+}
+
+/** GET /admin/photo-reviews item: a verified person's new photo whose face did not match the references. */
+export interface PhotoReviewItem {
+  photoId: string;
+  accountId: string;
+  profileId: string;
+  displayName: string | null;
+  photo: Photo;
+  references: Photo[];
+  uploadedAt: string;
 }
 
 export interface VerificationReview {

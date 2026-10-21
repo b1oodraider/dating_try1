@@ -25,6 +25,7 @@ export const SelfieVerificationModal: React.FC<SelfieVerificationModalProps> = (
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [consent, setConsent] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadStatus = async () => {
@@ -193,10 +194,21 @@ export const SelfieVerificationModal: React.FC<SelfieVerificationModalProps> = (
               </div>
             )}
 
+            <label className="flex items-start gap-2 text-left text-xs text-zinc-700 max-w-sm mx-auto cursor-pointer">
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+                className="mt-0.5 shrink-0"
+              />
+              <span>Согласен(на) на сравнение моих фотографий с селфи и между собой для защиты от фейков</span>
+            </label>
+
             <div className="pt-2 flex flex-col gap-2 max-w-xs mx-auto">
               <Button
                 variant="primary"
                 onClick={handleStart}
+                disabled={!consent}
                 isLoading={isSubmitting}
                 className="w-full py-2.5"
               >

@@ -106,6 +106,9 @@ app:
     reports-per-hour: 20
   chat:
     messages-per-minute: 30
+  faces:
+    # Folder with the YuNet and SFace ONNX models (infra/vps/install.sh downloads them). Blank = no face check.
+    model-dir: ${APP_FACES_MODEL_DIR:}
   verification-gate:
     # Unverified profiles are not shown to others, see at most daily-views profiles a day and their likes wait
     # (sent after the selfie is approved; review time does not count). Test accounts are exempt.

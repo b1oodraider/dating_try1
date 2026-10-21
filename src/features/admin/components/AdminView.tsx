@@ -3,6 +3,7 @@ import { useAuth } from '../../../core/context/AuthContext';
 import type { Account } from '../../../core/types';
 import { ReportsPanel } from './ReportsPanel';
 import { VerificationsPanel } from './VerificationsPanel';
+import { PhotoReviewsPanel } from './PhotoReviewsPanel';
 import { AccountsPanel } from './AccountsPanel';
 import { AuditPanel } from './AuditPanel';
 
@@ -10,7 +11,7 @@ import { AuditPanel } from './AuditPanel';
 export const isStaff = (account: Account | null) =>
   !!account?.roles?.some((r) => r === 'ADMIN' || r === 'MODERATOR');
 
-type Section = 'reports' | 'verifications' | 'accounts' | 'audit';
+type Section = 'reports' | 'verifications' | 'photos' | 'accounts' | 'audit';
 
 export const AdminView: React.FC = () => {
   const { account } = useAuth();
@@ -30,6 +31,7 @@ export const AdminView: React.FC = () => {
   const sections: Array<{ id: Section; label: string }> = [
     { id: 'reports', label: 'Жалобы' },
     { id: 'verifications', label: 'Верификации' },
+    { id: 'photos', label: 'Фото' },
     { id: 'accounts', label: 'Аккаунты' },
     ...(isAdmin ? [{ id: 'audit' as const, label: 'Журнал' }] : []),
   ];
@@ -53,6 +55,7 @@ export const AdminView: React.FC = () => {
       </nav>
       {section === 'reports' && <ReportsPanel onOpenAccount={openAccount} />}
       {section === 'verifications' && <VerificationsPanel onOpenAccount={openAccount} />}
+      {section === 'photos' && <PhotoReviewsPanel onOpenAccount={openAccount} />}
       {section === 'accounts' && <AccountsPanel isAdmin={isAdmin} accountId={accountId} onOpenAccount={openAccount} />}
       {section === 'audit' && isAdmin && <AuditPanel />}
     </div>

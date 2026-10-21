@@ -51,3 +51,5 @@ databaseChangeLog:
       file: db/changelog/changesets/025-hide-undo-invisible.yaml
   - include:
       file: db/changelog/changesets/026-verification-gate.yaml
+  - include:
+      file: db/changelog/changesets/027-photo-face-review.yaml

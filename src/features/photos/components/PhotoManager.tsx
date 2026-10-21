@@ -153,6 +153,16 @@ export const PhotoManager: React.FC<PhotoManagerProps> = ({ photos: photosProp, 
                 </div>
               )}
 
+              {photo.underReview && (
+                <div
+                  title="Лицо не совпало с подтверждёнными фото. Другие увидят фото после проверки модератором"
+                  className="absolute bottom-0 inset-x-0 bg-amber-500/90 text-white text-[10px] leading-tight px-2 py-1"
+                >
+                  <div className="font-semibold">На проверке</div>
+                  <div className="hidden sm:block">Лицо не совпало с подтверждёнными фото. Другие увидят фото после проверки модератором</div>
+                </div>
+              )}
+
               {/* Hover actions */}
               <div className="absolute inset-0 bg-zinc-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-2">
                 {!photo.isPrimary && (

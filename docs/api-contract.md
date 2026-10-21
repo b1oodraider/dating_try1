@@ -23,7 +23,9 @@ Errors with `details` (returned by the endpoints listed below):
 Tag        = { code, category: string, categoryLabel, label, description, sortOrder, scalePosition: number|null (place on the
                category's scale, smaller = closer to its min end; null = the category is not a scale) }
              category = a tag category code (seeded: pace, format, calls, boundaries, social; editable via /admin/tag-categories)
-Photo      = { id, url, mimeType, sizeBytes, sortOrder, isPrimary, createdAt }
+Photo      = { id, url, mimeType, sizeBytes, sortOrder, isPrimary, createdAt, underReview: boolean }
+             underReview: a verified person's new photo whose face did not match the reference photos; only the owner
+             (and moderators) see it until a moderator decides. Other people's photo lists leave it out.
              url is a RELATIVE signed path, e.g. "/api/v1/media/photos/{id}?exp=1760000000&sig=ab12..". Valid ~1h.
              It needs NO Authorization header (usable directly in <img src> / Image.network after prefixing API origin).
              Refetch the profile/feed to get fresh URLs.
@@ -109,7 +111,11 @@ POST /me/profile/hide      200 MyProfile
 ## Photos (auth)
 GET    /me/profile/photos               200 Photo[]
 POST   /me/profile/photos               multipart/form-data, field name `file`; JPEG/PNG/WebP (checked by content, not header), <=5 MB, max 6 photos.
-                                        Server strips EXIF/metadata. 200 Photo ; 400 PHOTO_LIMIT_EXCEEDED | FILE_TOO_LARGE ; 415 UNSUPPORTED_MEDIA_TYPE
+                                        Server strips EXIF/metadata. 200 Photo ; 400 PHOTO_LIMIT_EXCEEDED | FILE_TOO_LARGE | NO_FACE_ON_PHOTO ; 415 UNSUPPORTED_MEDIA_TYPE
+                                        Face check (app.faces.model-dir; off when blank): no face → 400 NO_FACE_ON_PHOTO. Verified
+                                        profile: the new face is compared with the reference photos (the ones in the profile when the
+                                        selfie was approved, plus moderator-approved ones); no match → underReview. Face vectors are
+                                        computed for one comparison and never stored.
 PATCH  /me/profile/photos/{photoId}     no body — make primary. 204 ; 404 PHOTO_NOT_FOUND
 DELETE /me/profile/photos/{photoId}     204 ; 404 PHOTO_NOT_FOUND
 GET    /media/photos/{photoId}?exp&sig  (public, signature-checked) binary image with correct Content-Type; 404 if bad/expired sig or deleted.
@@ -372,13 +378,21 @@ answers 200 (and is removed); the next one gets 403 ACCOUNT_RESTRICTED. Passing 
 VerificationRequest = { id, status: 'AWAITING_SELFIE'|'PENDING'|'APPROVED'|'REJECTED'|'EXPIRED', gesture (code), instruction (text to show),
                         expiresAt (upload deadline, 30 min), submittedAt, decidedAt, rejectReason }
 GET  /me/verification                       200 { verified: boolean, verifiedAt, current: VerificationRequest|null (latest) }
-POST /me/verification                       200 VerificationRequest — the open request (same gesture) or a new one with a random gesture
+POST /me/verification   body { faceComparisonConsent: true } (required, else 400 CONSENT_REQUIRED)
+                        200 VerificationRequest — the open request (same gesture) or a new one with a random gesture
                                             409 ALREADY_VERIFIED | VERIFICATION_PENDING ; 429 RATE_LIMITED (3 requests a day)
 POST /me/verification/{id}/selfie           multipart `file` (JPEG/PNG/WebP, <= 5 MB, metadata stripped) — a selfie showing the gesture
                                             200 VerificationRequest (PENDING) ; 404 VERIFICATION_NOT_FOUND ; 409 VERIFICATION_EXPIRED |
                                             VERIFICATION_NOT_AWAITING ; 400 EMPTY_FILE ; 413 FILE_TOO_LARGE ; 415 UNSUPPORTED_MEDIA_TYPE
   A moderator compares the selfie with the profile photos BY EYE (no automated face matching); the selfie is deleted right after
   the decision. Approval sets the badge and lifts VERIFICATION_REQUIRED. Adding a photo later keeps the badge.
+
+## Photo review (MODERATOR / ADMIN)
+GET  /admin/photo-reviews?page=0&limit=20   oldest first
+  200 { items: [{ photoId, accountId, profileId, displayName, photo: Photo, references: Photo[], uploadedAt }], page, limit,
+        totalElements }
+POST /admin/photo-reviews/{photoId}/decision   body { approve: boolean }   204
+  approve: visible and a reference from now on; reject: the photo is deleted. 404 PHOTO_NOT_FOUND ; 409 PHOTO_NOT_UNDER_REVIEW
 
 ## Received likes (auth) — "who liked me"
 Likes I have not answered yet (no like back, no active pass of mine, no block); super likes first, then newest.

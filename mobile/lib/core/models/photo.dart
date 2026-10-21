@@ -10,6 +10,7 @@ class Photo {
     required this.sortOrder,
     required this.isPrimary,
     required this.createdAt,
+    this.underReview = false,
   });
 
   final String id;
@@ -24,6 +25,10 @@ class Photo {
   final bool isPrimary;
   final DateTime? createdAt;
 
+  /// The face did not match my verified photos: others see it after a
+  /// moderator checks it.
+  final bool underReview;
+
   factory Photo.fromJson(Map<String, dynamic> json) {
     return Photo(
       id: asString(json['id']),
@@ -32,6 +37,7 @@ class Photo {
       sizeBytes: asInt(json['sizeBytes']),
       sortOrder: asInt(json['sortOrder']),
       isPrimary: asBool(json['isPrimary']),
+      underReview: asBool(json['underReview']),
       createdAt: asDateTimeOrNull(json['createdAt']),
     );
   }
