@@ -1,6 +1,7 @@
 package com.dating.profiles.api;
 
 import com.dating.common.security.AuthenticatedUser;
+import com.dating.profiles.application.ArtistSearchService;
 import com.dating.profiles.application.ProfileService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -15,9 +16,11 @@ import java.util.List;
 public class ProfileController {
 
     private final ProfileService profileService;
+    private final ArtistSearchService artistSearch;
 
-    public ProfileController(ProfileService profileService) {
+    public ProfileController(ProfileService profileService, ArtistSearchService artistSearch) {
         this.profileService = profileService;
+        this.artistSearch = artistSearch;
     }
 
     @GetMapping("/me/profile")
@@ -66,5 +69,16 @@ public class ProfileController {
     @GetMapping("/tags")
     public ResponseEntity<List<TagResponseDto>> listTags() {
         return ResponseEntity.ok(profileService.listActiveTags());
+    }
+
+    @GetMapping("/interests")
+    public List<InterestGroupDto> listInterests() {
+        return profileService.listInterests();
+    }
+
+    /** Signed-in only: a miss may trigger a MusicBrainz lookup. */
+    @GetMapping("/artists")
+    public List<ArtistDto> searchArtists(@RequestParam(name = "q", defaultValue = "") String query) {
+        return artistSearch.search(query);
     }
 }

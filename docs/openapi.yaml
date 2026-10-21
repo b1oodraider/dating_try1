@@ -1045,7 +1045,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  available: { type: array, items: { type: string }, example: [ADMIN, CONTENT_EDITOR, MODERATOR] }
+                  available: { type: array, items: { type: string }, example: [ADMIN, CONTENT_EDITOR, MODERATOR, SUPPORT] }
                   accounts: { type: array, items: { $ref: '#/components/schemas/AdminAccount' } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/RoleRequired' }
@@ -1088,7 +1088,7 @@ paths:
   /admin/accounts/{accountId}/roles/{role}:
     parameters:
       - { $ref: '#/components/parameters/AccountId' }
-      - { name: role, in: path, required: true, schema: { type: string, enum: [ADMIN, CONTENT_EDITOR, MODERATOR] }, description: Без учёта регистра }
+      - { name: role, in: path, required: true, schema: { type: string, enum: [ADMIN, CONTENT_EDITOR, MODERATOR, SUPPORT] }, description: Без учёта регистра }
     put:
       tags: [admin]
       summary: Выдать роль (идемпотентно)
@@ -2782,7 +2782,7 @@ paths:
 
   /testing/roles/{role}:
     parameters:
-      - { name: role, in: path, required: true, schema: { type: string, enum: [ADMIN, CONTENT_EDITOR, MODERATOR] } }
+      - { name: role, in: path, required: true, schema: { type: string, enum: [ADMIN, CONTENT_EDITOR, MODERATOR, SUPPORT] } }
     post:
       tags: [testing]
       summary: Выдать себе роль персонала (аудит TESTING_GRANT)
@@ -2931,7 +2931,7 @@ components:
         roles:
           type: array
           description: Роли персонала (отсортированы); пусто у обычных пользователей
-          items: { type: string, enum: [ADMIN, CONTENT_EDITOR, MODERATOR] }
+          items: { type: string, enum: [ADMIN, CONTENT_EDITOR, MODERATOR, SUPPORT] }
 
     Tag:
       type: object

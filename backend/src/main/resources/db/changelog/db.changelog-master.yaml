@@ -55,3 +55,7 @@ databaseChangeLog:
       file: db/changelog/changesets/027-photo-face-review.yaml
   - include:
       file: db/changelog/changesets/028-boost-clock-skew.yaml
+  - include:
+      file: db/changelog/changesets/029-interests-music-history.yaml
+  - include:
+      file: db/changelog/changesets/030-support.yaml

@@ -108,7 +108,7 @@ export interface Account {
   createdAt: string;
   /** QA account: isolated in discovery, may use the testing API (test panel). */
   testAccount: boolean;
-  /** Staff roles, e.g. ['ADMIN', 'MODERATOR', 'CONTENT_EDITOR']. */
+  /** Staff roles, e.g. ['ADMIN', 'MODERATOR', 'CONTENT_EDITOR', 'SUPPORT']. */
   roles?: string[];
 }
 
@@ -533,7 +533,7 @@ export interface Restriction {
 // Staff (/admin/**): see docs/openapi.yaml
 // ---------------------------------------------------------------------------
 
-export type StaffRole = 'ADMIN' | 'MODERATOR' | 'CONTENT_EDITOR';
+export type StaffRole = 'ADMIN' | 'MODERATOR' | 'CONTENT_EDITOR' | 'SUPPORT';
 export type RestrictionKind = Restriction['kind'];
 
 export interface AdminAccount {
@@ -596,6 +596,47 @@ export interface ReportDecisionRequest {
   sanction?: boolean;
   clearAboutText?: boolean;
   clearDailyStatus?: boolean;
+}
+
+// Support tickets (docs/support.md)
+export type SupportCategory = 'ACCOUNT' | 'PROFILE' | 'LIKES_MATCHES' | 'PAYMENTS' | 'SAFETY' | 'BUG' | 'OTHER';
+export type SupportStatus = 'OPEN' | 'ANSWERED' | 'CLOSED';
+
+export interface SupportMessage {
+  id: string;
+  fromStaff: boolean;
+  text: string;
+  createdAt: string;
+}
+
+/** GET /admin/support/tickets item. */
+export interface SupportQueueItem {
+  id: string;
+  accountId: string;
+  profileId: string | null;
+  displayName: string | null;
+  testAccount: boolean;
+  category: SupportCategory;
+  status: SupportStatus;
+  createdAt: string;
+  lastMessageAt: string;
+  preview: string | null;
+}
+
+/** GET /admin/support/tickets/{id}. */
+export interface SupportStaffTicket {
+  id: string;
+  accountId: string;
+  phoneMasked: string;
+  profileId: string | null;
+  displayName: string | null;
+  testAccount: boolean;
+  category: SupportCategory;
+  status: SupportStatus;
+  createdAt: string;
+  updatedAt: string;
+  lastMessageAt: string;
+  messages: SupportMessage[];
 }
 
 export interface AdminPage<T> {

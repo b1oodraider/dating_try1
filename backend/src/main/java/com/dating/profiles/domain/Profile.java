@@ -113,6 +113,26 @@ public class Profile extends AssignedIdEntity {
     )
     private Set<RelationshipGoal> goals = new HashSet<>();
 
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "profile_interests",
+            joinColumns = @JoinColumn(name = "profile_id"),
+            inverseJoinColumns = @JoinColumn(name = "interest_code")
+    )
+    private Set<Interest> interests = new HashSet<>();
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "profile_artists",
+            joinColumns = @JoinColumn(name = "profile_id"),
+            inverseJoinColumns = @JoinColumn(name = "artist_id")
+    )
+    private Set<Artist> artists = new HashSet<>();
+
+    /** Show my zodiac sign (computed from the birth date) to others. */
+    @Column(name = "show_zodiac", nullable = false)
+    private boolean showZodiac;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -307,6 +327,35 @@ public class Profile extends AssignedIdEntity {
     public void setDailyStatus(String text, Instant expiresAt) {
         this.dailyStatusText = text;
         this.dailyStatusExpiresAt = expiresAt;
+        touch();
+    }
+
+    public Set<Interest> getInterests() {
+        return interests;
+    }
+
+    public void replaceInterests(Set<Interest> newInterests) {
+        this.interests.clear();
+        this.interests.addAll(newInterests);
+        touch();
+    }
+
+    public Set<Artist> getArtists() {
+        return artists;
+    }
+
+    public void replaceArtists(Set<Artist> newArtists) {
+        this.artists.clear();
+        this.artists.addAll(newArtists);
+        touch();
+    }
+
+    public boolean isShowZodiac() {
+        return showZodiac;
+    }
+
+    public void setShowZodiac(boolean showZodiac) {
+        this.showZodiac = showZodiac;
         touch();
     }
 

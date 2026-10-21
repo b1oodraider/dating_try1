@@ -61,7 +61,7 @@ Decoration  = { code, title, rarity: 'COMMON'|'RARE'|'EPIC'|'LEGENDARY'|null, at
                PHOTO_FRAME:    { borderColor: '#RRGGBB', borderWidth: number, glow?: boolean }
                PROFILE_STATUS: { emoji: string, label: string, color: '#RRGGBB' }
 Account    = { id, phoneMasked, status: 'ACTIVE'|'SUSPENDED'|'DELETION_PENDING'|'DELETED', createdAt, testAccount: boolean,
-               roles: string[] }   // staff roles 'ADMIN'|'CONTENT_EDITOR'|'MODERATOR' (sorted); [] for regular users
+               roles: string[] }   // staff roles 'ADMIN'|'CONTENT_EDITOR'|'MODERATOR'|'SUPPORT' (sorted); [] for regular users
 
 ## Auth
 POST /auth/otp/request   body { phone: string }   (any human format: "+7 (999) 123-45-67", "89991234567" … server normalizes)
@@ -516,9 +516,26 @@ GET /catalog?kind=CONSUMABLE|COSMETIC&category=   200 CatalogItem[] — active i
 GET /catalog/images/{imageId}   (public, no auth) binary image (JPEG/PNG/WebP), Cache-Control: public, max-age=1 year, immutable ;
                                 404 IMAGE_NOT_FOUND. An image never changes; a new upload gets a new id.
 
+## Interests, music, zodiac (docs/matching.md, part 1)
+GET /interests          (public) 200 [{ code, label, items: Interest[] }]   // categories in display order
+Interest = { code, label, category, categoryLabel }
+GET /artists?q=         (auth)   200 Artist[] (<= 10)  Artist = { id, name }; q < 2 chars → []. Our dictionary first; with fewer
+                        than 5 matches the server asks MusicBrainz once per query and adds what it finds (app.music.musicbrainz-enabled).
+PUT /me/profile         + interestCodes: string[] (<= 10, [] clears; unknown → 400 fieldErrors.interestCodes),
+                          artistIds: number[] (<= 5), showZodiac: boolean
+MyProfile               + interests: Interest[], artists: Artist[], showZodiac, zodiac: string|null (my sign, e.g. «Лев»)
+PublicProfile           + interests, artists, zodiac (only when the owner shows it), common: string[] (feed only: up to 2
+                          interests / artists / cards the viewer shares; omitted when empty)
+Every change of the profile stores its previous state in profile_history (no API; for moderation and support).
+Removed reference photos keep their files so later photos can still be compared with them.
+
+## Support (auth) — see docs/support.md
+Users: POST/GET /support/tickets, GET /support/tickets/{id}, POST /support/tickets/{id}/messages.
+Staff (SUPPORT, MODERATOR, ADMIN): /admin/support/tickets… — queue, reply (push `support_reply`), close.
+
 ## Admin (auth + staff role; /admin/**)
 Roles are read from the DB on every request (granting/revoking applies to the next request). Missing role: 403 ROLE_REQUIRED
-details.roles. "Editors" below = CONTENT_EDITOR or ADMIN. Moderators = MODERATOR or ADMIN. Every write is recorded in the
+details.roles. "Editors" below = CONTENT_EDITOR or ADMIN. Moderators = MODERATOR or ADMIN. Support staff = SUPPORT, MODERATOR or ADMIN (tickets, docs/support.md). Every write is recorded in the
 audit log (same transaction). Gacha admin endpoints (editors): see "Gacha admin" above.
 
 ### Reports moderation (moderators)
@@ -608,7 +625,7 @@ MESSAGES restriction for 24 h (reason BOT_MESSAGES, source RULE). Signup address
 
 ### Roles and audit (ADMIN)
 AdminAccount = { accountId, phoneMasked, status, testAccount, roles: string[], createdAt }
-GET    /admin/roles                                  200 { available: string[] (ADMIN, CONTENT_EDITOR, MODERATOR), accounts: AdminAccount[] (all accounts holding a role) }
+GET    /admin/roles                                  200 { available: string[] (ADMIN, CONTENT_EDITOR, MODERATOR, SUPPORT), accounts: AdminAccount[] (all accounts holding a role) }
 GET    /admin/accounts/by-phone?phone=               200 AdminAccount ; 400 INVALID_PHONE (fieldErrors.phone) | MALFORMED_REQUEST (no phone) ; 404 ACCOUNT_NOT_FOUND
 GET    /admin/accounts/{accountId}                   200 AdminAccount ; 404 ACCOUNT_NOT_FOUND
 PUT    /admin/accounts/{accountId}/roles/{role}      grant (idempotent; role case-insensitive) 200 AdminAccount ;

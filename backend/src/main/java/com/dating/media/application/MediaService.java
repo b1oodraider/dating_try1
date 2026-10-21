@@ -139,7 +139,7 @@ public class MediaService {
         if (scan == null) {
             return false;
         }
-        for (ProfilePhoto reference : photoRepository.findAllByProfileIdAndDeletedAtIsNullAndFaceReferenceTrue(profileId)) {
+        for (ProfilePhoto reference : photoRepository.findAllByProfileIdAndFaceReferenceTrue(profileId)) {
             byte[] bytes = fileStorage.find(reference.getStorageKey()).map(MediaService::readOrNull).orElse(null);
             FaceAnalyzer.Scan known = bytes == null ? null : faces.scan(bytes);
             if (known != null && FaceAnalyzer.similarity(scan, known) >= faceProperties.matchThreshold()) {
@@ -196,7 +196,11 @@ public class MediaService {
     void removePhoto(Profile profile, ProfilePhoto photo) {
         photo.markDeleted();
         photoRepository.saveAndFlush(photo);
-        fileStorage.deleteAfterCommit(List.of(photo.getStorageKey()));
+        // A reference photo keeps its file (never served again: the row is deleted) so later photos can still be
+        // compared with it; files go with the account.
+        if (!photo.isFaceReference()) {
+            fileStorage.deleteAfterCommit(List.of(photo.getStorageKey()));
+        }
 
         List<ProfilePhoto> remaining = photoRepository.findAllByProfileIdAndDeletedAtIsNullOrderBySortOrderAsc(profile.getId());
         if (!remaining.isEmpty() && remaining.stream().noneMatch(ProfilePhoto::isPrimary)) {

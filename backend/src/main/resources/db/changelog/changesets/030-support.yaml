@@ -1,0 +1,51 @@
+databaseChangeLog:
+  # Technical support (docs/support.md): a user opens a ticket with a first message, staff (SUPPORT, MODERATOR,
+  # ADMIN) answer in the same thread. Tickets and messages of a deleted account are deleted with it.
+  - changeSet:
+      id: 030-support
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE account_roles
+                DROP CONSTRAINT account_roles_role_check,
+                ADD CONSTRAINT account_roles_role_check
+                    CHECK (role IN ('ADMIN', 'CONTENT_EDITOR', 'MODERATOR', 'SUPPORT'))
+        - sql:
+            sql: >
+              CREATE TABLE support_tickets (
+                id              UUID PRIMARY KEY,
+                account_id      UUID NOT NULL REFERENCES accounts (id),
+                category        VARCHAR(20) NOT NULL
+                                CHECK (category IN ('ACCOUNT', 'PROFILE', 'LIKES_MATCHES', 'PAYMENTS', 'SAFETY',
+                                                    'BUG', 'OTHER')),
+                status          VARCHAR(20) NOT NULL CHECK (status IN ('OPEN', 'ANSWERED', 'CLOSED')),
+                created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                last_message_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+        - sql:
+            sql: >
+              CREATE TABLE support_messages (
+                id                UUID PRIMARY KEY,
+                ticket_id         UUID NOT NULL REFERENCES support_tickets (id) ON DELETE CASCADE,
+                author_account_id UUID NOT NULL REFERENCES accounts (id),
+                from_staff        BOOLEAN NOT NULL,
+                text              VARCHAR(4000) NOT NULL,
+                created_at        TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+        - sql:
+            sql: CREATE INDEX idx_support_tickets_queue ON support_tickets (status, last_message_at)
+        - sql:
+            sql: CREATE INDEX idx_support_tickets_account ON support_tickets (account_id, last_message_at DESC)
+        - sql:
+            sql: CREATE INDEX idx_support_messages_ticket ON support_messages (ticket_id, created_at)
+      rollback:
+        - sql:
+            sql: >
+              DROP TABLE support_messages;
+              DROP TABLE support_tickets;
+              DELETE FROM account_roles WHERE role = 'SUPPORT';
+              ALTER TABLE account_roles
+                DROP CONSTRAINT account_roles_role_check,
+                ADD CONSTRAINT account_roles_role_check CHECK (role IN ('ADMIN', 'CONTENT_EDITOR', 'MODERATOR'))

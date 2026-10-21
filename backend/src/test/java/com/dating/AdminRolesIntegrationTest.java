@@ -85,7 +85,7 @@ class AdminRolesIntegrationTest extends AdminTestSupport {
 
         admin(get("/api/v1/admin/roles"), null)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.available", contains("ADMIN", "CONTENT_EDITOR", "MODERATOR")))
+                .andExpect(jsonPath("$.available", contains("ADMIN", "CONTENT_EDITOR", "MODERATOR", "SUPPORT")))
                 .andExpect(jsonPath("$.accounts[?(@.accountId == '" + userId + "')].roles[0]", contains("CONTENT_EDITOR")));
         admin(get("/api/v1/admin/accounts/" + userId), null).andExpect(jsonPath("$.roles", contains("CONTENT_EDITOR")));
 

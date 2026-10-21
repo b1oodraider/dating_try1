@@ -45,7 +45,7 @@ public class SecurityConfig {
                         .accessDeniedHandler(securityErrorHandler))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/otp/request", "/api/v1/auth/otp/verify").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/tags", "/api/v1/goals", "/api/v1/cities").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/tags", "/api/v1/goals", "/api/v1/cities", "/api/v1/interests").permitAll()
                         // Signed URLs: authorization is the HMAC signature, so <img src> works without a header.
                         .requestMatchers(HttpMethod.GET, "/api/v1/media/photos/*").permitAll()
                         // Cosmetics are public, so are their images (immutable by id).

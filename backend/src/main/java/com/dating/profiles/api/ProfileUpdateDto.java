@@ -79,5 +79,14 @@ public record ProfileUpdateDto(
         Boolean invisible,
 
         /** Show my premium badge to others. */
-        Boolean showPremiumBadge
+        Boolean showPremiumBadge,
+
+        /** Codes from GET /interests, up to 10; [] clears. */
+        List<String> interestCodes,
+
+        /** Ids from GET /artists, up to 5; [] clears. */
+        List<Long> artistIds,
+
+        /** Show my zodiac sign to others. */
+        Boolean showZodiac
 ) {}

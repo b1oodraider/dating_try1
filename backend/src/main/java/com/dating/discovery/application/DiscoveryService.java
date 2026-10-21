@@ -20,6 +20,9 @@ import com.dating.profiles.application.ProfilePhotoQuery;
 import com.dating.common.errors.ApiException;
 import com.dating.profiles.domain.CommunicationTag;
 import com.dating.profiles.domain.Profile;
+import java.util.stream.Collectors;
+import com.dating.profiles.domain.Artist;
+import com.dating.profiles.domain.Interest;
 import com.dating.profiles.domain.PublicationStatus;
 import com.dating.profiles.domain.VisibilityStatus;
 import com.dating.profiles.persistence.CityRepository;
@@ -175,7 +178,8 @@ public class DiscoveryService {
                         decorations.getOrDefault(p.getAccountId(), Map.of()), premiumOwners.contains(p.getAccountId()),
                         compatibility.get(p.getAccountId()),
                         boostBadges.contains(p.getAccountId()) ? Boolean.TRUE : null)
-                        .withDistanceKm(sharedDistanceKm(viewer, p)))
+                        .withDistanceKm(sharedDistanceKm(viewer, p))
+                        .withCommon(commonWith(viewer, p)))
                 .toList();
 
         return new DiscoveryPageResponseDto(items, query.page(), query.limit(),
@@ -276,6 +280,21 @@ public class DiscoveryService {
                 cb.lessThanOrEqualTo(cb.function("profile_distance_km", Double.class,
                         cb.literal(point[0]), cb.literal(point[1]), root.get("id")), (double) radiusKm),
                 cb.isTrue(cb.function("has_liked", Boolean.class, root.get("accountId"), cb.literal(viewerAccountId))));
+    }
+
+    /** Up to two things both people chose: interests first, then artists, then communication cards. */
+    static List<String> commonWith(Profile viewer, Profile candidate) {
+        List<String> common = new ArrayList<>();
+        Set<String> myInterests = viewer.getInterests().stream().map(Interest::getCode).collect(Collectors.toSet());
+        candidate.getInterests().stream().filter(i -> i.isActive() && myInterests.contains(i.getCode()))
+                .map(Interest::getLabel).sorted().forEach(common::add);
+        Set<Long> myArtists = viewer.getArtists().stream().map(Artist::getId).collect(Collectors.toSet());
+        candidate.getArtists().stream().filter(a -> myArtists.contains(a.getId()))
+                .map(Artist::getName).sorted().forEach(common::add);
+        Set<String> myTags = viewer.getTags().stream().map(CommunicationTag::getCode).collect(Collectors.toSet());
+        candidate.getTags().stream().filter(t -> t.isActive() && myTags.contains(t.getCode()))
+                .map(CommunicationTag::getLabel).sorted().forEach(common::add);
+        return common.size() > 2 ? List.copyOf(common.subList(0, 2)) : common;
     }
 
     /** Whole km, at least 1; only when both share their location. */

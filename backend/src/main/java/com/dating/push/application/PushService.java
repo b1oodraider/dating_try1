@@ -4,6 +4,7 @@ import com.dating.chat.application.MessageSentEvent;
 import com.dating.push.domain.PushProvider;
 import com.dating.push.persistence.PushDeviceRepository;
 import com.dating.social.application.SocialEvents;
+import com.dating.support.application.SupportService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -20,7 +21,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Device registration and push delivery for matches, messages and likes. Pushes go out after the business
+ * Device registration and push delivery for matches, messages, likes and support answers. Pushes go out after the business
  * transaction commits, on another thread (provider calls are slow and must not hold the request or its connection).
  * A push is sent even when the app is open; the client hides it in the foreground (it also gets the SSE event).
  */
@@ -69,6 +70,12 @@ public class PushService {
         notifyLater(event.targetAccountId(), event.superlike()
                 ? new PushMessage("Суперлайк", "Кто-то отправил вам суперлайк", Map.of("type", "like_received", "superlike", "true"))
                 : new PushMessage("Новый лайк", "Кому-то понравилась ваша анкета", Map.of("type", "like_received", "superlike", "false")));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onSupportReply(SupportService.ReplyPosted event) {
+        notifyLater(event.accountId(), new PushMessage("Ответ поддержки", "Поддержка ответила на ваше обращение",
+                Map.of("type", "support_reply", "ticketId", event.ticketId().toString())));
     }
 
     /** Days without activity after which the profile leaves the feed (DiscoveryService.ACTIVE_WITHIN_DAYS). */

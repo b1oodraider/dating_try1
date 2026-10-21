@@ -5,8 +5,8 @@ import { Button } from '../../../shared/components/Button';
 import { useToast } from '../../../shared/components/Toast';
 import { cardClass, Field, formatTs, inputClass, KIND_LABEL, LoadState, Pager, useLoad } from './shared';
 
-const STAFF_ROLES: StaffRole[] = ['ADMIN', 'MODERATOR', 'CONTENT_EDITOR'];
-const ROLE_LABEL: Record<string, string> = { ADMIN: 'Админ', MODERATOR: 'Модератор', CONTENT_EDITOR: 'Редактор контента' };
+const STAFF_ROLES: StaffRole[] = ['ADMIN', 'MODERATOR', 'CONTENT_EDITOR', 'SUPPORT'];
+const ROLE_LABEL: Record<string, string> = { ADMIN: 'Админ', MODERATOR: 'Модератор', CONTENT_EDITOR: 'Редактор контента', SUPPORT: 'Поддержка' };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const METRIC_LABEL: Record<string, string> = {

@@ -14,6 +14,9 @@ import type {
   Risk,
   RiskQueueItem,
   StaffRole,
+  SupportQueueItem,
+  SupportStaffTicket,
+  SupportStatus,
   VerificationReview,
   ApiErrorBody,
   AuthChallenge,
@@ -788,6 +791,28 @@ export const api = {
     /** Approve: the photo becomes visible. Reject: the photo is deleted. */
     decidePhotoReview(photoId: string, approve: boolean): Promise<void> {
       return request(`/admin/photo-reviews/${id(photoId)}/decision`, { method: 'POST', body: { approve } });
+    },
+
+    /** SUPPORT, MODERATOR or ADMIN. OPEN is sorted oldest first (the longest waiting on top). */
+    listSupportTickets(
+      query: { status?: SupportStatus; page?: number; limit?: number },
+      signal?: AbortSignal
+    ): Promise<AdminPage<SupportQueueItem>> {
+      const params = new URLSearchParams();
+      params.set('status', query.status ?? 'OPEN');
+      params.set('page', String(query.page ?? 0));
+      params.set('limit', String(query.limit ?? 20));
+      return request(`/admin/support/tickets?${params.toString()}`, { signal });
+    },
+    getSupportTicket(ticketId: string): Promise<SupportStaffTicket> {
+      return request(`/admin/support/tickets/${id(ticketId)}`);
+    },
+    /** The ticket becomes ANSWERED and the user gets a push (without the text). */
+    replySupportTicket(ticketId: string, text: string): Promise<SupportStaffTicket> {
+      return request(`/admin/support/tickets/${id(ticketId)}/messages`, { method: 'POST', body: { text } });
+    },
+    closeSupportTicket(ticketId: string): Promise<SupportStaffTicket> {
+      return request(`/admin/support/tickets/${id(ticketId)}/close`, { method: 'POST' });
     },
 
     /** The API takes the phone as a query parameter (ADMIN). */

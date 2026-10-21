@@ -1,5 +1,14 @@
 package com.dating.profiles.application;
 
+import com.dating.profiles.persistence.ProfileHistoryRepository;
+import com.dating.profiles.persistence.InterestRepository;
+import com.dating.profiles.persistence.ArtistRepository;
+import com.dating.profiles.domain.InterestCategory;
+import com.dating.profiles.domain.Interest;
+import com.dating.profiles.domain.Artist;
+import com.dating.profiles.api.InterestGroupDto;
+import com.dating.profiles.api.InterestDto;
+import com.dating.profiles.api.ArtistDto;
 import com.dating.accounts.application.AccountDeletedEvent;
 import com.dating.common.errors.ApiException;
 import com.dating.productevents.application.ProductEventPublisher;
@@ -50,6 +59,13 @@ public class ProfileService {
     private final RelationshipGoalRepository goalRepository;
     private final FeatureAccess featureAccess;
     private final com.dating.accounts.application.AccountService accounts;
+    private final InterestRepository interestRepository;
+    private final ArtistRepository artistRepository;
+    private final ProfileHistoryRepository history;
+    private final tools.jackson.databind.json.JsonMapper jsonMapper;
+
+    static final int MAX_INTERESTS = 10;
+    static final int MAX_ARTISTS = 5;
     private final CityRepository cityRepository;
 
     public ProfileService(ProfileRepository profileRepository,
@@ -61,7 +77,15 @@ public class ProfileService {
                           RelationshipGoalRepository goalRepository,
                           FeatureAccess featureAccess,
                           CityRepository cityRepository,
-                          com.dating.accounts.application.AccountService accounts) {
+                          com.dating.accounts.application.AccountService accounts,
+                          InterestRepository interestRepository,
+                          ArtistRepository artistRepository,
+                          ProfileHistoryRepository history,
+                          tools.jackson.databind.json.JsonMapper jsonMapper) {
+        this.interestRepository = interestRepository;
+        this.artistRepository = artistRepository;
+        this.history = history;
+        this.jsonMapper = jsonMapper;
         this.accounts = accounts;
         this.cityRepository = cityRepository;
         this.profileRepository = profileRepository;
@@ -156,6 +180,14 @@ public class ProfileService {
         if (dto.goalCodes() != null) {
             goals = resolveGoals(dto.goalCodes(), errors);
         }
+        Set<Interest> interests = null;
+        if (dto.interestCodes() != null) {
+            interests = resolveInterests(dto.interestCodes(), errors);
+        }
+        Set<Artist> artists = null;
+        if (dto.artistIds() != null) {
+            artists = resolveArtists(dto.artistIds(), errors);
+        }
         boolean clearHeight = Boolean.TRUE.equals(dto.clearHeight());
         if (clearHeight && dto.heightCm() != null) {
             errors.put("heightCm", "Нельзя одновременно указать и удалить рост");
@@ -198,8 +230,18 @@ public class ProfileService {
         } else if (dto.heightCm() != null) {
             profile.setHeightCm(dto.heightCm());
         }
+        Map<String, Object> before = snapshot(profile);
         if (goals != null) {
             profile.replaceGoals(goals);
+        }
+        if (interests != null) {
+            profile.replaceInterests(interests);
+        }
+        if (artists != null) {
+            profile.replaceArtists(artists);
+        }
+        if (dto.showZodiac() != null) {
+            profile.setShowZodiac(dto.showZodiac());
         }
 
         if (displayName != null) {
@@ -251,8 +293,89 @@ public class ProfileService {
         if (tags != null) {
             profile.replaceTags(tags);
         }
+        if (!before.equals(snapshot(profile))) {
+            history.save(profile.getId(), jsonMapper.writeValueAsString(before));
+        }
 
         return toMyProfileDto(profile);
+    }
+
+    /** What a person filled in (no photos: they keep their own rows); the previous one goes to profile_history. */
+    private static Map<String, Object> snapshot(Profile p) {
+        Map<String, Object> s = new LinkedHashMap<>();
+        s.put("displayName", p.getDisplayName());
+        s.put("birthDate", p.getBirthDate() == null ? null : p.getBirthDate().toString());
+        s.put("gender", p.getGender() == null ? null : p.getGender().name());
+        s.put("seeking", p.getSeeking() == null ? null : p.getSeeking().name());
+        s.put("ageFrom", p.getPrefAgeMin());
+        s.put("ageTo", p.getPrefAgeMax());
+        s.put("city", p.getCity());
+        s.put("cityId", p.getCityId());
+        s.put("aboutText", p.getAboutText());
+        s.put("dailyStatusText", p.getDailyStatusText());
+        s.put("heightCm", p.getHeightCm());
+        s.put("goals", p.getGoals().stream().map(RelationshipGoal::getCode).sorted().toList());
+        s.put("tags", p.getTags().stream().map(CommunicationTag::getCode).sorted().toList());
+        s.put("interests", p.getInterests().stream().map(Interest::getCode).sorted().toList());
+        s.put("artists", p.getArtists().stream().map(Artist::getId).sorted().toList());
+        return s;
+    }
+
+    private Set<Interest> resolveInterests(List<String> rawCodes, Map<String, String> errors) {
+        Set<String> codes = rawCodes.stream().filter(Objects::nonNull).map(String::trim)
+                .filter(code -> !code.isEmpty()).collect(Collectors.toCollection(LinkedHashSet::new));
+        if (codes.size() > MAX_INTERESTS) {
+            errors.put("interestCodes", "Не больше " + MAX_INTERESTS + " увлечений");
+            return new HashSet<>();
+        }
+        List<Interest> found = codes.isEmpty() ? List.of() : interestRepository.findAllByCodeInAndActiveTrue(codes);
+        if (found.size() != codes.size()) {
+            Set<String> known = found.stream().map(Interest::getCode).collect(Collectors.toSet());
+            errors.put("interestCodes", "Неизвестные увлечения: "
+                    + codes.stream().filter(c -> !known.contains(c)).collect(Collectors.joining(", ")));
+        }
+        return new HashSet<>(found);
+    }
+
+    private Set<Artist> resolveArtists(List<Long> rawIds, Map<String, String> errors) {
+        Set<Long> ids = rawIds.stream().filter(Objects::nonNull).collect(Collectors.toCollection(LinkedHashSet::new));
+        if (ids.size() > MAX_ARTISTS) {
+            errors.put("artistIds", "Не больше " + MAX_ARTISTS + " исполнителей");
+            return new HashSet<>();
+        }
+        List<Artist> found = ids.isEmpty() ? List.of() : artistRepository.findAllById(ids);
+        if (found.size() != ids.size()) {
+            errors.put("artistIds", "Неизвестные исполнители");
+        }
+        return new HashSet<>(found);
+    }
+
+    public static List<InterestDto> interestsOf(Profile profile) {
+        return profile.getInterests().stream()
+                .filter(Interest::isActive)
+                .sorted(Comparator.comparingInt((Interest i) -> i.getCategory().getSortOrder())
+                        .thenComparingInt(Interest::getSortOrder))
+                .map(InterestDto::from)
+                .toList();
+    }
+
+    public static List<ArtistDto> artistsOf(Profile profile) {
+        return profile.getArtists().stream()
+                .sorted(Comparator.comparing(Artist::getName, String.CASE_INSENSITIVE_ORDER))
+                .map(ArtistDto::from)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<InterestGroupDto> listInterests() {
+        Map<InterestCategory, List<Interest>> byCategory = interestRepository.findAllByActiveTrue().stream()
+                .collect(Collectors.groupingBy(Interest::getCategory));
+        return byCategory.entrySet().stream()
+                .sorted(Comparator.comparingInt(e -> e.getKey().getSortOrder()))
+                .map(e -> new InterestGroupDto(e.getKey().getCode(), e.getKey().getLabel(),
+                        e.getValue().stream().sorted(Comparator.comparingInt(Interest::getSortOrder))
+                                .map(InterestDto::from).toList()))
+                .toList();
     }
 
     private Set<CommunicationTag> resolveTags(List<String> rawCodes, Map<String, String> errors) {
@@ -401,6 +524,10 @@ public class ProfileService {
                 identityLocked(profile),
                 profile.isInvisible(),
                 profile.isShowPremiumBadge(),
+                interestsOf(profile),
+                artistsOf(profile),
+                profile.isShowZodiac(),
+                Zodiac.of(profile.getBirthDate()),
                 profile.getCreatedAt(),
                 profile.getUpdatedAt()
         );

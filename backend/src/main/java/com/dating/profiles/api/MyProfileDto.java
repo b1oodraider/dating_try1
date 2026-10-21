@@ -50,6 +50,11 @@ public record MyProfileDto(
         boolean identityLocked,
         boolean invisible,
         boolean showPremiumBadge,
+        List<InterestDto> interests,
+        List<ArtistDto> artists,
+        boolean showZodiac,
+        /** My sign, always (shown to others only with showZodiac). */
+        String zodiac,
         Instant createdAt,
         Instant updatedAt
 ) {}

@@ -83,7 +83,7 @@ jobs:
           fi
       - name: APK
         if: github.event_name == 'push'
-        run: flutter build apk --release --dart-define=API_BASE_URL=$API_BASE_URL
+        run: flutter build apk --release --build-number=${{ github.run_number }} --dart-define=API_BASE_URL=$API_BASE_URL
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'push'
         with:
@@ -104,7 +104,10 @@ jobs:
       # Testers download the latest build at https://<domain>/dating.apk (docs/testing.md).
       - uses: actions/download-artifact@v4
         with: { name: dating-apk, path: apk }
-      - run: cp apk/app-release.apk web/dating.apk
+      - run: |
+          cp apk/app-release.apk web/dating.apk
+          # The app compares this build number with its own («Проверить обновления»).
+          echo "{\"build\": ${{ github.run_number }}, \"apk\": \"/dating.apk\"}" > web/app-version.json
       - name: Ship to the server
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}

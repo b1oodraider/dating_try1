@@ -13,7 +13,9 @@ public enum Role {
     /** Communication cards, relationship goals, catalog items and achievement definitions. */
     CONTENT_EDITOR,
     /** Report queue (/admin/reports); later also contest submissions. */
-    MODERATOR;
+    MODERATOR,
+    /** Support tickets (/admin/support); MODERATOR and ADMIN see them too. */
+    SUPPORT;
 
     public static Optional<Role> parse(String value) {
         return Arrays.stream(values()).filter(r -> r.name().equalsIgnoreCase(value)).findFirst();

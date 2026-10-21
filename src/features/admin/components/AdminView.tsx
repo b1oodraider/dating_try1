@@ -6,21 +6,29 @@ import { VerificationsPanel } from './VerificationsPanel';
 import { PhotoReviewsPanel } from './PhotoReviewsPanel';
 import { AccountsPanel } from './AccountsPanel';
 import { AuditPanel } from './AuditPanel';
+import { SupportPanel } from './SupportPanel';
 
-/** Moderation endpoints accept MODERATOR or ADMIN; content editors have no screens here (editors are skipped). */
-export const isStaff = (account: Account | null) =>
-  !!account?.roles?.some((r) => r === 'ADMIN' || r === 'MODERATOR');
+/** Moderation endpoints accept MODERATOR or ADMIN. */
+const isModerator = (account: Account | null) => !!account?.roles?.some((r) => r === 'ADMIN' || r === 'MODERATOR');
 
-type Section = 'reports' | 'verifications' | 'photos' | 'accounts' | 'audit';
+/** Who sees the cabinet: moderators, admins and support (support sees only tickets; content editors have no screens here). */
+export const isStaff = (account: Account | null) => isModerator(account) || !!account?.roles?.includes('SUPPORT');
+
+type Section = 'reports' | 'verifications' | 'photos' | 'accounts' | 'support' | 'audit';
 
 export const AdminView: React.FC = () => {
   const { account } = useAuth();
   const isAdmin = !!account?.roles?.includes('ADMIN');
-  const [section, setSection] = useState<Section>('reports');
+  const moderator = isModerator(account);
+  const [section, setSection] = useState<Section>(moderator ? 'reports' : 'support');
   const [accountId, setAccountId] = useState<string | null>(null);
 
   if (!isStaff(account)) {
-    return <p className="py-16 text-center text-sm text-zinc-500">Кабинет доступен только модераторам и администраторам.</p>;
+    return (
+      <p className="py-16 text-center text-sm text-zinc-500">
+        Кабинет доступен только модераторам, поддержке и администраторам.
+      </p>
+    );
   }
 
   const openAccount = (id: string | null) => {
@@ -29,16 +37,21 @@ export const AdminView: React.FC = () => {
   };
 
   const sections: Array<{ id: Section; label: string }> = [
-    { id: 'reports', label: 'Жалобы' },
-    { id: 'verifications', label: 'Верификации' },
-    { id: 'photos', label: 'Фото' },
-    { id: 'accounts', label: 'Аккаунты' },
+    ...(moderator
+      ? [
+          { id: 'reports' as const, label: 'Жалобы' },
+          { id: 'verifications' as const, label: 'Верификации' },
+          { id: 'photos' as const, label: 'Фото' },
+          { id: 'accounts' as const, label: 'Аккаунты' },
+        ]
+      : []),
+    { id: 'support', label: 'Поддержка' },
     ...(isAdmin ? [{ id: 'audit' as const, label: 'Журнал' }] : []),
   ];
 
   return (
     <div className="max-w-3xl mx-auto space-y-4 pb-10 min-w-0">
-      <h1 className="text-lg font-bold text-zinc-900">Кабинет модератора</h1>
+      <h1 className="text-lg font-bold text-zinc-900">{moderator ? 'Кабинет модератора' : 'Кабинет поддержки'}</h1>
       <nav className="flex flex-wrap gap-1 bg-zinc-100/80 p-1 rounded-xl w-fit max-w-full">
         {sections.map((s) => (
           <button
@@ -53,6 +66,7 @@ export const AdminView: React.FC = () => {
           </button>
         ))}
       </nav>
+      {section === 'support' && <SupportPanel onOpenAccount={moderator ? openAccount : undefined} />}
       {section === 'reports' && <ReportsPanel onOpenAccount={openAccount} />}
       {section === 'verifications' && <VerificationsPanel onOpenAccount={openAccount} />}
       {section === 'photos' && <PhotoReviewsPanel onOpenAccount={openAccount} />}

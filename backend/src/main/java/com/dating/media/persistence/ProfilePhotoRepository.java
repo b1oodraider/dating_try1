@@ -24,6 +24,9 @@ public interface ProfilePhotoRepository extends JpaRepository<ProfilePhoto, UUID
 
     List<ProfilePhoto> findAllByProfileIdAndDeletedAtIsNullAndFaceReferenceTrue(UUID profileId);
 
+    /** Reference photos including removed ones: «fill in again» must not erase what new photos are compared with. */
+    List<ProfilePhoto> findAllByProfileIdAndFaceReferenceTrue(UUID profileId);
+
     List<ProfilePhoto> findAllByFaceReviewAndDeletedAtIsNullOrderByCreatedAtAsc(String faceReview,
                                                                                  org.springframework.data.domain.Pageable page);
 

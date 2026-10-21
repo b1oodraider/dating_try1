@@ -11,7 +11,7 @@ import java.util.UUID;
 
 /**
  * @param testAccount QA account; clients show the testing panel for it
- * @param roles       staff roles (ADMIN, CONTENT_EDITOR, MODERATOR); clients show admin tools for them
+ * @param roles       staff roles (ADMIN, CONTENT_EDITOR, MODERATOR, SUPPORT); clients show admin tools for them
  */
 public record AccountResponseDto(
         UUID id,
