@@ -22,9 +22,15 @@ class PlacePick {
 /// Moscow centre: where the map opens when the location is unknown.
 const LatLng _fallbackCenter = LatLng(55.7558, 37.6173);
 
-/// The map tiles. shortcut: OpenStreetMap's public tiles are for testing only (their usage policy forbids heavy
-/// use); before release switch to a provider with a contract (Yandex, 2GIS, MapTiler).
-const String _tiles = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+/// The map tiles: 2GIS raster tiles, the same in the picker and the plan sheet.
+/// shortcut: public tile servers without a key or a contract — fine for testing; before release sign a 2GIS
+/// agreement (API key, limits) and put its tile address here.
+TileLayer mapTiles() => TileLayer(
+      urlTemplate: 'https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}',
+      subdomains: const ['0', '1', '2', '3'],
+      maxNativeZoom: 18,
+      userAgentPackageName: 'com.dating.dating_mobile',
+    );
 
 /// Picks a place for a date point: curated places around (sponsored ones with their ad label) or a tap anywhere.
 class MapPickerScreen extends StatefulWidget {
@@ -142,7 +148,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                 },
               ),
               children: [
-                TileLayer(urlTemplate: _tiles, userAgentPackageName: 'com.dating.dating_mobile'),
+                mapTiles(),
                 MarkerLayer(markers: [
                   for (final v in _venues)
                     Marker(
@@ -167,7 +173,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                       child: const Icon(Icons.place_rounded, size: 40, color: Brand.rose),
                     ),
                 ]),
-                const RichAttributionWidget(attributions: [TextSourceAttribution('© OpenStreetMap')]),
+                const RichAttributionWidget(attributions: [TextSourceAttribution('© 2ГИС')]),
               ],
             ),
           ),

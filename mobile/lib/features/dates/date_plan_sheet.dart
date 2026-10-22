@@ -131,9 +131,7 @@ class _DatePlanSheetState extends State<_DatePlanSheet> {
                     interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
                   ),
                   children: [
-                    TileLayer(
-                        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'com.dating.dating_mobile'),
+                    mapTiles(),
                     MarkerLayer(markers: [
                       for (final i in plan.items)
                         Marker(
