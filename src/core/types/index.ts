@@ -9,6 +9,8 @@ export interface Tag {
   label: string;
   description: string;
   sortOrder: number;
+  /** Place on the category's scale (smaller = closer to its min end); null = the category is not a scale. */
+  scalePosition?: number | null;
 }
 
 export interface Photo {
@@ -73,6 +75,21 @@ export interface MyProfile {
   verified?: boolean;
   /** Completeness tips weighted to 100%. */
   tips?: ProfileTip[];
+  /** Dictionary city (GET /cities); city is its official name. */
+  cityId?: number | null;
+  searchRadiusKm?: number | null;
+  locationShared?: boolean;
+  interests?: Interest[];
+  artists?: Artist[];
+  /** My zodiac sign, e.g. «Лев»; showZodiac = others see it. */
+  zodiac?: string | null;
+  showZodiac?: boolean;
+  /** Premium INVISIBLE: only people I liked see me. */
+  invisible?: boolean;
+  showPremiumBadge?: boolean;
+  /** Gender and birth date are locked (after the first publish). */
+  identityLocked?: boolean;
+  facts?: Facts;
   createdAt: string;
   updatedAt: string;
 }
@@ -97,6 +114,17 @@ export interface PublicProfile {
   compatibility?: number | null;
   /** Whether the profile is currently boosted in discovery. */
   boosted?: boolean;
+  /** Only when both people share their location. */
+  distanceKm?: number | null;
+  interests?: Interest[];
+  artists?: Artist[];
+  /** Only when the owner shows it. */
+  zodiac?: string | null;
+  /** Feed only: up to 2 interests / artists / cards the viewer shares. */
+  common?: string[];
+  /** Feed only: codes of the communication cards both chose (highlighted). */
+  sharedTags?: string[];
+  facts?: Facts;
 }
 
 export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'DELETED';
@@ -175,6 +203,29 @@ export interface ProfileUpdate {
   clearHeight?: boolean;
   /** <= 3 known goal codes (else 400 UNKNOWN_GOAL); [] clears. */
   goalCodes?: string[];
+  /** From GET /cities. */
+  cityId?: number;
+  searchRadiusKm?: number;
+  clearSearchRadius?: boolean;
+  /** <= 10, [] clears. */
+  interestCodes?: string[];
+  /** <= 5, [] clears. */
+  artistIds?: number[];
+  showZodiac?: boolean;
+  invisible?: boolean;
+  showPremiumBadge?: boolean;
+  /** Facts: a code ("" clears) — kidsHas, kidsPlans, smoking, alcohol, sport, educationLevel; a list ([] clears) — pets,
+   * languages; text ("" clears) — profession (<= 80), university (<= 120). */
+  kidsHas?: string;
+  kidsPlans?: string;
+  smoking?: string;
+  alcohol?: string;
+  sport?: string;
+  pets?: string[];
+  profession?: string;
+  educationLevel?: string;
+  university?: string;
+  languages?: string[];
 }
 
 /**
@@ -200,6 +251,8 @@ export interface ExcludedGoals {
 export const PREMIUM_FEATURE = {
   ADVANCED_FILTERS: 'ADVANCED_FILTERS',
   EXCLUSION_WORDS: 'EXCLUSION_WORDS',
+  UNDO_SWIPE: 'UNDO_SWIPE',
+  PASS_REFRESH: 'PASS_REFRESH',
 } as const;
 
 /** Error body returned by every failing API call. */
@@ -299,7 +352,7 @@ export interface ReactionResult {
   queued?: boolean;
 }
 
-export type MessageType = 'TEXT' | 'STICKER';
+export type MessageType = 'TEXT' | 'STICKER' | 'DATE_PLAN';
 
 export interface Message {
   id: string;
@@ -311,6 +364,8 @@ export interface Message {
   sticker: string | null;
   clientMessageId: string | null;
   createdAt: string;
+  /** DATE_PLAN messages only (text is the plan's one-line summary). */
+  datePlanId?: string | null;
 }
 
 export interface Match {
@@ -322,6 +377,9 @@ export interface Match {
   myLastReadMessageId: string | null;
   otherLastReadMessageId: string | null;
   otherLastReadAt: string | null;
+  /** The other person's last activity (null = unknown) and whether they are online now. */
+  otherLastSeenAt?: string | null;
+  otherOnline?: boolean;
 }
 
 export interface ReadState {
@@ -859,3 +917,154 @@ export interface FaqInput {
   sortOrder?: number;
   active?: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Interests, music, cities, facts (docs/matching.md, part 1)
+// ---------------------------------------------------------------------------
+
+export interface Interest {
+  code: string;
+  label: string;
+  category: string;
+  categoryLabel: string;
+}
+
+export interface InterestGroup {
+  code: string;
+  label: string;
+  items: Interest[];
+}
+
+export interface Artist {
+  id: number;
+  name: string;
+}
+
+export interface City {
+  id: number;
+  name: string;
+  region: string | null;
+  /** The alias that matched when it is not the official name («Питер»). */
+  matchedName: string | null;
+}
+
+/** Profile facts: codes from GET /profile-options; null / [] = not said. */
+export interface Facts {
+  kidsHas: string | null;
+  kidsPlans: string | null;
+  smoking: string | null;
+  alcohol: string | null;
+  sport: string | null;
+  pets: string[];
+  profession: string | null;
+  educationLevel: string | null;
+  university: string | null;
+  languages: string[];
+}
+
+export interface FactOption {
+  code: string;
+  label: string;
+}
+
+/** GET /profile-options: answers per fact (kidsHas, kidsPlans, smoking, alcohol, sport, pets, educationLevel, languages). */
+export type ProfileOptions = Record<string, FactOption[]>;
+
+/** One two-way fact filter: answers I accept, and whether people who did not say are shown. */
+export interface FactFilter {
+  accept: string[];
+  unspecified: boolean;
+}
+
+/** Facts the feed can be filtered on (PUT /me/fact-filters keys). */
+export type FactFilters = Partial<Record<'kidsHas' | 'kidsPlans' | 'smoking' | 'alcohol' | 'sport' | 'pets', FactFilter>>;
+
+// ---------------------------------------------------------------------------
+// Date plan (docs/date-plan.md)
+// ---------------------------------------------------------------------------
+
+export type DateActivity = 'COFFEE' | 'WALK' | 'FOOD' | 'CINEMA' | 'CULTURE' | 'ACTIVE' | 'OTHER';
+
+/** Advertising label of a sponsored place (38-ФЗ): always shown next to it. */
+export interface VenueAd {
+  label: string;
+  advertiser: string;
+  erid: string | null;
+}
+
+export interface Venue {
+  id: string;
+  name: string;
+  address: string | null;
+  latitude: number;
+  longitude: number;
+  category: DateActivity;
+  description: string | null;
+  ad: VenueAd | null;
+}
+
+export interface DatePlanItem {
+  placeName: string;
+  address: string | null;
+  latitude: number;
+  longitude: number;
+  startsAt: string;
+  activity: DateActivity;
+  comment: string | null;
+  venue: Venue | null;
+}
+
+export interface DatePlanItemInput {
+  placeName?: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  startsAt: string;
+  activity?: DateActivity;
+  comment?: string;
+  venueId?: string;
+}
+
+export type DatePlanStatus = 'PROPOSED' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED';
+
+export interface DatePlan {
+  id: string;
+  matchId: string;
+  status: DatePlanStatus;
+  version: number;
+  /** I proposed it. */
+  mine: boolean;
+  lastEditMine: boolean;
+  /** I may accept or decline it. */
+  canRespond: boolean;
+  /** It is open and I may edit it (premium). */
+  canEdit: boolean;
+  items: DatePlanItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Help desk (user side, docs/support.md)
+// ---------------------------------------------------------------------------
+
+export interface SupportTicketSummary {
+  id: string;
+  category: SupportCategory;
+  status: SupportStatus;
+  lastMessageAt: string | null;
+}
+
+export interface SupportTicket extends SupportTicketSummary {
+  messages: SupportMessage[];
+}
+
+export interface FaqEntry {
+  id: string;
+  question: string;
+  answer: string;
+  sortOrder: number;
+}
+
+/** Products of the purchase STUB (no payment yet). */
+export type StubProduct = 'PREMIUM_MONTH' | 'SUPERLIKE_PACK' | 'BOOST_PACK';

@@ -5,6 +5,8 @@ import { api, ApiError, getErrorMessage } from '../../../core/api/client';
 import type { ReceivedLike, PublicProfile } from '../../../core/types';
 import { Heart, Star, Crown, Frown, Sparkles, Check, X } from 'lucide-react';
 import { useToast } from '../../../shared/components/Toast';
+import { useAuth } from '../../../core/context/AuthContext';
+import { PurchaseModal } from '../../premium/components/PurchaseModal';
 
 /** Contract maximum for one page. */
 const PAGE_SIZE = 50;
@@ -21,6 +23,8 @@ export const ReceivedLikesModal: React.FC<ReceivedLikesModalProps> = ({
   onMatched,
 }) => {
   const { showToast } = useToast();
+  const { refreshProfile } = useAuth();
+  const [isPurchaseOpen, setIsPurchaseOpen] = useState(false);
   const [likes, setLikes] = useState<ReceivedLike[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -104,6 +108,7 @@ export const ReceivedLikesModal: React.FC<ReceivedLikesModalProps> = ({
   };
 
   return (
+    <>
     <Modal
       isOpen={isOpen}
       onClose={onClose}
@@ -128,8 +133,8 @@ export const ReceivedLikesModal: React.FC<ReceivedLikesModalProps> = ({
                 С подпиской Премиум вы сразу видите, кто проявил к вам симпатию, и можете отвечать взаимностью без ожидания в ленте.
               </p>
             </div>
-            <Button variant="outline" size="sm" onClick={onClose}>
-              Понятно
+            <Button size="sm" onClick={() => setIsPurchaseOpen(true)}>
+              <Crown className="w-3.5 h-3.5" /> Купить премиум
             </Button>
           </div>
         ) : error ? (
@@ -228,5 +233,14 @@ export const ReceivedLikesModal: React.FC<ReceivedLikesModalProps> = ({
         )}
       </div>
     </Modal>
+    <PurchaseModal
+      kind={isOpen && isPurchaseOpen ? 'premium' : null}
+      onClose={() => setIsPurchaseOpen(false)}
+      onBought={() => {
+        void loadLikes();
+        refreshProfile().catch((e: unknown) => console.warn('Profile refresh failed', e));
+      }}
+    />
+    </>
   );
 };

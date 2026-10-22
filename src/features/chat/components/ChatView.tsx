@@ -6,6 +6,8 @@ import { Button } from '../../../shared/components/Button';
 import { ReportModal } from '../../safety/components/ReportModal';
 import { ProfileDetailModal } from '../../discovery/components/ProfileDetailModal';
 import { useToast } from '../../../shared/components/Toast';
+import { DatePlanModal } from '../../dates/DatePlanModal';
+import { DatePlanEditor } from '../../dates/DatePlanEditor';
 import {
   MessageCircle,
   Send,
@@ -20,9 +22,30 @@ import {
   ShieldCheck,
   Crown,
   Flag,
+  CalendarHeart,
 } from 'lucide-react';
 
 const PAGE_SIZE = 30;
+/** «печатает…» lasts this long after the last `typing` event. */
+const TYPING_SHOW_MS = 5000;
+/** I tell the server I am typing at most this often. */
+const TYPING_SEND_MS = 3000;
+
+/** «в сети», «был(а) 5 мин назад», «был(а) сегодня в 14:05», «был(а) вчера в …», «был(а) 21.10»; null = unknown. */
+function presenceText(match: Match, now = new Date()): string | null {
+  if (match.otherOnline) return 'в сети';
+  if (!match.otherLastSeenAt) return null;
+  const seen = new Date(match.otherLastSeenAt);
+  const minutes = Math.floor((now.getTime() - seen.getTime()) / 60_000);
+  const two = (n: number) => String(n).padStart(2, '0');
+  const time = `${two(seen.getHours())}:${two(seen.getMinutes())}`;
+  if (minutes < 60) return `был(а) ${Math.max(1, minutes)} мин назад`;
+  if (seen.toDateString() === now.toDateString()) return `был(а) сегодня в ${time}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (seen.toDateString() === yesterday.toDateString()) return `был(а) вчера в ${time}`;
+  return `был(а) ${two(seen.getDate())}.${two(seen.getMonth() + 1)}`;
+}
 
 interface ChatViewProps {
   initialMatchId?: string | null;
@@ -66,6 +89,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [report, setReport] = useState<{ messageId?: string } | null>(null);
   const [inspectProfile, setInspectProfile] = useState<PublicProfile | null>(null);
+  /** The plan open in the modal, or a new proposal being written. */
+  const [openPlanId, setOpenPlanId] = useState<string | null>(null);
+  const [isProposing, setIsProposing] = useState(false);
+  /** The chat where the other person is typing right now. */
+  const [typingMatchId, setTypingMatchId] = useState<string | null>(null);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const sentTypingAt = useRef(0);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const selectedRef = useRef(selectedMatchId);
@@ -81,6 +111,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
       setSelectedMatchId(id);
       setIsMenuOpen(false);
       setIsStickerPickerOpen(false);
+      setOpenPlanId(null);
+      setIsProposing(false);
       onSelectMatchId?.(id);
     },
     [onSelectMatchId]
@@ -195,7 +227,21 @@ export const ChatView: React.FC<ChatViewProps> = ({
     [loadMatches, markRead]
   );
 
+  const setTyping = (matchId: string | null) => {
+    clearTimeout(typingTimer.current);
+    setTypingMatchId(matchId);
+    if (matchId) typingTimer.current = setTimeout(() => setTypingMatchId(null), TYPING_SHOW_MS);
+  };
+  useEffect(() => () => clearTimeout(typingTimer.current), []);
+
   useRealtime((event) => {
+    // `typing` ({ matchId }) is not in RealtimeEvent yet: it reaches here once RealtimeContext subscribes to it.
+    const raw = event as unknown as { name: string; data?: { matchId?: string } };
+    if (raw.name === 'typing') {
+      if (raw.data?.matchId) setTyping(raw.data.matchId);
+      return;
+    }
+    if (event.name === 'message' && !event.data.mine && event.data.matchId === typingMatchId) setTyping(null);
     switch (event.name) {
       case 'ready':
         void loadMatches();
@@ -259,6 +305,27 @@ export const ChatView: React.FC<ChatViewProps> = ({
       unsentText.current = null;
     } else if (selectedRef.current === matchId) {
       setInputText((current) => current || text);
+    }
+  };
+
+  /** Best effort and throttled: a lost «typing» costs nothing. */
+  const handleInputChange = (text: string) => {
+    setInputText(text);
+    const now = Date.now();
+    if (!selectedMatchId || !text.trim() || now - sentTypingAt.current < TYPING_SEND_MS) return;
+    sentTypingAt.current = now;
+    api.sendTyping(selectedMatchId).catch(() => {});
+  };
+
+  /** The plan in play, or a new proposal (premium; the editor offers premium on 403). */
+  const openDatePlan = async () => {
+    if (!selectedMatchId) return;
+    try {
+      const { plan } = await api.getDatePlan(selectedMatchId);
+      if (plan) setOpenPlanId(plan.id);
+      else setIsProposing(true);
+    } catch (e) {
+      showToast(getErrorMessage(e, 'Не удалось открыть план встречи'), 'error');
     }
   };
 
@@ -453,6 +520,15 @@ export const ChatView: React.FC<ChatViewProps> = ({
                         <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 fill-emerald-100" />
                       )}
                     </div>
+                    {typingMatchId === selectedMatch.id ? (
+                      <span className="block text-[10px] text-emerald-600">печатает…</span>
+                    ) : presenceText(selectedMatch) ? (
+                      <span
+                        className={`block text-[10px] ${selectedMatch.otherOnline ? 'text-emerald-600' : 'text-zinc-400'}`}
+                      >
+                        {presenceText(selectedMatch)}
+                      </span>
+                    ) : null}
                     <span className="text-[10px] text-zinc-400">{selectedMatch.profile.city}</span>
                   </div>
                 </div>
@@ -541,6 +617,30 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 {messages.map((msg, index) => {
                   const isMine = msg.mine;
                   const isRead = isMine && index <= otherReadIndex;
+
+                  if (msg.type === 'DATE_PLAN') {
+                    const planId = msg.datePlanId;
+                    return (
+                      <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                        <button
+                          type="button"
+                          disabled={!planId}
+                          onClick={() => planId && setOpenPlanId(planId)}
+                          className="max-w-[80%] text-left bg-white border border-zinc-200/80 rounded-2xl p-3 shadow-2xs hover:bg-zinc-50"
+                        >
+                          <span className="flex items-center gap-2 text-xs font-bold text-zinc-900">
+                            <CalendarHeart className="w-4 h-4 text-rose-500" />
+                            План встречи
+                            <span className="ml-auto pl-3 text-[9px] font-normal text-zinc-400">
+                              {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </span>
+                          <span className="block text-xs text-zinc-800 mt-1">{msg.text}</span>
+                          <span className="block text-xs font-semibold text-rose-600 mt-1">Открыть</span>
+                        </button>
+                      </div>
+                    );
+                  }
 
                   return (
                     <div
@@ -665,11 +765,20 @@ export const ChatView: React.FC<ChatViewProps> = ({
               >
                 <Smile className="w-5 h-5" />
               </button>
+              <button
+                type="button"
+                onClick={() => void openDatePlan()}
+                className="p-2 text-zinc-400 hover:text-rose-600 hover:bg-zinc-100 rounded-xl transition-colors"
+                title="План встречи"
+                aria-label="План встречи"
+              >
+                <CalendarHeart className="w-5 h-5" />
+              </button>
 
               <input
                 type="text"
                 value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
+                onChange={(e) => handleInputChange(e.target.value)}
                 placeholder="Напишите сообщение..."
                 maxLength={2000}
                 className="flex-1 px-3.5 py-2 text-xs bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900"
@@ -715,6 +824,20 @@ export const ChatView: React.FC<ChatViewProps> = ({
         onClose={() => setInspectProfile(null)}
         profile={inspectProfile}
       />
+
+      {selectedMatch && openPlanId && (
+        <DatePlanModal matchId={selectedMatch.id} planId={openPlanId} onClose={() => setOpenPlanId(null)} />
+      )}
+      {selectedMatch && isProposing && (
+        <DatePlanEditor
+          matchId={selectedMatch.id}
+          onClose={() => setIsProposing(false)}
+          onSaved={(plan) => {
+            setIsProposing(false);
+            setOpenPlanId(plan.id);
+          }}
+        />
+      )}
     </div>
   );
 };

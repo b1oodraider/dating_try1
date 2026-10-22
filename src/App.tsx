@@ -7,6 +7,7 @@ import { AboutView } from './features/about/AboutView';
 import { AuthModal } from './features/auth/components/AuthModal';
 import { AccountSettingsModal } from './features/account/components/AccountSettingsModal';
 import { CollectionView } from './features/cosmetics/components/CollectionView';
+import { SupportModal } from './features/support/components/SupportModal';
 import { TestPanelModal } from './features/testing/components/TestPanelModal';
 import { ChatView } from './features/chat/components/ChatView';
 import { RestrictionsBanner } from './features/safety/components/RestrictionsBanner';
@@ -23,6 +24,7 @@ const AppContent: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<AppTab>('discovery');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isSupportOpen, setIsSupportOpen] = useState(false);
   /** Account the test panel was opened for: it never reopens by itself after switching accounts. */
   const [testPanelAccountId, setTestPanelAccountId] = useState<string | null>(null);
   /** Bumped after test-panel actions so the collection reloads the wallet. */
@@ -111,6 +113,7 @@ const AppContent: React.FC = () => {
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
         onOpenTestPanel={() => setTestPanelAccountId(account?.id ?? null)}
+        onOpenSupport={() => setIsSupportOpen(true)}
         unreadChatsCount={unreadChatsCount}
       />
 
@@ -203,6 +206,8 @@ const AppContent: React.FC = () => {
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
       />
+
+      <SupportModal isOpen={isSupportOpen} onClose={() => setIsSupportOpen(false)} />
 
       {account?.testAccount && (
         <TestPanelModal

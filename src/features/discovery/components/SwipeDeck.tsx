@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { PublicProfile } from '../../../core/types';
-import { TagChip } from '../../tags/components/TagChip';
 import { GoalPills } from '../../goals/components/GoalChips';
 import { PremiumBadge } from '../../premium/components/PremiumBadge';
 import { getPhotoFrame, PhotoFrameOverlay, ProfileStatusPill } from '../../cosmetics/decorations';
@@ -11,7 +10,7 @@ import {
   Info,
   MapPin,
   Ruler,
-  Sparkles,
+  Sun,
   Rocket,
   ShieldCheck,
   RotateCcw,
@@ -20,6 +19,8 @@ import {
   ChevronRight,
   MessageCircleHeart,
   AlertCircle,
+  Navigation,
+  History,
 } from 'lucide-react';
 
 /**
@@ -41,6 +42,12 @@ interface SwipeDeckProps {
   onRetryLoadMore?: () => void;
   /** A dialog is open over the deck: arrow keys and space must not swipe behind it. */
   keyboardDisabled?: boolean;
+  /** Likes are restricted (moderation): like / super like are disabled and those swipes spring back. */
+  likesBlocked?: boolean;
+  /** A like was tried while likesBlocked. */
+  onLikeBlocked?: () => void;
+  /** «Показать пропущенных снова» on the "all viewed" screen. */
+  onRefreshPasses?: () => void;
 }
 
 type FlyOutDirection = 'left' | 'right' | 'up';
@@ -57,6 +64,9 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
   loadMoreError = null,
   onRetryLoadMore,
   keyboardDisabled = false,
+  likesBlocked = false,
+  onLikeBlocked,
+  onRefreshPasses,
 }) => {
   const currentProfile = profiles[0] ?? null;
   const nextProfile = profiles[1] ?? null;
@@ -85,6 +95,11 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
   const triggerSwipe = useCallback(
     (direction: FlyOutDirection) => {
       if (!currentProfile || flyOut) return;
+      if (likesBlocked && direction !== 'left') {
+        setDragOffset({ x: 0, y: 0 });
+        onLikeBlocked?.();
+        return;
+      }
 
       setFlyOut({ id: currentProfile.id, direction });
 
@@ -100,7 +115,7 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
         setDragOffset({ x: 0, y: 0 });
       }, 240);
     },
-    [currentProfile, flyOut, onLike, onPass, onSuperlike]
+    [currentProfile, flyOut, onLike, onPass, onSuperlike, likesBlocked, onLikeBlocked]
   );
 
   // Keyboard navigation shortcuts
@@ -223,6 +238,15 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
               className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-zinc-900 text-white font-semibold text-xs flex items-center justify-center gap-1.5 hover:bg-zinc-800 transition-colors shadow-sm"
             >
               <RotateCcw className="w-3.5 h-3.5" /> Обновить колоду
+            </button>
+          )}
+          {onRefreshPasses && (
+            <button
+              type="button"
+              onClick={onRefreshPasses}
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-zinc-300 text-zinc-700 font-semibold text-xs flex items-center justify-center gap-1.5 hover:bg-zinc-50 transition-colors"
+            >
+              <History className="w-3.5 h-3.5" /> Показать пропущенных снова
             </button>
           )}
           {onOpenFilters && (
@@ -428,18 +452,8 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
               </div>
             )}
 
-            {/* 24-hour Status Pill Overlay */}
-            {currentProfile.dailyStatusText && (
-              <div className="absolute bottom-[170px] left-4 right-4 z-20 pointer-events-none">
-                <div className="inline-flex items-center gap-1.5 bg-zinc-900/85 backdrop-blur-md text-amber-300 border border-amber-400/30 text-xs px-3 py-1.5 rounded-xl shadow-md max-w-full">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span className="truncate italic">«{currentProfile.dailyStatusText}»</span>
-                </div>
-              </div>
-            )}
-
             {/* Gradient Scrim & Profile Summary */}
-            <div className="absolute inset-x-0 bottom-0 h-52 bg-gradient-to-t from-black via-black/70 to-transparent p-5 flex flex-col justify-end text-white z-20">
+            <div className="absolute inset-x-0 bottom-0 pt-16 bg-gradient-to-t from-black via-black/70 to-transparent p-5 flex flex-col justify-end text-white z-20">
               <div className="flex items-end justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -451,10 +465,16 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
                   </div>
 
                   <div className="flex items-center gap-3 text-xs text-zinc-300 mt-1">
-                    <span className="flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5 text-zinc-400" />
-                      {currentProfile.city}
-                    </span>
+                    {currentProfile.distanceKm != null ? (
+                      <span className="flex items-center gap-1">
+                        <Navigation className="w-3.5 h-3.5 text-zinc-400" />~{currentProfile.distanceKm} км
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5 text-zinc-400" />
+                        {currentProfile.city}
+                      </span>
+                    )}
                     {currentProfile.heightCm != null && (
                       <span className="flex items-center gap-1">
                         <Ruler className="w-3.5 h-3.5 text-zinc-400" />
@@ -485,17 +505,31 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
                 </div>
               )}
 
-              {/* Communication Tags preview */}
-              {currentProfile.tags && currentProfile.tags.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {currentProfile.tags.slice(0, 3).map((tag) => (
-                    <TagChip key={tag.code} tag={tag} size="sm" />
-                  ))}
-                  {currentProfile.tags.length > 3 && (
-                    <span className="text-[10px] text-zinc-300 self-center pl-1 font-medium">
-                      +{currentProfile.tags.length - 3}
+              {/* Daily status */}
+              {currentProfile.dailyStatusText && (
+                <p className="mt-2 flex items-center gap-1.5 text-xs text-white/75 italic">
+                  <Sun className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">{currentProfile.dailyStatusText}</span>
+                </p>
+              )}
+
+              {/* The start of «О себе»: the person speaks before the cards do (cards are in the full profile). */}
+              {currentProfile.aboutText && (
+                <p className="mt-2 text-sm text-white leading-snug line-clamp-3">{currentProfile.aboutText}</p>
+              )}
+
+              {/* What we have in common */}
+              {currentProfile.common && currentProfile.common.length > 0 && (
+                <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-white/70 font-medium">Общее:</span>
+                  {currentProfile.common.slice(0, 2).map((thing) => (
+                    <span
+                      key={thing}
+                      className="inline-flex items-center gap-1 bg-white/20 text-white text-xs font-semibold px-2.5 py-1 rounded-full"
+                    >
+                      <Heart className="w-3 h-3 fill-white" /> {thing}
                     </span>
-                  )}
+                  ))}
                 </div>
               )}
             </div>
@@ -519,7 +553,7 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
         {/* Superlike */}
         <button
           type="button"
-          disabled={!!flyOut}
+          disabled={!!flyOut || likesBlocked}
           onClick={() => triggerSwipe('up')}
           title="Суперлайк (стрелка вверх)"
           className="w-12 h-12 rounded-full bg-white border-2 border-sky-200 text-sky-500 hover:border-sky-400 hover:bg-sky-50 hover:scale-108 active:scale-95 flex items-center justify-center transition-all duration-150 shadow-md disabled:opacity-50 group cursor-pointer"
@@ -530,7 +564,7 @@ export const SwipeDeck: React.FC<SwipeDeckProps> = ({
         {/* Like */}
         <button
           type="button"
-          disabled={!!flyOut}
+          disabled={!!flyOut || likesBlocked}
           onClick={() => triggerSwipe('right')}
           title="Лайкнуть (стрелка вправо)"
           className="w-14 h-14 rounded-full bg-rose-500 hover:bg-rose-600 text-white hover:scale-108 active:scale-95 flex items-center justify-center transition-all duration-150 shadow-lg shadow-rose-500/25 disabled:opacity-50 group cursor-pointer"

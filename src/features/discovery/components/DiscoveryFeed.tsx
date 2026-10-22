@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { PREMIUM_FEATURE, type PublicProfile, type Wallet, type BoostStatus, type ReceivedLikesCount } from '../../../core/types';
-import { api, ApiError, getErrorMessage, isAbortError } from '../../../core/api/client';
+import {
+  PREMIUM_FEATURE,
+  type PublicProfile,
+  type Wallet,
+  type BoostStatus,
+  type ReceivedLikesCount,
+  type Restriction,
+} from '../../../core/types';
+import { api, ApiError, formatDateTime, getErrorMessage, isAbortError, RESTRICTIONS_CHANGED } from '../../../core/api/client';
+import { PurchaseModal, type PurchaseKind } from '../../premium/components/PurchaseModal';
+import { BoostButton } from './BoostButton';
 import { useAuth } from '../../../core/context/AuthContext';
 import { useToast } from '../../../shared/components/Toast';
 import { DiscoveryFiltersModal } from './DiscoveryFiltersModal';
@@ -27,7 +36,8 @@ import {
   SlidersHorizontal,
   Lock,
   Heart,
-  Rocket,
+  Undo2,
+  History,
 } from 'lucide-react';
 import { Button } from '../../../shared/components/Button';
 
@@ -81,6 +91,12 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
   const [likesCount, setLikesCount] = useState<ReceivedLikesCount | null>(null);
   const [boostStatus, setBoostStatus] = useState<BoostStatus | null>(null);
   const [isActivatingBoost, setIsActivatingBoost] = useState(false);
+  /** The purchase window over the feed (null = closed). */
+  const [purchaseKind, setPurchaseKind] = useState<PurchaseKind | null>(null);
+  /** Bumped after a purchase: reload the wallet and the boost. */
+  const [walletNonce, setWalletNonce] = useState(0);
+  /** Active LIKES / SUSPENDED restriction: likes are blocked (the server refuses them anyway). */
+  const [likesRestriction, setLikesRestriction] = useState<Restriction | null>(null);
 
   /** Filters of the "Фильтры" modal, persisted per account (survive reloads and re-login). */
   const [filtersOwner, setFiltersOwner] = useState(accountId);
@@ -105,6 +121,7 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
   const lockedFeatures = useMemo(() => lockedFeaturesOf(wallet, refusedFeatures), [wallet, refusedFeatures]);
   const advancedLocked = lockedFeatures.has(PREMIUM_FEATURE.ADVANCED_FILTERS);
   const wordsLocked = lockedFeatures.has(PREMIUM_FEATURE.EXCLUSION_WORDS);
+  const superlikesLeft = wallet ? (wallet.items.find((i) => i.category === 'SUPERLIKE')?.quantity ?? 0) : null;
 
   const queryKey = JSON.stringify(advancedLocked ? withoutAdvanced(filters) : filters);
   const query = useMemo(() => JSON.parse(queryKey) as DiscoveryFilterState, [queryKey]);
@@ -130,7 +147,35 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
 
   useEffect(() => {
     void loadSocialCounters();
-  }, [loadSocialCounters, revision]);
+  }, [loadSocialCounters, revision, walletNonce]);
+
+  // Likes restriction (moderation): reloaded whenever an action was refused.
+  useEffect(() => {
+    if (!accountId) {
+      setLikesRestriction(null);
+      return;
+    }
+    let cancelled = false;
+    const load = () => {
+      api
+        .getRestrictions()
+        .then((all) => {
+          if (!cancelled) setLikesRestriction(all.find((r) => r.kind === 'LIKES' || r.kind === 'SUSPENDED') ?? null);
+        })
+        .catch(() => {});
+    };
+    load();
+    window.addEventListener(RESTRICTIONS_CHANGED, load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(RESTRICTIONS_CHANGED, load);
+    };
+  }, [accountId]);
+
+  const showLikesBlocked = useCallback(() => {
+    const until = likesRestriction?.endsAt;
+    showToast(until ? `Лайки недоступны до ${formatDateTime(until)}` : 'Лайки недоступны до решения модератора', 'error');
+  }, [likesRestriction, showToast]);
 
   useRealtime((event) => {
     if (event.name === 'like_received') {
@@ -168,7 +213,7 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
         if (isReload && !controller.signal.aborted) setFeedNonce((n) => n + 1);
       });
     return () => controller.abort();
-  }, [accountId, revision]);
+  }, [accountId, revision, walletNonce]);
 
   // Saved hard filters summary
   useEffect(() => {
@@ -345,6 +390,14 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
   };
 
   const react = async (kind: Reaction, target: PublicProfile) => {
+    if (kind !== 'pass' && likesRestriction) {
+      showLikesBlocked();
+      return;
+    }
+    if (kind === 'superlike' && superlikesLeft === 0) {
+      setPurchaseKind('superlikes');
+      return;
+    }
     recordView(target.id);
     removeCard(target);
     setPendingReactions((n) => n + 1);
@@ -363,12 +416,18 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
         setMatchedProfile(target);
         setMatchId(res.matchId);
       }
+      if (kind === 'superlike') setWalletNonce((n) => n + 1);
     } catch (e) {
       // The profile is gone (hidden, blocked, deleted): nothing to put back.
       if (!(e instanceof ApiError && e.code === 'PROFILE_NOT_FOUND')) {
         reactedRef.current.delete(target.id);
         setProfiles((prev) => [target, ...prev.filter((p) => p.id !== target.id)]);
         setTotalElements((t) => t + 1);
+      }
+      if (e instanceof ApiError && e.code === 'INSUFFICIENT_BALANCE') {
+        // Out of super likes: the card is back on top; the shop opens over the feed.
+        setPurchaseKind('superlikes');
+        return;
       }
       const fallback =
         kind === 'like'
@@ -386,14 +445,68 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
   const handleSuperlike = (target: PublicProfile) => void react('superlike', target);
   const handlePass = (target: PublicProfile) => void react('pass', target);
 
+  /** Premium: puts my last swiped profile back on top of the deck. */
+  const handleUndo = async () => {
+    if (lockedFeatures.has(PREMIUM_FEATURE.UNDO_SWIPE)) {
+      setPurchaseKind('premium');
+      return;
+    }
+    try {
+      const restored = await api.undoReaction();
+      reactedRef.current.delete(restored.id);
+      setProfiles((prev) => [restored, ...prev.filter((p) => p.id !== restored.id)]);
+    } catch (e) {
+      if (e instanceof ApiError && e.isPremiumRequired) {
+        handlePremiumRequired(PREMIUM_FEATURE.UNDO_SWIPE);
+        setPurchaseKind('premium');
+        return;
+      }
+      showToast(getErrorMessage(e, 'Не удалось вернуть анкету'), 'error');
+    }
+  };
+
+  /** Brings passed profiles back: free when the feed ran out (once a day), premium any time. */
+  const handleRefreshPasses = async () => {
+    const feedEmpty = profiles.length === 0;
+    if (!feedEmpty && lockedFeatures.has(PREMIUM_FEATURE.PASS_REFRESH)) {
+      setPurchaseKind('premium');
+      return;
+    }
+    try {
+      const { restored } = await api.refreshPasses(feedEmpty);
+      showToast(restored === 0 ? 'Пропущенных анкет нет' : `Вернули пропущенных: ${restored}`, 'success');
+      reactedRef.current.clear(); // likes stay excluded by the server
+      void fetchPage(false);
+    } catch (e) {
+      if (
+        e instanceof ApiError &&
+        (e.isPremiumRequired || e.code === 'PASS_REFRESH_TOO_SOON' || e.code === 'FEED_NOT_EMPTY')
+      ) {
+        showToast(e.message, 'error');
+        setPurchaseKind('premium');
+        return;
+      }
+      showToast(getErrorMessage(e, 'Не удалось вернуть пропущенных'), 'error');
+    }
+  };
+
   const handleActivateBoost = async () => {
     setIsActivatingBoost(true);
     try {
       const updated = await api.activateBoost(crypto.randomUUID());
       setBoostStatus(updated);
-      showToast('Буст успешно активирован на 30 минут!', 'success');
+      showToast(`Буст включён на ${updated.durationMinutes} минут`, 'success');
     } catch (e) {
-      showToast(getErrorMessage(e, 'Не удалось активировать буст. Проверьте наличие предмета «Буст» в Кошельке.'), 'error');
+      if (e instanceof ApiError && e.code === 'INSUFFICIENT_BALANCE') {
+        setPurchaseKind('boosts');
+        return;
+      }
+      showToast(
+        e instanceof ApiError && e.code === 'PROFILE_NOT_PUBLISHED'
+          ? 'Сначала опубликуйте анкету'
+          : getErrorMessage(e, 'Не удалось включить буст'),
+        'error'
+      );
     } finally {
       setIsActivatingBoost(false);
     }
@@ -443,24 +556,32 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Boost Widget */}
-            {boostStatus?.active ? (
-              <span className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-300 text-amber-800 rounded-xl text-xs font-semibold shadow-2xs">
-                <Rocket className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
-                Буст активен: {boostStatus.impressions} показов
-              </span>
-            ) : boostStatus && boostStatus.available > 0 ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-amber-300 text-amber-800 hover:bg-amber-50"
-                onClick={handleActivateBoost}
-                isLoading={isActivatingBoost}
-              >
-                <Rocket className="w-3.5 h-3.5 mr-1 text-amber-600" />
-                Включить буст ({boostStatus.available})
-              </Button>
-            ) : null}
+            <button
+              type="button"
+              onClick={() => void handleUndo()}
+              title="Вернуть последнюю анкету"
+              aria-label="Вернуть последнюю анкету"
+              className="w-8 h-8 rounded-xl border border-zinc-200 text-zinc-600 hover:bg-zinc-50 flex items-center justify-center"
+            >
+              <Undo2 className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleRefreshPasses()}
+              title="Показать пропущенных снова"
+              aria-label="Показать пропущенных снова"
+              className="w-8 h-8 rounded-xl border border-zinc-200 text-zinc-600 hover:bg-zinc-50 flex items-center justify-center"
+            >
+              <History className="w-4 h-4" />
+            </button>
+
+            <BoostButton
+              status={boostStatus}
+              isActivating={isActivatingBoost}
+              onActivate={() => void handleActivateBoost()}
+              onBuy={() => setPurchaseKind('boosts')}
+              onExpired={loadSocialCounters}
+            />
 
             {/* Received Likes Trigger */}
             <Button
@@ -554,6 +675,9 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
           <div className="pt-2">
             <Button variant="outline" size="sm" onClick={() => setIsFiltersOpen(true)}>
               <SlidersHorizontal className="w-3.5 h-3.5" /> Изменить фильтры
+            </Button>{' '}
+            <Button variant="outline" size="sm" onClick={() => void handleRefreshPasses()}>
+              <History className="w-3.5 h-3.5" /> Показать пропущенных снова
             </Button>
           </div>
         </div>
@@ -570,8 +694,11 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
           loadMoreError={loadMoreError}
           onRetryLoadMore={() => void fetchPage(true)}
           keyboardDisabled={
-            !!activeProfileModal || isFiltersOpen || !!matchedProfile || isReceivedLikesOpen
+            !!activeProfileModal || isFiltersOpen || !!matchedProfile || isReceivedLikesOpen || !!purchaseKind
           }
+          likesBlocked={!!likesRestriction}
+          onLikeBlocked={showLikesBlocked}
+          onRefreshPasses={() => void handleRefreshPasses()}
         />
       )}
 
@@ -586,6 +713,7 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
           onSavedListsInfo={handleSavedListsInfo}
           onSavedListsChanged={() => void fetchPage(false)}
           onPremiumRequired={handlePremiumRequired}
+          onBuyPremium={() => setPurchaseKind('premium')}
         />
       )}
 
@@ -598,6 +726,7 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
         onSuperlike={handleSuperlike}
         onPass={handlePass}
         onBlocked={removeCard}
+        onHidden={removeCard}
       />
 
       {/* Mutual Match Modal */}
@@ -622,6 +751,9 @@ export const DiscoveryFeed: React.FC<DiscoveryFeedProps> = ({
           setMatchId(mId);
         }}
       />
+
+      {/* Last: stacks over whichever window opened it; closing returns there. */}
+      <PurchaseModal kind={purchaseKind} onClose={() => setPurchaseKind(null)} onBought={() => setWalletNonce((n) => n + 1)} />
     </div>
   );
 };

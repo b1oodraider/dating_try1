@@ -1,6 +1,9 @@
 import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
 
+/** Open modals, oldest first. */
+const openModals: object[] = [];
+
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -19,13 +22,20 @@ export const Modal: React.FC<ModalProps> = ({
   maxWidth = 'md',
 }) => {
   useEffect(() => {
+    if (!isOpen) return;
+    const token = {};
+    openModals.push(token);
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      // Only the topmost window closes (a purchase window over another modal).
+      if (e.key === 'Escape' && openModals[openModals.length - 1] === token) {
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      openModals.splice(openModals.indexOf(token), 1);
+    };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;

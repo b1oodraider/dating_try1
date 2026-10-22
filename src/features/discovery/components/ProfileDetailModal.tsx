@@ -1,8 +1,24 @@
 import React, { useEffect, useState } from 'react';
-import type { PublicProfile } from '../../../core/types';
+import type { ProfileOptions, PublicProfile } from '../../../core/types';
 import { Modal } from '../../../shared/components/Modal';
-import { TagChip } from '../../tags/components/TagChip';
-import { MapPin, Sparkles, ShieldCheck, Ruler, Target, Heart, Star, X, Rocket, ShieldAlert, UserX } from 'lucide-react';
+import {
+  MapPin,
+  Sun,
+  ShieldCheck,
+  Ruler,
+  Target,
+  Heart,
+  Star,
+  X,
+  Rocket,
+  ShieldAlert,
+  UserX,
+  EyeOff,
+  Navigation,
+  Moon,
+  Music,
+} from 'lucide-react';
+import { describeFact, FACT_SECTIONS, FACT_TITLES } from '../facts';
 import { GoalPills } from '../../goals/components/GoalChips';
 import { PremiumBadge } from '../../premium/components/PremiumBadge';
 import { Button } from '../../../shared/components/Button';
@@ -25,7 +41,40 @@ interface ProfileDetailModalProps {
   onPass?: (profile: PublicProfile) => void;
   /** After a successful block (the profile is gone from the feed and chats). */
   onBlocked?: (profile: PublicProfile) => void;
+  /** After «Не показывать» (only I stop seeing the person); without it the button is not shown. */
+  onHidden?: (profile: PublicProfile) => void;
 }
+
+// Labels of the facts, loaded once per page; a failure is retried on the next open.
+let optionsPromise: Promise<ProfileOptions> | null = null;
+function loadOptions(): Promise<ProfileOptions> {
+  optionsPromise ??= api.getProfileOptions().catch((e: unknown) => {
+    optionsPromise = null;
+    throw e;
+  });
+  return optionsPromise;
+}
+
+const Section: React.FC<{ title: string; icon?: React.ReactNode; children: React.ReactNode }> = ({ title, icon, children }) => (
+  <div className="space-y-1.5">
+    <h3 className="text-xs font-semibold text-zinc-900 uppercase tracking-wider flex items-center gap-1">
+      {icon}
+      {title}
+    </h3>
+    {children}
+  </div>
+);
+
+const Chips: React.FC<{ labels: string[]; icon?: React.ReactNode }> = ({ labels, icon }) => (
+  <div className="flex flex-wrap gap-1.5">
+    {labels.map((label) => (
+      <span key={label} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs bg-zinc-100 text-zinc-700">
+        {icon}
+        {label}
+      </span>
+    ))}
+  </div>
+);
 
 export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
   profile,
@@ -35,10 +84,23 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
   onSuperlike,
   onPass,
   onBlocked,
+  onHidden,
 }) => {
   const { showToast } = useToast();
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
   const [isReportOpen, setIsReportOpen] = useState(false);
+  const [options, setOptions] = useState<ProfileOptions | null>(null);
+
+  useEffect(() => {
+    if (!isOpen || options) return;
+    let cancelled = false;
+    loadOptions()
+      .then((o) => !cancelled && setOptions(o))
+      .catch(() => {}); // without labels the facts are just not shown
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, options]);
 
   // Start from the first photo whenever another profile is opened.
   useEffect(() => {
@@ -52,6 +114,20 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
   const currentPhoto = photos[activePhotoIdx] ?? photos[0];
   const dailyStatusText = profile.dailyStatusText?.trim() || null;
   const frame = getPhotoFrame(profile.decorations);
+
+  const shared = new Set(profile.sharedTags ?? []);
+  const facts = profile.facts;
+
+  const handleHide = async () => {
+    try {
+      await api.hideAccount(profile.id);
+      showToast(`${profile.displayName} больше не появится в ленте`, 'success');
+      onClose();
+      onHidden?.(profile);
+    } catch (e) {
+      showToast(getErrorMessage(e, 'Не удалось скрыть анкету'), 'error');
+    }
+  };
 
   const handleBlock = async () => {
     try {
@@ -152,6 +228,11 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
                   <ProfileStatusPill decorations={profile.decorations} size="md" />
                 </div>
                 <p className="text-sm text-zinc-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                  {profile.distanceKm != null && (
+                    <span className="flex items-center gap-1">
+                      <Navigation className="w-3.5 h-3.5 text-zinc-400" />~{profile.distanceKm} км
+                    </span>
+                  )}
                   <span className="flex items-center gap-1">
                     <MapPin className="w-3.5 h-3.5 text-zinc-400" />
                     {profile.city}
@@ -162,69 +243,92 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
                       {profile.heightCm} см
                     </span>
                   )}
+                  {profile.zodiac && (
+                    <span className="flex items-center gap-1">
+                      <Moon className="w-3.5 h-3.5 text-zinc-400" />
+                      {profile.zodiac}
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
 
-            {/* 24-hour Daily Status if active */}
-            {dailyStatusText && (
-              <div className="p-3.5 bg-amber-50/80 border border-amber-200/80 rounded-2xl flex items-start gap-2.5">
-                <Sparkles className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                <div>
-                  <span className="text-[11px] font-semibold text-amber-900 uppercase tracking-wider block">
-                    Статус на сегодня
-                  </span>
-                  <p className="text-xs text-amber-950 font-medium mt-0.5">
-                    «{dailyStatusText}»
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Relationship goals */}
-            {(profile.goals ?? []).length > 0 && (
-              <div className="space-y-1.5">
-                <h3 className="text-xs font-semibold text-zinc-900 uppercase tracking-wider flex items-center gap-1">
-                  <Target className="w-3.5 h-3.5 text-zinc-400" /> Цели знакомства
-                </h3>
-                <GoalPills goals={profile.goals} size="md" />
-              </div>
-            )}
-
-            {/* About text */}
+            {/* Same order as mobile: about, status, goals, interests, music, facts, cards. */}
             {profile.aboutText && (
               <div className="p-4 bg-zinc-50 border border-zinc-200/60 rounded-2xl space-y-1">
-                <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
-                  О себе
-                </span>
-                <p className="text-sm text-zinc-800 leading-relaxed whitespace-pre-line">
-                  {profile.aboutText}
-                </p>
+                <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">О себе</span>
+                <p className="text-sm text-zinc-800 leading-relaxed whitespace-pre-line">{profile.aboutText}</p>
               </div>
             )}
 
-            {/* Communication Tags with explicit descriptions */}
-            <div className="space-y-2.5">
-              <h3 className="text-xs font-semibold text-zinc-900 uppercase tracking-wider">
-                Предпочтения в общении ({tags.length})
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {tags.map((tag) => (
-                  <div
-                    key={tag.code}
-                    className="p-3 bg-white border border-zinc-200/80 rounded-xl space-y-1 shadow-2xs"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-zinc-900">{tag.label}</span>
-                      <span className="text-[10px] px-1.5 py-0.2 bg-zinc-100 text-zinc-500 rounded">
-                        {tag.categoryLabel}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-zinc-500 leading-normal">{tag.description}</p>
-                  </div>
-                ))}
+            {dailyStatusText && (
+              <div className="p-3.5 bg-amber-50/80 border border-amber-200/80 rounded-2xl flex items-start gap-2.5">
+                <Sun className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-950 italic">{dailyStatusText}</p>
               </div>
-            </div>
+            )}
+
+            {(profile.goals ?? []).length > 0 && (
+              <Section title="Цели знакомства" icon={<Target className="w-3.5 h-3.5 text-zinc-400" />}>
+                <GoalPills goals={profile.goals} size="md" />
+              </Section>
+            )}
+
+            {(profile.interests ?? []).length > 0 && (
+              <Section title="Интересы">
+                <Chips labels={profile.interests!.map((i) => i.label)} />
+              </Section>
+            )}
+
+            {(profile.artists ?? []).length > 0 && (
+              <Section title="Музыка">
+                <Chips labels={profile.artists!.map((a) => a.name)} icon={<Music className="w-3 h-3 text-rose-500" />} />
+              </Section>
+            )}
+
+            {facts &&
+              options &&
+              FACT_SECTIONS.map(([title, keys]) => {
+                const rows = keys
+                  .map((key) => [key, describeFact(facts, key, options)] as const)
+                  .filter(([, text]) => text);
+                if (rows.length === 0) return null;
+                return (
+                  <Section key={title} title={title}>
+                    <div className="space-y-1">
+                      {rows.map(([key, text]) => (
+                        <p key={key} className="text-sm text-zinc-800">
+                          <span className="text-zinc-500">{FACT_TITLES[key]}: </span>
+                          {text}
+                        </p>
+                      ))}
+                    </div>
+                  </Section>
+                );
+              })}
+
+            {tags.length > 0 && (
+              <Section title="Общение">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {tags.map((tag) => {
+                    const isShared = shared.has(tag.code);
+                    return (
+                      <div
+                        key={tag.code}
+                        className={`p-3 rounded-xl space-y-1 ${
+                          isShared ? 'bg-rose-50 border border-rose-200' : 'bg-white border border-zinc-200/80 shadow-2xs'
+                        }`}
+                      >
+                        {tag.categoryLabel && <span className="text-[10px] text-zinc-500 block">{tag.categoryLabel}</span>}
+                        <span className={`text-xs font-bold block ${isShared ? 'text-rose-800' : 'text-zinc-900'}`}>{tag.label}</span>
+                        {isShared && <span className="text-[10px] font-semibold text-rose-600 block">у вас тоже</span>}
+                        {tag.description && <p className="text-[11px] text-zinc-500 leading-normal">{tag.description}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </Section>
+            )}
 
             {/* Big Action Buttons */}
             <div className="flex items-center gap-3 pt-3 border-t border-zinc-200">
@@ -273,7 +377,16 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
 
             {/* Safety & Moderation Footer */}
             <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-xs text-zinc-400">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                {onHidden && (
+                  <button
+                    type="button"
+                    onClick={handleHide}
+                    className="hover:text-zinc-700 flex items-center gap-1 transition-colors"
+                  >
+                    <EyeOff className="w-3.5 h-3.5" /> Не показывать
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setIsReportOpen(true)}

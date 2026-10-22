@@ -14,13 +14,44 @@ export const PremiumBadge: React.FC<{ size?: 'sm' | 'md'; className?: string }> 
   </span>
 );
 
-/** Short paywall hint for a disabled premium control. */
-export const PremiumLockHint: React.FC<{ className?: string; children?: React.ReactNode }> = ({
+/** Short paywall hint for a disabled premium control; with onClick it opens the purchase window. */
+export const PremiumLockHint: React.FC<{ className?: string; children?: React.ReactNode; onClick?: () => void }> = ({
   className = '',
   children,
+  onClick,
+}) => {
+  const content = (
+    <>
+      <Lock className="w-3 h-3 shrink-0" aria-hidden="true" />
+      <span>{children ?? 'Доступно с премиумом'}</span>
+    </>
+  );
+  const style = `text-[11px] text-amber-700 flex items-center gap-1 ${className}`;
+  return onClick ? (
+    <button type="button" onClick={onClick} className={`${style} hover:underline text-left`}>
+      {content}
+    </button>
+  ) : (
+    <p className={style}>{content}</p>
+  );
+};
+
+/** A premium control that is locked: the whole area opens the purchase window instead (mobile premiumGate). */
+export const PremiumGate: React.FC<{ locked: boolean; onLockedClick: () => void; children: React.ReactNode }> = ({
+  locked,
+  onLockedClick,
+  children,
 }) => (
-  <p className={`text-[11px] text-amber-700 flex items-center gap-1 ${className}`}>
-    <Lock className="w-3 h-3 shrink-0" aria-hidden="true" />
-    <span>{children ?? 'Доступно с премиумом'}</span>
-  </p>
+  <div className="relative">
+    {children}
+    {locked && (
+      <button
+        type="button"
+        aria-label="Доступно с премиумом"
+        title="Доступно с премиумом"
+        onClick={onLockedClick}
+        className="absolute inset-0 cursor-pointer"
+      />
+    )}
+  </div>
 );

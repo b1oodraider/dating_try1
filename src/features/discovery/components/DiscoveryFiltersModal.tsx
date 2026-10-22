@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
-import type { TagLogic } from '../../../core/types';
+import React, { useEffect, useState } from 'react';
+import type { FactFilters, ProfileOptions, TagLogic } from '../../../core/types';
+import { api, getErrorMessage } from '../../../core/api/client';
+import { FACT_TITLES, FILTERABLE_FACTS, type FilterableFact } from '../facts';
 import { Modal } from '../../../shared/components/Modal';
 import { Button } from '../../../shared/components/Button';
 import { useTags } from '../../tags/hooks/useTags';
 import { TagChip } from '../../tags/components/TagChip';
 import { useGoals } from '../../goals/hooks/useGoals';
 import { GoalToggleList } from '../../goals/components/GoalChips';
-import { PremiumLockHint } from '../../premium/components/PremiumBadge';
+import { PremiumGate, PremiumLockHint } from '../../premium/components/PremiumBadge';
 import { ExcludedGoalsEditor } from './ExcludedGoalsEditor';
 import { ExclusionWordsEditor } from './ExclusionWordsEditor';
 import {
@@ -17,7 +19,7 @@ import {
   HEIGHT_MIN,
   type DiscoveryFilterState,
 } from '../filterStorage';
-import { AlertCircle, Cake, Crown, MapPin, Ruler, SlidersHorizontal, Target } from 'lucide-react';
+import { AlertCircle, Cake, Coffee, Crown, MapPin, Ruler, SlidersHorizontal, Target } from 'lucide-react';
 
 const CITIES = ['Москва', 'Санкт-Петербург', 'Екатеринбург', 'Казань'];
 
@@ -66,6 +68,25 @@ interface DiscoveryFiltersModalProps {
   /** A saved list changed on the server: the feed should reload from page 0. */
   onSavedListsChanged: () => void;
   onPremiumRequired: (feature: string) => void;
+  /** A locked premium control was tapped: open the premium purchase window over this one. */
+  onBuyPremium: () => void;
+}
+
+/** Only facts that narrow the feed: all answers + «не указали» is no filter. */
+function narrowing(draft: FactFilters, options: ProfileOptions): FactFilters {
+  const out: FactFilters = {};
+  for (const fact of FILTERABLE_FACTS) {
+    const f = draft[fact];
+    if (f && (f.accept.length < (options[fact]?.length ?? 0) || !f.unspecified)) out[fact] = f;
+  }
+  return out;
+}
+
+/** Every answer accepted, people who did not say shown: the same as no filter. */
+function acceptAll(options: ProfileOptions): FactFilters {
+  const all: FactFilters = {};
+  for (const fact of FILTERABLE_FACTS) all[fact] = { accept: (options[fact] ?? []).map((o) => o.code), unspecified: true };
+  return all;
 }
 
 /**
@@ -82,6 +103,7 @@ export const DiscoveryFiltersModal: React.FC<DiscoveryFiltersModalProps> = ({
   onSavedListsInfo,
   onSavedListsChanged,
   onPremiumRequired,
+  onBuyPremium,
 }) => {
   const { categories, isLoading: isTagsLoading, error: tagsError, reload: reloadTags } = useTags();
   const { goals, isLoading: isGoalsLoading, error: goalsError, reload: reloadGoals } = useGoals();
@@ -98,16 +120,59 @@ export const DiscoveryFiltersModal: React.FC<DiscoveryFiltersModalProps> = ({
   const [ageError, setAgeError] = useState<string | null>(null);
   const [heightError, setHeightError] = useState<string | null>(null);
 
+  // Two-way fact filters, saved on the server ("Образ жизни").
+  const [factOptions, setFactOptions] = useState<ProfileOptions | null>(null);
+  const [savedFacts, setSavedFacts] = useState<FactFilters>({});
+  const [factDraft, setFactDraft] = useState<FactFilters>({});
+  const [factsError, setFactsError] = useState<string | null>(null);
+  const [factsNonce, setFactsNonce] = useState(0);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [isApplying, setIsApplying] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setFactsError(null);
+    Promise.all([api.getProfileOptions(controller.signal), api.getFactFilters(controller.signal)])
+      .then(([options, saved]) => {
+        setFactOptions(options);
+        setSavedFacts(narrowing(saved, options));
+        setFactDraft({ ...acceptAll(options), ...saved });
+      })
+      .catch((e: unknown) => {
+        if (!controller.signal.aborted) setFactsError(getErrorMessage(e, 'Не удалось загрузить фильтры образа жизни'));
+      });
+    return () => controller.abort();
+  }, [factsNonce]);
+
+  const setFact = (fact: FilterableFact, next: { accept?: string[]; unspecified?: boolean }) =>
+    setFactDraft((d) => ({ ...d, [fact]: { accept: d[fact]?.accept ?? [], unspecified: d[fact]?.unspecified ?? true, ...next } }));
+
   const cityOptions = city && !CITIES.includes(city) ? [...CITIES, city] : CITIES;
   const toggle = (list: string[], code: string) =>
     list.includes(code) ? list.filter((c) => c !== code) : [...list, code];
 
-  const handleApply = () => {
+  const handleApply = async () => {
     const ageRange = parseRange(age, AGE_MIN, AGE_MAX, 'Возраст');
     const heightRange = advancedLocked ? {} : parseRange(height, HEIGHT_MIN, HEIGHT_MAX, 'Рост');
     setAgeError(ageRange.error ?? null);
     setHeightError(heightRange.error ?? null);
     if (ageRange.error || heightRange.error) return;
+    if (factOptions) {
+      const built = narrowing(factDraft, factOptions);
+      if (JSON.stringify(built) !== JSON.stringify(savedFacts)) {
+        setIsApplying(true);
+        setApplyError(null);
+        try {
+          await api.putFactFilters(built);
+          onSavedListsChanged();
+        } catch (e) {
+          setApplyError(getErrorMessage(e, 'Не удалось сохранить фильтры образа жизни'));
+          return;
+        } finally {
+          setIsApplying(false);
+        }
+      }
+    }
     onApply({
       city,
       minAge: ageRange.from,
@@ -134,6 +199,7 @@ export const DiscoveryFiltersModal: React.FC<DiscoveryFiltersModalProps> = ({
       setGoalCodes(empty.goalCodes);
       setHeightError(null);
     }
+    if (factOptions) setFactDraft(acceptAll(factOptions));
   };
 
   const numberInput =
@@ -263,13 +329,64 @@ export const DiscoveryFiltersModal: React.FC<DiscoveryFiltersModalProps> = ({
           </div>
         </section>
 
+        {/* ---------------- Facts (two-way) ---------------- */}
+        <section className="space-y-2" aria-label="Образ жизни">
+          <span className={sectionTitle}>
+            <Coffee className="w-3.5 h-3.5 text-zinc-500" /> Образ жизни
+          </span>
+          <p className="text-[11px] text-zinc-400">
+            Работает в обе стороны: вы не увидите тех, кому не подходите вы. Сохраняется в аккаунте.
+          </p>
+          {factsError && errorBox(factsError, () => setFactsNonce((n) => n + 1))}
+          {!factOptions && !factsError && <p className="text-xs text-zinc-400">Загрузка...</p>}
+          {factOptions &&
+            FILTERABLE_FACTS.map((fact) => {
+              const f = factDraft[fact] ?? { accept: [], unspecified: true };
+              return (
+                <div key={fact} className="space-y-1.5">
+                  <div className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">{FACT_TITLES[fact]}</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(factOptions[fact] ?? []).map((o) => {
+                      const on = f.accept.includes(o.code);
+                      return (
+                        <button
+                          key={o.code}
+                          type="button"
+                          aria-pressed={on}
+                          // At least one answer stays: an empty filter means nobody.
+                          onClick={() => {
+                            if (on && f.accept.length === 1) return;
+                            setFact(fact, { accept: toggle(f.accept, o.code) });
+                          }}
+                          className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                            on ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'
+                          }`}
+                        >
+                          {o.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <label className="flex items-center gap-2 text-[11px] text-zinc-600">
+                    <input
+                      type="checkbox"
+                      checked={f.unspecified}
+                      onChange={(e) => setFact(fact, { unspecified: e.target.checked })}
+                    />
+                    Показывать тех, кто не указал
+                  </label>
+                </div>
+              );
+            })}
+        </section>
+
         {/* ---------------- Premium ---------------- */}
         <section className="space-y-4 p-4 rounded-2xl border border-amber-200/80 bg-amber-50/30" aria-label="Расширенный поиск">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="flex items-center gap-2 text-sm font-bold text-zinc-900">
               <Crown className="w-4 h-4 text-amber-500" /> Расширенный поиск · Премиум
             </span>
-            {(advancedLocked || wordsLocked) && <PremiumLockHint />}
+            {(advancedLocked || wordsLocked) && <PremiumLockHint onClick={onBuyPremium} />}
           </div>
 
           {(advancedLocked || wordsLocked) && (
@@ -285,7 +402,9 @@ export const DiscoveryFiltersModal: React.FC<DiscoveryFiltersModalProps> = ({
             <span className={sectionTitle}>
               <Ruler className="w-3.5 h-3.5 text-zinc-500" /> Рост, см
             </span>
-            {range(height, setHeight, HEIGHT_MIN, HEIGHT_MAX, heightError !== null, advancedLocked)}
+            <PremiumGate locked={advancedLocked} onLockedClick={onBuyPremium}>
+              {range(height, setHeight, HEIGHT_MIN, HEIGHT_MAX, heightError !== null, advancedLocked)}
+            </PremiumGate>
             {fieldError(heightError)}
             <p className="text-[11px] text-zinc-400">Анкеты без указанного роста при этом фильтре не показываются.</p>
           </div>
@@ -296,17 +415,20 @@ export const DiscoveryFiltersModal: React.FC<DiscoveryFiltersModalProps> = ({
               <span className="text-[11px] font-normal text-zinc-400">— любая из отмеченных</span>
             </span>
             {isGoalsLoading && <p className="text-xs text-zinc-400">Загрузка целей...</p>}
-            <GoalToggleList
-              goals={goals}
-              selectedCodes={goalCodes}
-              onToggle={(code) => setGoalCodes(toggle(goalCodes, code))}
-              disabled={advancedLocked}
-            />
+            <PremiumGate locked={advancedLocked} onLockedClick={onBuyPremium}>
+              <GoalToggleList
+                goals={goals}
+                selectedCodes={goalCodes}
+                onToggle={(code) => setGoalCodes(toggle(goalCodes, code))}
+                disabled={advancedLocked}
+              />
+            </PremiumGate>
           </div>
 
           <div className="border-t border-amber-200/60" />
 
           {/* Saved hard filters: stored on the server and saved by their own buttons. */}
+          <PremiumGate locked={advancedLocked} onLockedClick={onBuyPremium}>
           <ExcludedGoalsEditor
             goals={goals}
             locked={advancedLocked}
@@ -317,9 +439,11 @@ export const DiscoveryFiltersModal: React.FC<DiscoveryFiltersModalProps> = ({
             }}
             onPremiumRequired={onPremiumRequired}
           />
+          </PremiumGate>
 
           <div className="border-t border-amber-200/60" />
 
+          <PremiumGate locked={wordsLocked} onLockedClick={onBuyPremium}>
           <ExclusionWordsEditor
             locked={wordsLocked}
             onLoaded={(words, active) => onSavedListsInfo({ exclusionWords: active ? words.length : 0 })}
@@ -329,15 +453,18 @@ export const DiscoveryFiltersModal: React.FC<DiscoveryFiltersModalProps> = ({
             }}
             onPremiumRequired={onPremiumRequired}
           />
+          </PremiumGate>
         </section>
 
         {/* TODO(ux): "Доп. фильтры" section (more filters to come) — goes here, nothing implemented yet. */}
+
+        {fieldError(applyError)}
 
         <div className="sticky -bottom-5 -mx-5 -mb-5 px-5 py-3 bg-white border-t border-zinc-100 flex items-center justify-between gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={handleReset}>
             Сбросить
           </Button>
-          <Button type="button" variant="primary" size="sm" onClick={handleApply}>
+          <Button type="button" variant="primary" size="sm" onClick={() => void handleApply()} isLoading={isApplying}>
             Показать анкеты
           </Button>
         </div>

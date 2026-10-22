@@ -1,4 +1,17 @@
 import type {
+  Artist,
+  City,
+  DatePlan,
+  DatePlanItemInput,
+  FactFilters,
+  FaqEntry,
+  InterestGroup,
+  ProfileOptions,
+  StubProduct,
+  SupportCategory,
+  SupportTicket,
+  SupportTicketSummary,
+  Venue,
   Account,
   Achievement,
   AchievementDefinition,
@@ -50,6 +63,7 @@ import type {
   Match,
   Message,
   MyProfile,
+  PublicProfile,
   Photo,
   PhotoReviewItem,
   ProfileUpdate,
@@ -551,12 +565,26 @@ export const api = {
         body: { quantity },
       });
     },
-    /** Sets the bought (PERMANENT) balance exactly (quantity >= 0; cosmetics 0 or 1). */
-    setItemBalance(itemCode: string, quantity: number): Promise<TestingState> {
+    /** Sets the bought (PERMANENT) balance exactly (quantity >= 0; cosmetics 0 or 1); total = the whole balance. */
+    setItemBalance(itemCode: string, quantity: number, total = false): Promise<TestingState> {
       return request<TestingState>(`/testing/wallet/items/${encodeURIComponent(itemCode)}`, {
         method: 'PUT',
-        body: { quantity },
+        body: total ? { quantity, total: true } : { quantity },
       });
+    },
+    /** Active catalog items (GET /catalog) for the item picker. */
+    getCatalog(
+      signal?: AbortSignal
+    ): Promise<{ code: string; kind: 'CONSUMABLE' | 'COSMETIC'; category: string; title: string; rarity: string | null }[]> {
+      return request('/catalog', { signal });
+    },
+    /** [count] (1..50) published seed profiles that match me; with likeMe all of them like me. */
+    createCrowd(count: number, likeMe = false): Promise<{ created: number; liked: number }> {
+      return request('/testing/profiles/crowd', { method: 'POST', body: { count, likeMe } });
+    },
+    /** Three test-only places around the point, one sponsored. */
+    createVenues(latitude: number, longitude: number): Promise<unknown[]> {
+      return request('/testing/venues', { method: 'POST', body: { latitude, longitude } });
     },
     grantPremium(days: number): Promise<TestingState> {
       return request<TestingState>('/testing/premium', { method: 'POST', body: { days } });
@@ -752,6 +780,98 @@ export const api = {
     comment?: string;
   }): Promise<ReportResponse> {
     return request<ReportResponse>('/reports', { method: 'POST', body: payload });
+  },
+
+  // --- Interests, music, cities, facts, location ---
+  getInterests(signal?: AbortSignal): Promise<InterestGroup[]> {
+    return request('/interests', { auth: false, signal });
+  },
+  searchArtists(q: string, signal?: AbortSignal): Promise<Artist[]> {
+    return request(`/artists?${new URLSearchParams({ q }).toString()}`, { signal });
+  },
+  searchCities(query: string, signal?: AbortSignal): Promise<City[]> {
+    return request(`/cities?${new URLSearchParams({ query, limit: '10' }).toString()}`, { auth: false, signal });
+  },
+  getProfileOptions(signal?: AbortSignal): Promise<ProfileOptions> {
+    return request('/profile-options', { auth: false, signal });
+  },
+  getFactFilters(signal?: AbortSignal): Promise<FactFilters> {
+    return request('/me/fact-filters', { signal });
+  },
+  putFactFilters(filters: FactFilters): Promise<FactFilters> {
+    return request('/me/fact-filters', { method: 'PUT', body: filters });
+  },
+  /** Rounded by the server to ~1 km; used only for distances. */
+  shareLocation(latitude: number, longitude: number): Promise<MyProfile> {
+    return request('/me/location', { method: 'PUT', body: { latitude, longitude } });
+  },
+  forgetLocation(): Promise<MyProfile> {
+    return request('/me/location', { method: 'DELETE' });
+  },
+
+  // --- Feed extras ---
+  /** Premium UNDO_SWIPE: takes back my newest like or pass; the profile to show again. */
+  undoReaction(): Promise<PublicProfile> {
+    return request('/me/reactions/undo', { method: 'POST' });
+  },
+  /** Brings passed profiles back (free: when the feed ran out, once a day; premium: any time). */
+  refreshPasses(feedEmpty: boolean): Promise<{ restored: number }> {
+    return request(`/me/passes/refresh?feedEmpty=${feedEmpty}`, { method: 'POST' });
+  },
+  /** «Не интересно»: only I stop seeing this person. */
+  hideAccount(profileId: string): Promise<void> {
+    return request(`/accounts/${id(profileId)}/hide`, { method: 'POST' });
+  },
+
+  // --- Chat extras ---
+  /** «Печатает…» for the other person; at most every ~3 s while typing. */
+  sendTyping(matchId: string): Promise<void> {
+    return request(`/matches/${id(matchId)}/typing`, { method: 'POST' });
+  },
+
+  // --- Date plan ---
+  getDatePlan(matchId: string, signal?: AbortSignal): Promise<{ plan: DatePlan | null }> {
+    return request(`/matches/${id(matchId)}/date-plan`, { signal });
+  },
+  getDatePlanById(planId: string, signal?: AbortSignal): Promise<DatePlan> {
+    return request(`/date-plans/${id(planId)}`, { signal });
+  },
+  /** 403 PREMIUM_REQUIRED (DATE_PLAN) ; 409 PLAN_ALREADY_OPEN ; 400 fieldErrors items[i].… */
+  proposeDatePlan(matchId: string, items: DatePlanItemInput[]): Promise<DatePlan> {
+    return request(`/matches/${id(matchId)}/date-plan`, { method: 'POST', body: { items } });
+  },
+  /** A counter proposal; 409 PLAN_CHANGED when the version is stale. */
+  editDatePlan(planId: string, version: number, items: DatePlanItemInput[]): Promise<DatePlan> {
+    return request(`/date-plans/${id(planId)}`, { method: 'PUT', body: { version, items } });
+  },
+  answerDatePlan(planId: string, action: 'accept' | 'decline' | 'cancel'): Promise<DatePlan> {
+    return request(`/date-plans/${id(planId)}/${action}`, { method: 'POST' });
+  },
+  getVenues(latitude: number, longitude: number, signal?: AbortSignal): Promise<Venue[]> {
+    return request(`/venues?latitude=${latitude}&longitude=${longitude}`, { signal });
+  },
+
+  // --- Help desk ---
+  getFaq(signal?: AbortSignal): Promise<FaqEntry[]> {
+    return request('/faq', { auth: false, signal });
+  },
+  listMyTickets(signal?: AbortSignal): Promise<SupportTicketSummary[]> {
+    return request('/support/tickets', { signal });
+  },
+  getMyTicket(ticketId: string, signal?: AbortSignal): Promise<SupportTicket> {
+    return request(`/support/tickets/${id(ticketId)}`, { signal });
+  },
+  createTicket(category: SupportCategory, text: string): Promise<SupportTicket> {
+    return request('/support/tickets', { method: 'POST', body: { category, text } });
+  },
+  writeToTicket(ticketId: string, text: string): Promise<SupportTicket> {
+    return request(`/support/tickets/${id(ticketId)}/messages`, { method: 'POST', body: { text } });
+  },
+
+  // --- Purchases (STUB until payments) ---
+  /** Grants the product at once, no payment. */
+  buyStub(product: StubProduct): Promise<Wallet> {
+    return request('/me/purchases/stub', { method: 'POST', body: { product } });
   },
 
   getRestrictions(): Promise<Restriction[]> {

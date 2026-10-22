@@ -13,20 +13,6 @@ interface TestPanelModalProps {
   onChanged: () => void;
 }
 
-/** Stub catalog codes (migration 007); any other code can be typed in. */
-const KNOWN_ITEM_CODES = [
-  'SUPERLIKE',
-  'GACHA_TICKET',
-  'BOOST',
-  'STICKERS_STUB_CATS',
-  'STICKERS_STUB_SPACE',
-  'WALLPAPER_STUB_NIGHT',
-  'WALLPAPER_STUB_SUNSET',
-  'STATUS_STUB_EARLY_BIRD',
-  'STATUS_STUB_BOOKWORM',
-  'FRAME_STUB_GOLD',
-  'FRAME_STUB_NEON',
-];
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString('ru-RU', { dateStyle: 'medium', timeStyle: 'short' });
@@ -45,6 +31,19 @@ function describeError(e: unknown): string {
   return message;
 }
 
+/** Around me when the browser gives a location quickly, else the centre of Moscow (as mobile). */
+function currentPoint(): Promise<[number, number]> {
+  const moscow: [number, number] = [55.7558, 37.6173];
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(moscow);
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve([p.coords.latitude, p.coords.longitude]),
+      () => resolve(moscow),
+      { timeout: 5000, maximumAge: 600_000 }
+    );
+  });
+}
+
 /** Parses a non-negative integer input; null when invalid. */
 function parseCount(value: string): number | null {
   const n = Number(value.trim());
@@ -56,7 +55,9 @@ export const TestPanelModal: React.FC<TestPanelModalProps> = ({ isOpen, onClose,
   const [state, setState] = useState<TestingState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [itemCode, setItemCode] = useState(KNOWN_ITEM_CODES[0]);
+  const [itemCode, setItemCode] = useState('SUPERLIKE');
+  const [catalog, setCatalog] = useState<Awaited<ReturnType<typeof api.testing.getCatalog>>>([]);
+  const [totalBalance, setTotalBalance] = useState(false);
   const [quantity, setQuantity] = useState('1');
   const [premiumDays, setPremiumDays] = useState('7');
   const [clockDays, setClockDays] = useState('1');
@@ -71,6 +72,9 @@ export const TestPanelModal: React.FC<TestPanelModalProps> = ({ isOpen, onClose,
       .catch((e: unknown) => {
         if (!isAbortError(e)) setError(describeError(e));
       });
+    api.testing.getCatalog(controller.signal).then(setCatalog).catch((e: unknown) => {
+      if (!isAbortError(e)) console.warn('Catalog load failed', e);
+    });
     return () => controller.abort();
   }, [isOpen]);
 
@@ -82,6 +86,19 @@ export const TestPanelModal: React.FC<TestPanelModalProps> = ({ isOpen, onClose,
       onChanged();
     } catch (e: unknown) {
       setError(describeError(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** Social actions return no TestingState: report with a toast. */
+  const social = async (key: string, action: () => Promise<string>) => {
+    setBusy(key);
+    try {
+      showToast(await action(), 'success');
+      onChanged();
+    } catch (e) {
+      showToast(getErrorMessage(e), 'error');
     } finally {
       setBusy(null);
     }
@@ -263,8 +280,10 @@ export const TestPanelModal: React.FC<TestPanelModalProps> = ({ isOpen, onClose,
                   aria-label="Код предмета"
                 />
                 <datalist id="test-panel-item-codes">
-                  {KNOWN_ITEM_CODES.map((c) => (
-                    <option key={c} value={c} />
+                  {catalog.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {`${c.title} · ${c.kind === 'CONSUMABLE' ? 'Расходники' : 'Косметика'} · ${c.category}`}
+                    </option>
                   ))}
                 </datalist>
                 <input
@@ -290,10 +309,14 @@ export const TestPanelModal: React.FC<TestPanelModalProps> = ({ isOpen, onClose,
                   variant="outline"
                   isLoading={busy === 'set'}
                   disabled={busy !== null || code === ''}
-                  onClick={() => withCount(quantity, 0, 'set', (n) => api.testing.setItemBalance(code, n))}
+                  onClick={() => withCount(quantity, 0, 'set', (n) => api.testing.setItemBalance(code, n, totalBalance))}
                 >
                   Установить баланс
                 </Button>
+                <label className="flex items-center gap-1.5 text-[11px] text-zinc-600">
+                  <input type="checkbox" checked={totalBalance} onChange={(e) => setTotalBalance(e.target.checked)} />
+                  весь баланс
+                </label>
               </div>
               <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-100">
                 <span className="text-[11px] text-zinc-500 font-medium">Быстрая выдача:</span>
@@ -326,7 +349,7 @@ export const TestPanelModal: React.FC<TestPanelModalProps> = ({ isOpen, onClose,
                 </Button>
               </div>
               <p className="text-[11px] text-zinc-400">
-                «Установить баланс» задаёт купленную часть (PERMANENT); еженедельная часть премиума не меняется.
+                «Установить баланс» задаёт купленную часть (PERMANENT); еженедельная часть премиума не меняется, а с «весь баланс» — задаёт всё вместе с ней.
                 Для косметики — 0 или 1.
               </p>
             </div>
@@ -419,6 +442,52 @@ export const TestPanelModal: React.FC<TestPanelModalProps> = ({ isOpen, onClose,
                   }}
                 >
                   Сбросить реакции и пропуски
+                </Button>
+              </div>
+              <p className="text-[11px] text-zinc-500 pt-2 border-t border-zinc-100">
+                Толпа: анкеты под мою анкету (пол, возраст, город) с фото из загруженных
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {[10, 30].map((count) => (
+                  <Button
+                    key={count}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    isLoading={busy === `crowd-${count}`}
+                    disabled={busy !== null}
+                    onClick={() => void social(`crowd-${count}`, async () => `Создано анкет: ${(await api.testing.createCrowd(count)).created}`)}
+                  >
+                    +{count} анкет
+                  </Button>
+                ))}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  isLoading={busy === 'crowd-like'}
+                  disabled={busy !== null}
+                  onClick={() =>
+                    void social('crowd-like', async () => `Вас лайкнули ${(await api.testing.createCrowd(20, true)).created} новых анкет`)
+                  }
+                >
+                  +20 и все лайкнули меня
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  isLoading={busy === 'venues'}
+                  disabled={busy !== null}
+                  onClick={() =>
+                    void social('venues', async () => {
+                      const [lat, lng] = await currentPoint();
+                      await api.testing.createVenues(lat, lng);
+                      return 'Добавлены 3 тестовых места (одно рекламное) — смотрите карту в плане встречи';
+                    })
+                  }
+                >
+                  Тестовые места для плана встречи
                 </Button>
               </div>
             </div>

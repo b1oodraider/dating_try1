@@ -13,6 +13,7 @@ import {
   Crown,
   MessageCircle,
   Gavel,
+  LifeBuoy,
 } from 'lucide-react';
 import { isStaff } from '../../features/admin/components/AdminView';
 
@@ -25,6 +26,7 @@ interface NavbarProps {
   onOpenSettings: () => void;
   /** Shown only for test accounts (Account.testAccount). */
   onOpenTestPanel: () => void;
+  onOpenSupport: () => void;
   unreadChatsCount?: number;
 }
 
@@ -34,6 +36,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAuth,
   onOpenSettings,
   onOpenTestPanel,
+  onOpenSupport,
   unreadChatsCount = 0,
 }) => {
   const { account, profile } = useAuth();
@@ -154,6 +157,15 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right User Actions */}
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenSupport}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-zinc-700 bg-zinc-50 hover:bg-zinc-100 rounded-xl border border-zinc-200 transition-colors"
+            title="Помощь"
+          >
+            <LifeBuoy className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Помощь</span>
+          </button>
           {account ? (
             <div className="flex items-center gap-1.5">
               {profile?.premium && (

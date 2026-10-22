@@ -6,6 +6,7 @@ import type { Match, Message } from '../types';
 /** Server-Sent Events of GET /events (docs/api-contract.md, Realtime). */
 export type RealtimeEvent =
   | { name: 'ready' }
+  | { name: 'typing'; data: { matchId: string } }
   | { name: 'message'; data: Message }
   | { name: 'match'; data: Match }
   | { name: 'match_closed'; data: { matchId: string } }
@@ -14,7 +15,7 @@ export type RealtimeEvent =
 
 type Listener = (event: RealtimeEvent) => void;
 
-const NAMES = ['ready', 'message', 'match', 'match_closed', 'like_received', 'read'] as const;
+const NAMES = ['ready', 'message', 'match', 'match_closed', 'like_received', 'read', 'typing'] as const;
 const MAX_RETRY_MS = 30_000;
 
 const RealtimeContext = createContext<(listener: Listener) => () => void>(() => () => {});

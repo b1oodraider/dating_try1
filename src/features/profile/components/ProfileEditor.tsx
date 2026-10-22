@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../../core/context/AuthContext';
-import { ApiError, getErrorMessage } from '../../../core/api/client';
+import { api, ApiError, getErrorMessage } from '../../../core/api/client';
 import { TagChip } from '../../tags/components/TagChip';
-import { TagPicker, MAX_PROFILE_TAGS } from '../../tags/components/TagPicker';
+import { TagPicker } from '../../tags/components/TagPicker';
 import { PhotoManager } from '../../photos/components/PhotoManager';
 import { CompletenessHint, describePublishRequirement } from './CompletenessHint';
 import { DailyStatusEditor } from './DailyStatusEditor';
@@ -11,6 +11,19 @@ import { Modal } from '../../../shared/components/Modal';
 import { useGoals } from '../../goals/hooks/useGoals';
 import { GoalToggleList } from '../../goals/components/GoalChips';
 import { PremiumBadge } from '../../premium/components/PremiumBadge';
+import { PurchaseModal } from '../../premium/components/PurchaseModal';
+import { useToast } from '../../../shared/components/Toast';
+import {
+  ArtistsPicker,
+  CityPicker,
+  toFacts,
+  FactsFields,
+  InterestsPicker,
+  LIFESTYLE_FACTS,
+  MAX_ARTISTS,
+  MAX_INTERESTS,
+  WORK_FACTS,
+} from './ProfileExtras';
 import {
   Eye,
   EyeOff,
@@ -20,25 +33,61 @@ import {
   AlertCircle,
   FileText,
   ShieldCheck,
+  Lock,
 } from 'lucide-react';
 import { SelfieVerificationModal } from '../../safety/components/SelfieVerificationModal';
-import type { ProfileUpdate, Tag } from '../../../core/types';
+import type { Artist, Facts, ProfileUpdate, Tag } from '../../../core/types';
 
 // Limits from the API contract (PUT /me/profile).
 const NAME_MIN = 2;
 const NAME_MAX = 50;
-const CITY_MAX = 60;
 const ABOUT_MAX = 1000;
 const AGE_MIN = 18;
 const AGE_MAX = 100;
 const HEIGHT_MIN = 120;
 const HEIGHT_MAX = 230;
 const MAX_GOALS = 3;
+const RADIUS_MIN = 5;
+/** The slider's end: no radius limit (clearSearchRadius). */
+const RADIUS_NONE = 300;
+
+const genderLabel = (g?: string | null) => (g === 'MALE' ? 'Мужчина' : g === 'FEMALE' ? 'Женщина' : 'Пол не указан');
 
 type FieldErrors = Record<string, string>;
 
 const FieldError: React.FC<{ message?: string }> = ({ message }) =>
   message ? <p className="text-[11px] text-rose-600 mt-1">{message}</p> : null;
+
+const VisibilitySwitch: React.FC<{
+  title: string;
+  subtitle?: string;
+  checked: boolean;
+  disabled?: boolean;
+  /** Premium-only: a lock instead of the switch state, the click opens the purchase. */
+  locked?: boolean;
+  onChange: (on: boolean) => void;
+}> = ({ title, subtitle, checked, disabled, locked, onChange }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    disabled={disabled}
+    onClick={() => onChange(!checked)}
+    className="w-full flex items-center justify-between gap-3 text-left disabled:opacity-60 disabled:cursor-not-allowed"
+  >
+    <span>
+      <span className="block text-xs font-semibold text-zinc-800">{title}</span>
+      {subtitle && <span className="block text-[11px] text-zinc-500">{subtitle}</span>}
+    </span>
+    {locked ? (
+      <Lock className="w-4 h-4 text-zinc-400 shrink-0" />
+    ) : (
+      <span className={`w-9 h-5 rounded-full p-0.5 shrink-0 transition-colors ${checked ? 'bg-zinc-900' : 'bg-zinc-200'}`}>
+        <span className={`block w-4 h-4 rounded-full bg-white transition-transform ${checked ? 'translate-x-4' : ''}`} />
+      </span>
+    )}
+  </button>
+);
 
 export const ProfileEditor: React.FC = () => {
   const { profile, updateProfile, publishProfile, hideProfile, refreshProfile } = useAuth();
@@ -51,6 +100,15 @@ export const ProfileEditor: React.FC = () => {
   const [ageFrom, setAgeFrom] = useState(String(profile?.ageFrom ?? AGE_MIN));
   const [ageTo, setAgeTo] = useState(profile?.ageTo != null ? String(profile.ageTo) : '');
   const [city, setCity] = useState(profile?.city ?? '');
+  const [cityId, setCityId] = useState<number | null>(profile?.cityId ?? null);
+  const [radius, setRadius] = useState(Math.min(profile?.searchRadiusKm ?? RADIUS_NONE, RADIUS_NONE));
+  const [interestCodes, setInterestCodes] = useState<string[]>(profile?.interests?.map((i) => i.code) ?? []);
+  const [artists, setArtists] = useState<Artist[]>(profile?.artists ?? []);
+  const [facts, setFacts] = useState<Facts>(() => toFacts(profile?.facts));
+  const [purchaseKind, setPurchaseKind] = useState<'premium' | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [isSavingVisibility, setIsSavingVisibility] = useState(false);
+  const { showToast } = useToast();
   const [aboutText, setAboutText] = useState(profile?.aboutText ?? '');
   const [height, setHeight] = useState(profile?.heightCm != null ? String(profile.heightCm) : '');
   const [goalCodes, setGoalCodes] = useState<string[]>(profile?.goals?.map((g) => g.code) ?? []);
@@ -74,6 +132,13 @@ export const ProfileEditor: React.FC = () => {
   const serverHeight = profile?.heightCm != null ? String(profile.heightCm) : '';
   // A string key so the effect re-runs only when the goal set really changed.
   const serverGoalKey = (profile?.goals ?? []).map((g) => g.code).join(',');
+  const serverExtras = JSON.stringify([
+    profile?.cityId ?? null,
+    profile?.searchRadiusKm ?? null,
+    (profile?.interests ?? []).map((i) => i.code),
+    profile?.artists ?? [],
+    toFacts(profile?.facts),
+  ]);
   const profileId = profile?.id;
   useEffect(() => {
     setDisplayName(serverDisplayName);
@@ -87,9 +152,15 @@ export const ProfileEditor: React.FC = () => {
     setAboutText(serverAbout);
     setHeight(serverHeight);
     setGoalCodes(serverGoalKey ? serverGoalKey.split(',') : []);
+    const [cId, r, i, a, f] = JSON.parse(serverExtras) as [number | null, number | null, string[], Artist[], Facts];
+    setCityId(cId);
+    setRadius(Math.min(r ?? RADIUS_NONE, RADIUS_NONE));
+    setInterestCodes(i);
+    setArtists(a);
+    setFacts(f);
     setFieldErrors({});
     setFormError(null);
-  }, [profileId, serverDisplayName, serverIdentity, serverCity, serverAbout, serverHeight, serverGoalKey]);
+  }, [profileId, serverDisplayName, serverIdentity, serverCity, serverAbout, serverHeight, serverGoalKey, serverExtras]);
 
   // Once the server says nothing is missing, drop the stale "cannot publish" hint.
   const missingCount = profile?.missingForPublish?.length ?? 0;
@@ -112,6 +183,8 @@ export const ProfileEditor: React.FC = () => {
   }
 
   const tags = profile.tags ?? [];
+  // Gender and birth date lock after the first publish (support changes them).
+  const identityLocked = profile.identityLocked ?? profile.publicationStatus !== 'DRAFT';
   const photos = profile.photos ?? [];
 
   const validateForm = (): { update: ProfileUpdate; errors: FieldErrors } => {
@@ -130,10 +203,10 @@ export const ProfileEditor: React.FC = () => {
     }
 
     // Gender and birth date lock after the first publish (support changes them).
-    const identityLocked = profile.publicationStatus !== 'DRAFT';
-    // After publishing the exact birth date may still be refined, but not to another age.
-    if (birthDate) update.birthDate = birthDate;
-    if (!identityLocked && gender) update.gender = gender as 'MALE' | 'FEMALE';
+    if (!identityLocked) {
+      if (birthDate) update.birthDate = birthDate;
+      if (gender) update.gender = gender as 'MALE' | 'FEMALE';
+    }
     if (seeking) update.seeking = seeking as 'MALE' | 'FEMALE';
     const from = Number(ageFrom);
     if (!Number.isInteger(from) || from < AGE_MIN || from > AGE_MAX) {
@@ -152,16 +225,22 @@ export const ProfileEditor: React.FC = () => {
       update.clearAgeTo = true;
     }
 
-    const cityValue = city.trim();
-    if (cityValue) {
-      if (cityValue.length > CITY_MAX) {
-        errors.city = `Название города — не длиннее ${CITY_MAX} символов`;
-      } else {
-        update.city = cityValue;
-      }
-    } else if (profile.city) {
-      errors.city = 'Город нельзя оставить пустым';
-    }
+    if (cityId != null && cityId !== profile.cityId) update.cityId = cityId;
+    if (radius < RADIUS_NONE) update.searchRadiusKm = radius;
+    else if (profile.searchRadiusKm != null) update.clearSearchRadius = true;
+    update.interestCodes = interestCodes; // [] clears
+    update.artistIds = artists.map((a) => a.id);
+    // Facts: "" / [] clear.
+    update.kidsHas = facts.kidsHas ?? '';
+    update.kidsPlans = facts.kidsPlans ?? '';
+    update.smoking = facts.smoking ?? '';
+    update.alcohol = facts.alcohol ?? '';
+    update.sport = facts.sport ?? '';
+    update.pets = facts.pets;
+    update.profession = (facts.profession ?? '').trim();
+    update.educationLevel = facts.educationLevel ?? '';
+    update.university = (facts.university ?? '').trim();
+    update.languages = facts.languages;
 
     const about = aboutText.trim();
     if (about.length > ABOUT_MAX) {
@@ -267,6 +346,40 @@ export const ProfileEditor: React.FC = () => {
   };
 
   const isPublished = profile.publicationStatus === 'PUBLISHED';
+
+  // Visibility switches apply at once, like on mobile.
+  const setVisibility = async (patch: Pick<ProfileUpdate, 'showZodiac' | 'invisible' | 'showPremiumBadge'>) => {
+    setIsSavingVisibility(true);
+    try {
+      await updateProfile(patch);
+    } catch (err: unknown) {
+      showToast(getErrorMessage(err, 'Не удалось сохранить настройку'), 'error');
+    } finally {
+      setIsSavingVisibility(false);
+    }
+  };
+
+  const toggleLocation = async () => {
+    setIsLocating(true);
+    try {
+      if (profile.locationShared) {
+        await api.forgetLocation();
+      } else {
+        if (!navigator.geolocation) throw new Error('Браузер не умеет определять местоположение');
+        const position = await new Promise<GeolocationPosition>((resolve, reject) =>
+          navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: false, timeout: 15000 }),
+        ).catch(() => {
+          throw new Error('Нет доступа к местоположению — расстояния будут от центра города');
+        });
+        await api.shareLocation(position.coords.latitude, position.coords.longitude);
+      }
+      await refreshProfile();
+    } catch (err: unknown) {
+      showToast(getErrorMessage(err, 'Не удалось определить местоположение'), 'error');
+    } finally {
+      setIsLocating(false);
+    }
+  };
 
   const inputClass = (field: string) =>
     `w-full px-3.5 py-2 text-sm bg-zinc-50 border rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all ${
@@ -392,125 +505,185 @@ export const ProfileEditor: React.FC = () => {
           </div>
         )}
 
-        {/* Basic Fields */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-semibold text-zinc-700 mb-1">
-              Имя или псевдоним
-            </label>
-            <input
-              type="text"
-              maxLength={NAME_MAX}
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Как к вам обращаться"
-              aria-invalid={!!fieldErrors.displayName}
-              className={inputClass('displayName')}
-            />
-            <FieldError message={fieldErrors.displayName} />
-          </div>
+        {/* Name */}
+        <div>
+          <label className="block text-xs font-semibold text-zinc-700 mb-1">
+            Имя или псевдоним
+          </label>
+          <input
+            type="text"
+            maxLength={NAME_MAX}
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="Как к вам обращаться"
+            aria-invalid={!!fieldErrors.displayName}
+            className={inputClass('displayName')}
+          />
+          <FieldError message={fieldErrors.displayName} />
+        </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-zinc-700 mb-1">
-              Дата рождения (18+){profile.age != null ? ` — ${profile.age}` : ''}
-            </label>
-            <input
-              type="date"
-              value={birthDate}
-              onChange={(e) => setBirthDate(e.target.value)}
-              aria-invalid={!!fieldErrors.birthDate}
-              className={inputClass('birthDate')}
-            />
-            <FieldError message={fieldErrors.birthDate} />
+        {/* Gender, age and height */}
+        <div>
+          <h3 className="text-xs font-semibold text-zinc-900 mb-2">Пол, возраст и рост</h3>
+          {identityLocked ? (
+            <div className="mb-3 p-3 bg-zinc-50 border border-zinc-200 rounded-xl flex items-start gap-2">
+              <Lock className="w-4 h-4 text-zinc-500 shrink-0 mt-0.5" />
+              <div className="text-xs">
+                <p className="font-medium text-zinc-900">
+                  {[genderLabel(profile.gender), profile.birthDate ? profile.birthDate.split('-').reverse().join('.') : null]
+                    .filter(Boolean)
+                    .join(' · ')}
+                  {profile.age != null ? ` (${profile.age})` : ''}
+                </p>
+                <p className="text-zinc-500 mt-0.5">После публикации пол и возраст меняются через поддержку</p>
+                {profile.zodiac && <p className="text-zinc-700 mt-1">Знак зодиака: {profile.zodiac}</p>}
+              </div>
+            </div>
+          ) : (
+            <p className="text-[11px] text-zinc-500 mb-2">
+              Пол и возраст нельзя будет поменять после публикации без поддержки.
+            </p>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {!identityLocked && (
+              <>
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-700 mb-1">Я</label>
+                  <select value={gender} onChange={(e) => setGender(e.target.value)} className={inputClass('gender')}>
+                    <option value="">—</option>
+                    <option value="FEMALE">Женщина</option>
+                    <option value="MALE">Мужчина</option>
+                  </select>
+                  <FieldError message={fieldErrors.gender} />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                    Дата рождения (18+){profile.age != null ? ` — ${profile.age}` : ''}
+                  </label>
+                  <input
+                    type="date"
+                    value={birthDate}
+                    onChange={(e) => setBirthDate(e.target.value)}
+                    aria-invalid={!!fieldErrors.birthDate}
+                    className={inputClass('birthDate')}
+                  />
+                  <FieldError message={fieldErrors.birthDate} />
+                  <p className="text-[11px] text-zinc-400 mt-1">
+                    Другим покажем только возраст{profile.zodiac ? ` · ${profile.zodiac}` : ''}
+                  </p>
+                </div>
+              </>
+            )}
+            <div>
+              <label className="block text-xs font-semibold text-zinc-700 mb-1">Рост, см</label>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={HEIGHT_MIN}
+                max={HEIGHT_MAX}
+                step={1}
+                value={height}
+                onChange={(e) => setHeight(e.target.value)}
+                placeholder={`${HEIGHT_MIN}–${HEIGHT_MAX}`}
+                aria-invalid={!!fieldErrors.heightCm}
+                className={`${inputClass('heightCm')} font-mono`}
+              />
+              <FieldError message={fieldErrors.heightCm} />
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div>
-            <label className="block text-xs font-semibold text-zinc-700 mb-1">Я</label>
-            <select
-              value={gender}
-              disabled={profile.publicationStatus !== 'DRAFT'}
-              onChange={(e) => setGender(e.target.value)}
-              className={inputClass('gender')}
-            >
-              <option value="">—</option>
-              <option value="FEMALE">Женщина</option>
-              <option value="MALE">Мужчина</option>
-            </select>
-            <FieldError message={fieldErrors.gender} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-zinc-700 mb-1">Ищу</label>
-            <select value={seeking} onChange={(e) => setSeeking(e.target.value)} className={inputClass('seeking')}>
-              <option value="">—</option>
-              <option value="MALE">Мужчину</option>
-              <option value="FEMALE">Женщину</option>
-            </select>
-            <FieldError message={fieldErrors.seeking} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-zinc-700 mb-1">Возраст от</label>
-            <input
-              type="number"
-              min={AGE_MIN}
-              max={AGE_MAX}
-              value={ageFrom}
-              onChange={(e) => setAgeFrom(e.target.value)}
-              className={`${inputClass('ageFrom')} font-mono`}
-            />
-            <FieldError message={fieldErrors.ageFrom} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-zinc-700 mb-1">до (пусто — любой)</label>
-            <input
-              type="number"
-              min={AGE_MIN}
-              max={AGE_MAX}
-              value={ageTo}
-              onChange={(e) => setAgeTo(e.target.value)}
-              placeholder="—"
-              className={`${inputClass('ageTo')} font-mono`}
-            />
-            <FieldError message={fieldErrors.ageTo} />
+        {/* Seeking */}
+        <div>
+          <h3 className="text-xs font-semibold text-zinc-900 mb-2">Кого ищу</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-zinc-700 mb-1">Ищу</label>
+              <select value={seeking} onChange={(e) => setSeeking(e.target.value)} className={inputClass('seeking')}>
+                <option value="">—</option>
+                <option value="MALE">Мужчину</option>
+                <option value="FEMALE">Женщину</option>
+              </select>
+              <FieldError message={fieldErrors.seeking} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-zinc-700 mb-1">Возраст от</label>
+              <input
+                type="number"
+                min={AGE_MIN}
+                max={AGE_MAX}
+                value={ageFrom}
+                onChange={(e) => setAgeFrom(e.target.value)}
+                className={`${inputClass('ageFrom')} font-mono`}
+              />
+              <FieldError message={fieldErrors.ageFrom} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-zinc-700 mb-1">до (пусто — любой)</label>
+              <input
+                type="number"
+                min={AGE_MIN}
+                max={AGE_MAX}
+                value={ageTo}
+                onChange={(e) => setAgeTo(e.target.value)}
+                placeholder="—"
+                className={`${inputClass('ageTo')} font-mono`}
+              />
+              <FieldError message={fieldErrors.ageTo} />
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-semibold text-zinc-700 mb-1">
-              Город
-            </label>
-            <input
-              type="text"
-              maxLength={CITY_MAX}
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              placeholder="Москва, Санкт-Петербург, Казань..."
-              aria-invalid={!!fieldErrors.city}
-              className={inputClass('city')}
-            />
-            <FieldError message={fieldErrors.city} />
-          </div>
-
+        {/* Place */}
+        <div className="space-y-3">
+          <h3 className="text-xs font-semibold text-zinc-900">Где искать</h3>
           <div>
             <label className="block text-xs font-semibold text-zinc-700 mb-1">
-              Рост, см
+              Город{city ? `: ${city}` : ''}
+            </label>
+            <CityPicker
+              cityName={city}
+              onPick={(c) => {
+                setCity(c.name);
+                setCityId(c.id);
+              }}
+              error={fieldErrors.cityId ?? fieldErrors.city}
+            />
+            <FieldError message={fieldErrors.cityId ?? fieldErrors.city} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-zinc-700 mb-1">
+              Искать в радиусе: {radius >= RADIUS_NONE ? 'без ограничения' : `${radius} км`}
             </label>
             <input
-              type="number"
-              inputMode="numeric"
-              min={HEIGHT_MIN}
-              max={HEIGHT_MAX}
-              step={1}
-              value={height}
-              onChange={(e) => setHeight(e.target.value)}
-              placeholder={`${HEIGHT_MIN}–${HEIGHT_MAX}`}
-              aria-invalid={!!fieldErrors.heightCm}
-              className={`${inputClass('heightCm')} font-mono`}
+              type="range"
+              min={RADIUS_MIN}
+              max={RADIUS_NONE}
+              step={5}
+              value={radius}
+              onChange={(e) => setRadius(Number(e.target.value))}
+              aria-label="Радиус поиска"
+              className="w-full accent-zinc-900"
             />
-            <FieldError message={fieldErrors.heightCm} />
+            <FieldError message={fieldErrors.searchRadiusKm} />
           </div>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!!profile.locationShared}
+              disabled={isLocating}
+              onChange={() => void toggleLocation()}
+              className="mt-0.5 w-4 h-4 accent-zinc-900"
+            />
+            <span>
+              <span className="block text-xs font-semibold text-zinc-700">
+                Учитывать моё местоположение{isLocating ? '…' : ''}
+              </span>
+              <span className="block text-[11px] text-zinc-500">
+                Приблизительно, до ~1 км. Без него расстояния считаются от центра города
+              </span>
+            </span>
+          </label>
         </div>
 
         {/* Relationship goals */}
@@ -572,6 +745,44 @@ export const ProfileEditor: React.FC = () => {
           </p>
         </div>
 
+        {/* Interests */}
+        <div className="pt-2 border-t border-zinc-100">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="text-xs font-semibold text-zinc-900">Увлечения</h3>
+            <span className="text-[11px] text-zinc-400">
+              {interestCodes.length}/{MAX_INTERESTS}
+            </span>
+          </div>
+          <p className="text-[11px] text-zinc-500 mb-2">Общие увлечения поднимают анкеты выше в ленте.</p>
+          <InterestsPicker selected={interestCodes} onChange={setInterestCodes} />
+          <FieldError message={fieldErrors.interestCodes} />
+        </div>
+
+        {/* Music */}
+        <div className="pt-2 border-t border-zinc-100">
+          <h3 className="text-xs font-semibold text-zinc-900 mb-1">Музыка</h3>
+          <p className="text-[11px] text-zinc-500 mb-2">
+            До {MAX_ARTISTS} исполнителей. Не нашли — попробуйте написать по-другому.
+          </p>
+          <ArtistsPicker selected={artists} onChange={setArtists} />
+          <FieldError message={fieldErrors.artistIds} />
+        </div>
+
+        {/* Lifestyle */}
+        <div className="pt-2 border-t border-zinc-100">
+          <h3 className="text-xs font-semibold text-zinc-900 mb-1">Образ жизни</h3>
+          <p className="text-[11px] text-zinc-500 mb-2">
+            Всё по желанию. Указанное видно в анкете, по образу жизни можно фильтровать ленту.
+          </p>
+          <FactsFields keys={LIFESTYLE_FACTS} facts={facts} onChange={setFacts} errors={fieldErrors} />
+        </div>
+
+        {/* Work */}
+        <div className="pt-2 border-t border-zinc-100">
+          <h3 className="text-xs font-semibold text-zinc-900 mb-2">Работа и учёба</h3>
+          <FactsFields keys={WORK_FACTS} facts={facts} onChange={setFacts} errors={fieldErrors} />
+        </div>
+
         {/* 24-hour Daily Status */}
         <DailyStatusEditor
           key={`${profile.id}:${profile.dailyStatusText ?? ''}`}
@@ -585,10 +796,10 @@ export const ProfileEditor: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-xs font-semibold text-zinc-900">
-                Карточки комфортного общения ({tags.length}/{MAX_PROFILE_TAGS})
+                Карточки общения ({tags.length})
               </h3>
               <p className="text-[11px] text-zinc-500">
-                Помогают быстро сойтись людям с похожим темпом и стилем диалога
+                По одной в каждой категории. Помогают сойтись людям с похожим стилем диалога
               </p>
             </div>
             <Button
@@ -633,19 +844,46 @@ export const ProfileEditor: React.FC = () => {
         </div>
       </form>
 
+      {/* Visibility: applied at once */}
+      <div className="bg-white p-5 rounded-2xl border border-zinc-200/80 shadow-xs space-y-3">
+        <h3 className="text-xs font-semibold text-zinc-900">Видимость</h3>
+        <VisibilitySwitch
+          title="Показывать знак зодиака"
+          subtitle={profile.zodiac ?? 'Укажите дату рождения'}
+          checked={!!profile.showZodiac}
+          disabled={isSavingVisibility || !profile.zodiac}
+          onChange={(on) => void setVisibility({ showZodiac: on })}
+        />
+        <VisibilitySwitch
+          title="Невидимка"
+          subtitle={profile.premium ? 'Анкету видят только те, кого вы лайкнули' : 'Доступно с премиумом'}
+          checked={!!profile.invisible && profile.premium}
+          locked={!profile.premium}
+          disabled={isSavingVisibility}
+          onChange={(on) => (profile.premium ? void setVisibility({ invisible: on }) : setPurchaseKind('premium'))}
+        />
+        {profile.premium && (
+          <VisibilitySwitch
+            title="Показывать значок премиума"
+            checked={!!profile.showPremiumBadge}
+            disabled={isSavingVisibility}
+            onChange={(on) => void setVisibility({ showPremiumBadge: on })}
+          />
+        )}
+      </div>
+
       {/* Tag Picker Modal */}
       <Modal
         isOpen={isTagModalOpen}
         onClose={() => setIsTagModalOpen(false)}
         title="Функциональные карточки общения"
-        description={`Выберите до ${MAX_PROFILE_TAGS} карточек, описывающих ваш комфортный ритм и формат диалога`}
+        description="Как вам удобнее общаться?"
         maxWidth="lg"
       >
         {actionErrorBlock && <div className="mb-4">{actionErrorBlock}</div>}
         <TagPicker
           selectedTags={tags}
           onChange={(next) => void handleTagsChange(next)}
-          maxTags={MAX_PROFILE_TAGS}
           disabled={isSavingTags}
         />
         <div className="mt-5 flex justify-end">
@@ -664,6 +902,9 @@ export const ProfileEditor: React.FC = () => {
         onClose={() => setIsVerificationModalOpen(false)}
         onVerifiedChange={refreshProfile}
       />
+
+      {/* Last, so it stacks on top. */}
+      <PurchaseModal kind={purchaseKind} onClose={() => setPurchaseKind(null)} onBought={() => void refreshProfile()} />
     </div>
   );
 };

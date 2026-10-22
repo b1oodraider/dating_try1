@@ -50,7 +50,8 @@ export function groupTagsByCategory(tags: Tag[]): TagCategoryGroup[] {
     .map(({ id, label, tags: groupTags }) => ({
       id,
       label,
-      tags: [...groupTags].sort((a, b) => a.sortOrder - b.sortOrder),
+      // A scale reads from one end to the other; other categories keep the editors' order.
+      tags: [...groupTags].sort((a, b) => (a.scalePosition ?? a.sortOrder) - (b.scalePosition ?? b.sortOrder)),
     }));
 }
 

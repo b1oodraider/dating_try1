@@ -1,52 +1,25 @@
-import React, { useState } from 'react';
+import React from 'react';
 import type { Tag } from '../../../core/types';
 import { useTags } from '../hooks/useTags';
 import { Button } from '../../../shared/components/Button';
-import { Search, AlertCircle } from 'lucide-react';
-
-/** Backend limit for tagCodes in PUT /me/profile. */
-export const MAX_PROFILE_TAGS = 10;
+import { AlertCircle } from 'lucide-react';
 
 interface TagPickerProps {
   selectedTags: Tag[];
   onChange: (tags: Tag[]) => void;
-  maxTags?: number;
   disabled?: boolean;
 }
 
-export const TagPicker: React.FC<TagPickerProps> = ({
-  selectedTags,
-  onChange,
-  maxTags = MAX_PROFILE_TAGS,
-  disabled = false,
-}) => {
-  const { tags: allTags, categories, isLoading, error, reload } = useTags();
-  const [search, setSearch] = useState('');
-  const [activeCategory, setActiveCategory] = useState<string>('all');
-
+/** One card per category (backend: 400 ONE_TAG_PER_CATEGORY); clicking the chosen card again clears it. */
+export const TagPicker: React.FC<TagPickerProps> = ({ selectedTags, onChange, disabled = false }) => {
+  const { categories, isLoading, error, reload } = useTags();
   const selectedCodes = new Set(selectedTags.map((t) => t.code));
 
   const handleToggle = (tag: Tag) => {
     if (disabled) return;
-    if (selectedCodes.has(tag.code)) {
-      onChange(selectedTags.filter((t) => t.code !== tag.code));
-    } else {
-      if (selectedTags.length >= maxTags) {
-        return; // Max reached
-      }
-      onChange([...selectedTags, tag]);
-    }
+    const others = selectedTags.filter((t) => t.category !== tag.category);
+    onChange(selectedCodes.has(tag.code) ? others : [...others, tag]);
   };
-
-  const query = search.trim().toLowerCase();
-  const filteredTags = allTags.filter((tag) => {
-    const matchesSearch =
-      tag.label.toLowerCase().includes(query) ||
-      tag.description.toLowerCase().includes(query);
-    const matchesCategory =
-      activeCategory === 'all' || tag.category === activeCategory;
-    return matchesSearch && matchesCategory;
-  });
 
   if (isLoading) {
     return (
@@ -72,102 +45,43 @@ export const TagPicker: React.FC<TagPickerProps> = ({
   }
 
   return (
-    <div className="space-y-4">
-      {/* Category filter tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
-        <button
-          type="button"
-          onClick={() => setActiveCategory('all')}
-          className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
-            activeCategory === 'all'
-              ? 'bg-zinc-900 text-white'
-              : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-          }`}
-        >
-          Все ({allTags.length})
-        </button>
-        {categories.map((cat) => {
-          const count = cat.tags.length;
-          return (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => setActiveCategory(cat.id)}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-colors whitespace-nowrap ${
-                activeCategory === cat.id
-                  ? 'bg-zinc-900 text-white'
-                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-              }`}
-            >
-              {cat.label} ({count})
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Search inside tags */}
-      <div className="relative">
-        <Search className="w-4 h-4 absolute left-3 top-2.5 text-zinc-400" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Поиск по карточкам и описаниям..."
-          className="w-full pl-9 pr-3 py-2 text-sm bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all"
-        />
-      </div>
-
-      {/* Tag selection indicator */}
-      <div className="flex items-center justify-between text-xs text-zinc-500">
-        <span>
-          Выбрано: <strong className="text-zinc-900">{selectedTags.length}</strong> из {maxTags}
-        </span>
-        {selectedTags.length >= maxTags && (
-          <span className="text-amber-600 font-medium">Достигнут лимит карточек</span>
-        )}
-      </div>
-
-      {/* Tags grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto pr-1">
-        {filteredTags.map((tag) => {
-          const isSelected = selectedCodes.has(tag.code);
-          return (
-            <div
-              key={tag.code}
-              onClick={() => handleToggle(tag)}
-              className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
-                disabled ? 'cursor-wait opacity-70' : 'cursor-pointer'
-              } ${
-                isSelected
-                  ? 'bg-zinc-900 text-white border-zinc-900 shadow-sm'
-                  : 'bg-white border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <span className={`text-xs font-semibold ${isSelected ? 'text-zinc-100' : 'text-zinc-900'}`}>
-                  {tag.label}
-                </span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded ${
+    <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+      <p className="text-xs text-zinc-500">
+        По одному ответу в каждой категории — можно пропустить. Нажмите ещё раз, чтобы снять выбор.
+        Совпадения подсвечиваются в анкетах.
+      </p>
+      {categories.map((cat) => (
+        <div key={cat.id}>
+          <p className="text-[11px] font-semibold text-zinc-500 mb-1.5">{cat.label || 'Другое'}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {cat.tags.map((tag) => {
+              const isSelected = selectedCodes.has(tag.code);
+              return (
+                <button
+                  key={tag.code}
+                  type="button"
+                  onClick={() => handleToggle(tag)}
+                  aria-pressed={isSelected}
+                  className={`p-3 rounded-xl border text-left transition-all ${
+                    disabled ? 'cursor-wait opacity-70' : 'cursor-pointer'
+                  } ${
                     isSelected
-                      ? 'bg-zinc-800 text-zinc-300'
-                      : 'bg-zinc-100 text-zinc-500'
+                      ? 'bg-zinc-900 text-white border-zinc-900 shadow-sm'
+                      : 'bg-white border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50'
                   }`}
                 >
-                  {tag.categoryLabel}
-                </span>
-              </div>
-              <p
-                className={`text-xs mt-1 leading-relaxed ${
-                  isSelected ? 'text-zinc-300' : 'text-zinc-500'
-                }`}
-              >
-                {tag.description}
-              </p>
-            </div>
-          );
-        })}
-      </div>
+                  <span className={`text-xs font-semibold ${isSelected ? 'text-zinc-100' : 'text-zinc-900'}`}>
+                    {tag.label}
+                  </span>
+                  <p className={`text-xs mt-1 leading-relaxed ${isSelected ? 'text-zinc-300' : 'text-zinc-500'}`}>
+                    {tag.description}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 };

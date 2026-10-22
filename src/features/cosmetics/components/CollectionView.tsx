@@ -18,6 +18,7 @@ import {
   StatusPill,
 } from '../decorations';
 import { GachaView } from '../../gacha/components/GachaView';
+import { PurchaseModal } from '../../premium/components/PurchaseModal';
 import {
   AlertCircle,
   Crown,
@@ -113,6 +114,7 @@ export const CollectionView: React.FC<CollectionViewProps> = ({ revision }) => {
   const [pendingCode, setPendingCode] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [subTab, setSubTab] = useState<'inventory' | 'gacha'>('inventory');
+  const [isPurchaseOpen, setIsPurchaseOpen] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -256,6 +258,11 @@ export const CollectionView: React.FC<CollectionViewProps> = ({ revision }) => {
               {!wallet.premium.active && premiumUntil && (
                 <div className="text-zinc-500">Закончился {premiumUntil}</div>
               )}
+              {!wallet.premium.active && (
+                <Button type="button" size="sm" onClick={() => setIsPurchaseOpen(true)}>
+                  <Crown className="w-3.5 h-3.5" /> Купить премиум
+                </Button>
+              )}
               {wallet.premiumFeatures.length > 0 && (
                 <div className="flex flex-wrap gap-1 pt-0.5">
                   <span className="text-zinc-500">Возможности премиума:</span>
@@ -395,6 +402,14 @@ export const CollectionView: React.FC<CollectionViewProps> = ({ revision }) => {
       </section>
         </>
       )}
+      <PurchaseModal
+        kind={isPurchaseOpen ? 'premium' : null}
+        onClose={() => setIsPurchaseOpen(false)}
+        onBought={() => {
+          setReloadKey((k) => k + 1);
+          refreshProfile().catch((e: unknown) => console.warn('Profile refresh failed', e));
+        }}
+      />
     </div>
   );
 };
