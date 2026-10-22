@@ -104,8 +104,8 @@ final List<ProfileStep> profileSteps = [
   ),
   ProfileStep(
     id: 'identity',
-    title: 'Пол и возраст',
-    question: 'Пол и дата рождения',
+    title: 'Пол, возраст и рост',
+    question: 'Пол, дата рождения и рост',
     icon: Icons.cake_outlined,
     requiredToPublish: true,
     hasValue: (p) => p.gender != null && p.birthDate != null,
@@ -113,8 +113,12 @@ final List<ProfileStep> profileSteps = [
       _genderLabel(p.gender),
       if (p.age != null) '${p.age}',
       if (p.zodiac != null) p.zodiac!,
+      if (p.heightCm != null) '${p.heightCm} см',
     ].where((s) => s.isNotEmpty).join(' · '),
-    build: (c) => IdentityEditor(c),
+    build: (c) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [IdentityEditor(c), const SizedBox(height: Gaps.lg), HeightEditor(c)],
+    ),
   ),
   ProfileStep(
     id: 'seeking',
@@ -160,15 +164,6 @@ final List<ProfileStep> profileSteps = [
     hasValue: (p) => p.photos.isNotEmpty,
     summary: (p) => '${p.photos.length} из ${MyProfile.maxPhotos}',
     build: (c) => PhotosEditor(c),
-  ),
-  ProfileStep(
-    id: 'height',
-    title: 'Рост',
-    question: 'Ваш рост',
-    icon: Icons.straighten_rounded,
-    hasValue: (p) => p.heightCm != null,
-    summary: (p) => p.heightCm == null ? '' : '${p.heightCm} см',
-    build: (c) => HeightEditor(c),
   ),
   ProfileStep(
     id: 'about',
@@ -797,7 +792,7 @@ class _HeightEditorState extends State<HeightEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const StepHint('По желанию. С премиумом другие могут искать по росту.'),
+        const StepHint('Рост — по желанию. С премиумом другие могут искать по росту.'),
         Row(
           children: [
             Expanded(

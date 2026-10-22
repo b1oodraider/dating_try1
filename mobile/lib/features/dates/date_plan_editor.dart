@@ -5,6 +5,7 @@ import '../../core/api/api_exception.dart';
 import '../../core/format.dart';
 import '../../core/models/date_plan.dart';
 import '../../core/theme/app_theme.dart';
+import '../premium/purchase_screen.dart';
 import 'map_picker_screen.dart';
 
 const int _maxPoints = 5;
@@ -119,11 +120,15 @@ class _DatePlanEditorScreenState extends State<DatePlanEditorScreen> {
       if (mounted) Navigator.of(context).pop(saved);
     } catch (e) {
       if (!mounted) return;
+      if (e is ApiException && e.isPremiumRequired) {
+        setState(() => _saving = false);
+        final bought = await openPurchase(context, api: widget.api, kind: PurchaseKind.premium);
+        if (bought && mounted) _save();
+        return;
+      }
       setState(() {
         _saving = false;
-        _error = e is ApiException && e.isPremiumRequired
-            ? 'Предлагать и менять план встречи можно с премиумом'
-            : e is ApiException && e.code == 'PLAN_CHANGED'
+        _error = e is ApiException && e.code == 'PLAN_CHANGED'
                 ? 'План уже изменили — закройте и откройте его снова'
                 : describeError(e);
       });

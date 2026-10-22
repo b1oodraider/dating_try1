@@ -52,15 +52,19 @@ class PremiumLockedHint extends StatelessWidget {
   const PremiumLockedHint({
     super.key,
     this.text = 'Доступно с премиумом',
+    this.onTap,
   });
 
   final String text;
 
+  /// Opens the premium page (the hint then reads as a link).
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = theme.colorScheme.onSurfaceVariant;
-    return Row(
+    final color = onTap == null ? theme.colorScheme.onSurfaceVariant : theme.colorScheme.primary;
+    final row = Row(
       children: [
         Icon(Icons.lock_outline, size: 16, color: color),
         const SizedBox(width: 6),
@@ -70,8 +74,12 @@ class PremiumLockedHint extends StatelessWidget {
             style: theme.textTheme.bodySmall?.copyWith(color: color),
           ),
         ),
+        if (onTap != null) Icon(Icons.chevron_right_rounded, size: 18, color: color),
       ],
     );
+    return onTap == null
+        ? row
+        : InkWell(onTap: onTap, child: Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: row));
   }
 }
 

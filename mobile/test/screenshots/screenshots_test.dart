@@ -19,6 +19,7 @@ import 'package:dating_mobile/features/auth/session_controller.dart';
 import 'package:dating_mobile/core/models/date_plan.dart';
 import 'package:dating_mobile/core/models/discovery_filters.dart';
 import 'package:dating_mobile/features/dates/date_plan_editor.dart';
+import 'package:dating_mobile/features/premium/purchase_screen.dart';
 import 'package:dating_mobile/features/discovery/discovery_filters_screen.dart';
 import 'package:dating_mobile/features/discovery/discovery_screen.dart';
 import 'package:dating_mobile/core/models/my_profile.dart';
@@ -274,6 +275,22 @@ void main() {
     await tester.tap(find.text('Открыть'));
     await _settle(tester);
     await _shot(tester, 'date_plan');
+  });
+
+  testWidgets('purchase and identity', skip: skip, (tester) async {
+    final session = _session();
+    await _pump(tester, PurchaseScreen(api: session.api, kind: PurchaseKind.premium));
+    await _shot(tester, 'purchase_premium');
+    await _pump(tester, PurchaseScreen(api: session.api, kind: PurchaseKind.superlikes));
+    await _shot(tester, 'purchase_superlikes');
+    await _pump(
+        tester,
+        ProfileSectionScreen(
+          api: session.api,
+          step: profileSteps.firstWhere((s) => s.id == 'identity'),
+          profile: MyProfile.fromJson(fx.myProfile),
+        ));
+    await _shot(tester, 'section_identity');
   });
 
   testWidgets('date plan editor', skip: skip, (tester) async {

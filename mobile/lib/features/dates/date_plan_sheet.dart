@@ -7,6 +7,7 @@ import '../../core/api/api_exception.dart';
 import '../../core/format.dart';
 import '../../core/models/date_plan.dart';
 import '../../core/theme/app_theme.dart';
+import '../premium/purchase_screen.dart';
 import 'date_plan_editor.dart';
 import 'map_picker_screen.dart';
 
@@ -75,6 +76,12 @@ class _DatePlanSheetState extends State<_DatePlanSheet> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Premium page on top of the sheet; after a purchase the plan reloads (now editable).
+  Future<void> _buyPremium() async {
+    final bought = await openPurchase(context, api: widget.api, kind: PurchaseKind.premium);
+    if (bought && mounted) _load();
   }
 
   Future<void> _edit() async {
@@ -170,14 +177,13 @@ class _DatePlanSheetState extends State<_DatePlanSheet> {
             ],
             if (plan.open) ...[
               const SizedBox(height: Gaps.sm),
-              if (plan.canEdit)
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : _edit,
-                  icon: const Icon(Icons.edit_outlined),
-                  label: const Text('Изменить (встречное предложение)'),
-                )
-              else
-                Text('Изменить план можно с премиумом',
+              OutlinedButton.icon(
+                onPressed: _busy ? null : (plan.canEdit ? _edit : _buyPremium),
+                icon: Icon(plan.canEdit ? Icons.edit_outlined : Icons.lock_outline_rounded),
+                label: const Text('Изменить (встречное предложение)'),
+              ),
+              if (!plan.canEdit)
+                Text('Изменять план можно с премиумом',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
               TextButton(onPressed: _busy ? null : () => _act('cancel'), child: const Text('Отменить план')),

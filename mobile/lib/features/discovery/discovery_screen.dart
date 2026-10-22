@@ -13,6 +13,7 @@ import '../../core/models/wallet.dart';
 import '../auth/session_controller.dart';
 import '../chat/match_dialog.dart';
 import '../safety/verification_screen.dart';
+import '../premium/purchase_screen.dart';
 import 'boost_button.dart';
 import 'discovery_filters_screen.dart';
 import 'profile_details_sheet.dart';
@@ -310,10 +311,17 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     if (!_effectiveFilters.hasAdvanced) return false;
     setState(() => _advancedLocked = true);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
+      SnackBar(
+        content: const Text(
           'Фильтры по росту и целям сохранены, '
           'но не применяются без премиума',
+        ),
+        action: SnackBarAction(
+          label: 'Премиум',
+          onPressed: () async {
+            final bought = await openPurchase(context, api: widget.session.api, kind: PurchaseKind.premium);
+            if (bought && mounted) _restartFeed();
+          },
         ),
       ),
     );
@@ -452,8 +460,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           _items.insert(0, profile);
         });
       }
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(describeError(e))));
+      if (e is ApiException && e.code == 'INSUFFICIENT_BALANCE') {
+        // Out of super likes: the card is back on top; the shop opens over the feed.
+        openPurchase(context, api: widget.session.api, kind: PurchaseKind.superlikes);
+      } else {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(describeError(e))));
+      }
     } finally {
       if (mounted) {
         setState(() => _pending--);
@@ -475,11 +488,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     } catch (e) {
       if (!mounted) return;
       if (e is ApiException && e.isUnauthorized) return;
-      final message = e is ApiException && e.isPremiumRequired
-          ? 'Вернуть анкету можно с премиумом'
-          : describeError(e);
+      if (e is ApiException && e.isPremiumRequired) {
+        final bought = await openPurchase(context, api: widget.session.api, kind: PurchaseKind.premium);
+        if (bought && mounted) _undo();
+        return;
+      }
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
+          .showSnackBar(SnackBar(content: Text(describeError(e))));
     }
   }
 
@@ -498,6 +513,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     } catch (e) {
       if (!mounted) return;
       if (e is ApiException && e.isUnauthorized) return;
+      // Without premium: once a day and only when the feed ran out; premium lifts both.
+      if (e is ApiException &&
+          (e.isPremiumRequired || e.code == 'PASS_REFRESH_TOO_SOON' || e.code == 'FEED_NOT_EMPTY')) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        final bought = await openPurchase(context, api: widget.session.api, kind: PurchaseKind.premium);
+        if (bought && mounted) _refreshPasses();
+        return;
+      }
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(describeError(e))));
     }

@@ -173,6 +173,10 @@ WalletItem = { code, kind: 'CONSUMABLE'|'COSMETIC',
     PROFILE_STATUS / PHOTO_FRAME: see Decoration above
     consumables:    { icon: 'star'|'ticket'|'rocket'|... }
 
+## Purchases — STUB until real payments (auth)
+POST /me/purchases/stub   body { product: PREMIUM_MONTH (30 days) | SUPERLIKE_PACK (5) | BOOST_PACK (3) }  200 Wallet — granted
+                          without payment; 404 PRODUCT_NOT_FOUND ; 403 PURCHASES_UNAVAILABLE when app.purchases.stub-enabled=false
+
 ## Cosmetics (auth)
 PUT    /me/cosmetics/equipped/{slot}   body { itemCode }   200 Wallet
        400 UNKNOWN_SLOT | WRONG_SLOT ; 403 ITEM_NOT_OWNED ; 404 ITEM_NOT_FOUND

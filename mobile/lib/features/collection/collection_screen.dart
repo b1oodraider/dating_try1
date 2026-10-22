@@ -6,6 +6,7 @@ import '../../core/models/json_utils.dart';
 import '../../core/models/wallet.dart';
 import '../auth/session_controller.dart';
 import '../cosmetics/cosmetic_visuals.dart';
+import '../premium/purchase_screen.dart';
 import '../premium/premium_badge.dart';
 
 /// "Коллекция": premium status, consumables and owned cosmetics
@@ -146,7 +147,13 @@ class _CollectionScreenState extends State<CollectionScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
-          _PremiumCard(wallet: wallet),
+          _PremiumCard(
+            wallet: wallet,
+            onBuy: () async {
+              final bought = await openPurchase(context, api: widget.session.api, kind: PurchaseKind.premium);
+              if (bought && mounted) _load();
+            },
+          ),
           const _SectionHeader('Расходники'),
           if (consumables.isEmpty)
             const _EmptyHint('Пока нет')
@@ -190,9 +197,12 @@ class _CollectionScreenState extends State<CollectionScreen> {
 }
 
 class _PremiumCard extends StatelessWidget {
-  const _PremiumCard({required this.wallet});
+  const _PremiumCard({required this.wallet, required this.onBuy});
 
   final Wallet wallet;
+
+  /// Opens the premium page (only while premium is off).
+  final VoidCallback onBuy;
 
   @override
   Widget build(BuildContext context) {
@@ -225,7 +235,8 @@ class _PremiumCard extends StatelessWidget {
                 'Только с премиумом: '
                 '${wallet.premiumFeatures.map(premiumFeatureLabel).join(', ')}',
               ),
-        trailing: premium.active ? const PremiumBadge() : null,
+        trailing: premium.active ? const PremiumBadge() : const Icon(Icons.chevron_right_rounded),
+        onTap: premium.active ? null : onBuy,
       ),
     );
   }

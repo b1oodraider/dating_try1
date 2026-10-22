@@ -15,6 +15,7 @@ import '../support/support_screen.dart';
 import '../testing/test_panel_screen.dart';
 import '../update/update_checker.dart';
 import 'profile_section_screen.dart';
+import '../premium/purchase_screen.dart';
 import 'profile_steps.dart';
 import 'profile_wizard.dart';
 
@@ -58,6 +59,12 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  /// Premium page on top; after a purchase the profile reloads with premium on.
+  Future<void> _buyPremium() async {
+    final bought = await openPurchase(context, api: widget.session.api, kind: PurchaseKind.premium);
+    if (bought && mounted) _load();
   }
 
   Future<void> _load() async {
@@ -132,7 +139,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   static Map<String, int> _gains(MyProfile profile) {
     const stepOf = {
       'NAME': 'name', 'AGE': 'identity', 'CITY': 'place', 'FIRST_PHOTO': 'photos', 'MORE_PHOTOS': 'photos',
-      'ABOUT': 'about', 'CARDS': 'tags', 'GOALS': 'goals', 'HEIGHT': 'height', 'VERIFIED': 'verified',
+      'ABOUT': 'about', 'CARDS': 'tags', 'GOALS': 'goals', 'HEIGHT': 'identity', 'VERIFIED': 'verified',
     };
     final gains = <String, int>{};
     for (final tip in profile.tips.where((t) => !t.done)) {
@@ -300,7 +307,11 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
                   subtitle: Text(
                       profile.premium ? 'Анкету видят только те, кого вы лайкнули' : 'Доступно с премиумом'),
                   value: profile.invisible && profile.premium,
-                  onChanged: profile.premium && !_busy ? (on) => _setVisibility(invisible: on) : null,
+                  onChanged: _busy
+                      ? null
+                      : profile.premium
+                          ? (on) => _setVisibility(invisible: on)
+                          : (_) => _buyPremium(),
                 ),
                 if (profile.premium)
                   SwitchListTile(

@@ -4,6 +4,7 @@ import '../../core/api/api_exception.dart';
 import '../../core/models/exclusion_words.dart';
 import '../auth/session_controller.dart';
 import '../premium/premium_badge.dart';
+import '../premium/purchase_screen.dart';
 import 'exclusion_word_rules.dart';
 
 /// Edits the caller's private list of exclusion words.
@@ -57,6 +58,13 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
   }
 
   bool get _limitReached => _words.length >= _maxWords;
+
+  /// Premium page on top; after a purchase the list is editable right here.
+  Future<void> _buyPremium() async {
+    final bought = await openPurchase(context,
+        api: widget.session.api, kind: PurchaseKind.premium);
+    if (bought && mounted) _load();
+  }
 
   Future<void> _load() async {
     try {
@@ -216,7 +224,7 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         if (!_active) ...[
-          _PremiumNotice(hasWords: _words.isNotEmpty),
+          _PremiumNotice(hasWords: _words.isNotEmpty, onBuy: _buyPremium),
           const SizedBox(height: 16),
         ],
         Text(
@@ -230,29 +238,33 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: TextField(
-                controller: _inputController,
-                focusNode: _inputFocus,
-                enabled: inputEnabled,
-                textInputAction: TextInputAction.done,
-                textCapitalization: TextCapitalization.none,
-                autocorrect: false,
-                onChanged: (_) {
-                  if (_inputError != null) setState(() => _inputError = null);
-                },
-                onSubmitted: (_) => _addFromInput(),
-                decoration: InputDecoration(
-                  labelText: 'Новое слово',
-                  hintText: 'например, курю',
-                  helperText: !_active
-                      ? 'Доступно с премиумом'
-                      : _limitReached
-                          ? 'Достигнут лимит: удалите слово, '
-                              'чтобы добавить новое'
-                          : null,
-                  errorText: _inputError,
-                  errorMaxLines: 3,
-                  helperMaxLines: 2,
+              child: premiumGate(
+                locked: !_active,
+                onLockedTap: _buyPremium,
+                child: TextField(
+                  controller: _inputController,
+                  focusNode: _inputFocus,
+                  enabled: inputEnabled,
+                  textInputAction: TextInputAction.done,
+                  textCapitalization: TextCapitalization.none,
+                  autocorrect: false,
+                  onChanged: (_) {
+                    if (_inputError != null) setState(() => _inputError = null);
+                  },
+                  onSubmitted: (_) => _addFromInput(),
+                  decoration: InputDecoration(
+                    labelText: 'Новое слово',
+                    hintText: 'например, курю',
+                    helperText: !_active
+                        ? 'Доступно с премиумом'
+                        : _limitReached
+                            ? 'Достигнут лимит: удалите слово, '
+                                'чтобы добавить новое'
+                            : null,
+                    errorText: _inputError,
+                    errorMaxLines: 3,
+                    helperMaxLines: 2,
+                  ),
                 ),
               ),
             ),
@@ -339,9 +351,10 @@ class _ExclusionWordsScreenState extends State<ExclusionWordsScreen> {
 
 /// Shown when saved words are not available without premium.
 class _PremiumNotice extends StatelessWidget {
-  const _PremiumNotice({required this.hasWords});
+  const _PremiumNotice({required this.hasWords, required this.onBuy});
 
   final bool hasWords;
+  final VoidCallback onBuy;
 
   @override
   Widget build(BuildContext context) {
@@ -363,6 +376,9 @@ class _PremiumNotice extends StatelessWidget {
                   : 'Слова-исключения доступны с премиумом.',
               style: theme.textTheme.bodyMedium,
             ),
+            const SizedBox(height: 8),
+            FilledButton(
+                onPressed: onBuy, child: const Text('Подключить премиум')),
           ],
         ),
       ),

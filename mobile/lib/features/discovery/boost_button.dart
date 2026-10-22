@@ -7,6 +7,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/models/boost.dart';
 import '../../core/theme/app_theme.dart';
+import '../premium/purchase_screen.dart';
 
 /// Boost in the feed's app bar: a countdown while active, otherwise a rocket with the number of boosts left.
 /// Tapping it opens a sheet to start a boost or to read how to get one.
@@ -126,6 +127,12 @@ class _BoostSheetState extends State<_BoostSheet> {
   bool _starting = false;
   String? _error;
 
+  /// The shop on top of this sheet; after a purchase the sheet closes and the button refreshes.
+  Future<void> _buy() async {
+    final bought = await openPurchase(context, api: widget.api, kind: PurchaseKind.boosts);
+    if (bought && mounted) Navigator.of(context).pop();
+  }
+
   Future<void> _start() async {
     setState(() {
       _starting = true;
@@ -137,6 +144,11 @@ class _BoostSheetState extends State<_BoostSheet> {
     } catch (e) {
       if (!mounted) return;
       if (e is ApiException && e.isUnauthorized) return;
+      if (e is ApiException && e.code == 'INSUFFICIENT_BALANCE') {
+        setState(() => _starting = false);
+        _buy();
+        return;
+      }
       setState(() {
         _starting = false;
         _error = e is ApiException && e.code == 'PROFILE_NOT_PUBLISHED'
@@ -180,12 +192,19 @@ class _BoostSheetState extends State<_BoostSheet> {
                 icon: const Icon(Icons.rocket_launch_rounded),
                 label: Text('Запустить · осталось $available'),
               )
-            else if (!active)
+            else if (!active) ...[
               Text(
                 'Бустов нет. Премиум даёт 1 буст в неделю, ещё их можно получить в «Удаче» и за достижения.',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               ),
+              const SizedBox(height: Gaps.md),
+              FilledButton.icon(
+                onPressed: _buy,
+                icon: const Icon(Icons.rocket_launch_rounded),
+                label: const Text('Купить бусты'),
+              ),
+            ],
             if (_error != null) ...[
               const SizedBox(height: Gaps.sm),
               Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: theme.colorScheme.error)),

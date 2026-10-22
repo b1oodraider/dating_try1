@@ -713,6 +713,10 @@ class DatingApiClient {
 
   // ---------------------------------------------------- Wallet, cosmetics
 
+  /// Purchase STUB (no payment yet): PREMIUM_MONTH, SUPERLIKE_PACK or BOOST_PACK is granted at once.
+  Future<Wallet> buyStub(String product) async =>
+      Wallet.fromJson(_expectMap(await _send('POST', '/me/purchases/stub', body: {'product': product})));
+
   /// Requires auth. Premium status, consumables and cosmetics. Opening the
   /// wallet also grants due premium allowances on the server.
   Future<Wallet> getWallet() async {

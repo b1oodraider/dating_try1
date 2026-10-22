@@ -10,6 +10,7 @@ import '../../core/api/api_exception.dart';
 import '../../core/api/realtime.dart';
 import '../../core/models/social.dart';
 import '../chat/match_dialog.dart';
+import '../premium/purchase_screen.dart';
 import '../discovery/profile_card.dart';
 import '../discovery/profile_details_sheet.dart';
 
@@ -154,10 +155,19 @@ class _LikesScreenState extends State<LikesScreen> {
   Widget _buildBody() {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_premiumRequired) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.lock_outline_rounded,
         title: 'Кто вас лайкнул — с премиумом',
         message: 'Без премиума эти люди всё равно встретятся вам в ленте.',
+        actions: [
+          FilledButton(
+            onPressed: () async {
+              final bought = await openPurchase(context, api: widget.api, kind: PurchaseKind.premium);
+              if (bought && mounted) _load();
+            },
+            child: const Text('Подключить премиум'),
+          ),
+        ],
       );
     }
     final error = _error;

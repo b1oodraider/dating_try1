@@ -11,6 +11,7 @@ import '../../core/models/wallet.dart';
 import '../auth/session_controller.dart';
 import '../exclusion_words/exclusion_words_screen.dart';
 import '../premium/premium_badge.dart';
+import '../premium/purchase_screen.dart';
 import '../profile/profile_steps.dart' show Dictionaries;
 
 /// Discovery filters: city and age are free; height, "looking for" goals,
@@ -113,7 +114,8 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
   void _setFactChips(Map<String, FactFilter> saved) {
     for (final fact in Facts.filterable) {
       final f = saved[fact];
-      _factAccept[fact] = f?.accept.toSet() ?? {for (final o in _factOptions!.of(fact)) o.code};
+      _factAccept[fact] =
+          f?.accept.toSet() ?? {for (final o in _factOptions!.of(fact)) o.code};
       _factUnspecified[fact] = f?.unspecified ?? true;
     }
   }
@@ -123,9 +125,13 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
         for (final fact in Facts.filterable)
           if (_factAccept[fact] case final accept?
               when accept.isNotEmpty &&
-                  (accept.length < _factOptions!.of(fact).length || _factUnspecified[fact] == false))
+                  (accept.length < _factOptions!.of(fact).length ||
+                      _factUnspecified[fact] == false))
             fact: FactFilter(
-              accept: [for (final o in _factOptions!.of(fact)) if (accept.contains(o.code)) o.code],
+              accept: [
+                for (final o in _factOptions!.of(fact))
+                  if (accept.contains(o.code)) o.code
+              ],
               unspecified: _factUnspecified[fact] ?? true,
             ),
       };
@@ -146,8 +152,7 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
   bool get _advancedLocked =>
       _premiumDenied ||
       !_excludedGoalsActive ||
-      (_wallet?.isFeatureLocked(PremiumFeatureCodes.advancedFilters) ??
-          false);
+      (_wallet?.isFeatureLocked(PremiumFeatureCodes.advancedFilters) ?? false);
 
   bool get _exclusionWordsLocked =>
       _wallet?.isFeatureLocked(PremiumFeatureCodes.exclusionWords) ?? false;
@@ -195,6 +200,15 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
         _advancedError = describeError(e);
       });
     }
+  }
+
+  /// Premium page on top; after a purchase the premium part unlocks right here.
+  Future<void> _buyPremium() async {
+    final bought = await openPurchase(context,
+        api: widget.session.api, kind: PurchaseKind.premium);
+    if (!bought || !mounted) return;
+    setState(() => _premiumDenied = false);
+    _retryAdvanced();
   }
 
   void _retryAdvanced() {
@@ -314,7 +328,8 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
 
     if (_factFiltersChanged) {
       try {
-        final saved = await widget.session.api.putFactFilters(_builtFactFilters());
+        final saved =
+            await widget.session.api.putFactFilters(_builtFactFilters());
         if (!mounted) return;
         _savedFactFilters = saved;
       } catch (e) {
@@ -496,7 +511,7 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
       header,
       if (locked) ...[
         const SizedBox(height: 8),
-        const PremiumLockedHint(),
+        PremiumLockedHint(onTap: _buyPremium),
       ],
       const SizedBox(height: 16),
       _RangeHeader(
@@ -508,17 +523,21 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
           unit: ' см',
         ),
       ),
-      RangeSlider(
-        values: _height,
-        min: DiscoveryFilters.heightMin.toDouble(),
-        max: DiscoveryFilters.heightMax.toDouble(),
-        divisions: DiscoveryFilters.heightMax - DiscoveryFilters.heightMin,
-        labels: RangeLabels(
-          '${_height.start.round()} см',
-          '${_height.end.round()} см',
+      premiumGate(
+        locked: locked,
+        onLockedTap: _buyPremium,
+        child: RangeSlider(
+          values: _height,
+          min: DiscoveryFilters.heightMin.toDouble(),
+          max: DiscoveryFilters.heightMax.toDouble(),
+          divisions: DiscoveryFilters.heightMax - DiscoveryFilters.heightMin,
+          labels: RangeLabels(
+            '${_height.start.round()} см',
+            '${_height.end.round()} см',
+          ),
+          onChanged:
+              enabled ? (values) => setState(() => _height = values) : null,
         ),
-        onChanged:
-            enabled ? (values) => setState(() => _height = values) : null,
       ),
       const SizedBox(height: 8),
       Text('Ищу цели', style: theme.textTheme.titleSmall),
@@ -528,13 +547,17 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
         style: theme.textTheme.bodySmall?.copyWith(color: hiddenColor),
       ),
       const SizedBox(height: 8),
-      _GoalChips(
-        goals: _goals,
-        selected: _goalCodes,
-        enabled: enabled,
-        onChanged: (code, selected) => setState(() {
-          selected ? _goalCodes.add(code) : _goalCodes.remove(code);
-        }),
+      premiumGate(
+        locked: locked,
+        onLockedTap: _buyPremium,
+        child: _GoalChips(
+          goals: _goals,
+          selected: _goalCodes,
+          enabled: enabled,
+          onChanged: (code, selected) => setState(() {
+            selected ? _goalCodes.add(code) : _goalCodes.remove(code);
+          }),
+        ),
       ),
       const SizedBox(height: 16),
       Text('Скрывать цели', style: theme.textTheme.titleSmall),
@@ -545,18 +568,23 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
         style: theme.textTheme.bodySmall?.copyWith(color: hiddenColor),
       ),
       const SizedBox(height: 8),
-      _GoalChips(
-        goals: _goals,
-        selected: _excludedGoals,
-        enabled: enabled,
-        onChanged: (code, selected) => setState(() {
-          selected ? _excludedGoals.add(code) : _excludedGoals.remove(code);
-        }),
+      premiumGate(
+        locked: locked,
+        onLockedTap: _buyPremium,
+        child: _GoalChips(
+          goals: _goals,
+          selected: _excludedGoals,
+          enabled: enabled,
+          onChanged: (code, selected) => setState(() {
+            selected ? _excludedGoals.add(code) : _excludedGoals.remove(code);
+          }),
+        ),
       ),
       if (!_excludedGoalsActive && _savedExcludedGoals.isNotEmpty) ...[
         const SizedBox(height: 8),
-        const PremiumLockedHint(
+        PremiumLockedHint(
           text: 'Сохранено, но не применяется без премиума',
+          onTap: _buyPremium,
         ),
       ],
       const SizedBox(height: 16),
@@ -571,7 +599,9 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
                 : 'Скрывать анкеты по словам в «О себе» и статусе',
           ),
           trailing: const Icon(Icons.chevron_right),
-          onTap: _applying ? null : _openExclusionWords,
+          onTap: _applying
+              ? null
+              : (_exclusionWordsLocked ? _buyPremium : _openExclusionWords),
         ),
       ),
     ];
@@ -580,12 +610,15 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
   List<Widget> _buildFactsSection(BuildContext context) {
     final theme = Theme.of(context);
     final options = _factOptions;
-    final hint = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    final hint = theme.textTheme.bodySmall
+        ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
     return [
       Text('Образ жизни', style: theme.textTheme.titleMedium),
       const SizedBox(height: 4),
-      Text('Работает в обе стороны: вы не увидите тех, кому не подходите вы. '
-          'Сохраняется в аккаунте.', style: hint),
+      Text(
+          'Работает в обе стороны: вы не увидите тех, кому не подходите вы. '
+          'Сохраняется в аккаунте.',
+          style: hint),
       if (options == null)
         Padding(
           padding: const EdgeInsets.only(top: 12),
@@ -593,7 +626,8 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
               ? const LinearProgressIndicator()
               : Row(children: [
                   Expanded(child: Text(_factsError!)),
-                  TextButton(onPressed: _loadFacts, child: const Text('Повторить')),
+                  TextButton(
+                      onPressed: _loadFacts, child: const Text('Повторить')),
                 ]),
         )
       else
@@ -639,7 +673,10 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
     final all = options.of(fact);
     final answers = accept.length >= all.length
         ? 'Любые'
-        : [for (final o in all) if (accept.contains(o.code)) o.label].join(', ');
+        : [
+            for (final o in all)
+              if (accept.contains(o.code)) o.label
+          ].join(', ');
     return _factUnspecified[fact]! ? answers : '$answers · без неуказавших';
   }
 
@@ -702,8 +739,7 @@ class _GoalChips extends StatelessWidget {
           FilterChip(
             label: Text(goal.displayLabel),
             selected: selected.contains(goal.code),
-            onSelected:
-                enabled ? (value) => onChanged(goal.code, value) : null,
+            onSelected: enabled ? (value) => onChanged(goal.code, value) : null,
           ),
       ],
     );
