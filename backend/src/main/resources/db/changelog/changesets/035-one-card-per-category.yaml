@@ -1,0 +1,26 @@
+databaseChangeLog:
+  # Communication cards become one answer per category (docs/matching.md, part 6; ProfileService rejects more with
+  # 400 ONE_TAG_PER_CATEGORY). Existing profiles keep one card per category: on a scale the one closest to the middle
+  # of that category's scale, otherwise the first by sort order.
+  - changeSet:
+      id: 035-one-card-per-category
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              WITH mids AS (
+                SELECT category, (min(scale_position) + max(scale_position)) / 2.0 AS mid
+                  FROM communication_tags WHERE scale_position IS NOT NULL GROUP BY category
+              ),
+              ranked AS (
+                SELECT pct.profile_id, pct.tag_id,
+                       row_number() OVER (
+                         PARTITION BY pct.profile_id, t.category
+                         ORDER BY abs(t.scale_position - m.mid) NULLS LAST, t.sort_order, t.code) AS rn
+                  FROM profile_communication_tags pct
+                  JOIN communication_tags t ON t.id = pct.tag_id
+                  LEFT JOIN mids m ON m.category = t.category
+              )
+              DELETE FROM profile_communication_tags pct
+               USING ranked r
+               WHERE pct.profile_id = r.profile_id AND pct.tag_id = r.tag_id AND r.rn > 1

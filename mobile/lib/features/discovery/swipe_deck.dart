@@ -288,7 +288,6 @@ class _CardFace extends StatelessWidget {
     ].join(' · ');
 
     final theme = Theme.of(context);
-    final pace = profile.tags.where((t) => t.category == 'pace').firstOrNull;
     return ClipRRect(
       borderRadius: BorderRadius.circular(Radii.card),
       child: Stack(
@@ -395,29 +394,34 @@ class _CardFace extends StatelessWidget {
                           if ((profile.dailyStatusText ?? '').isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.only(top: Gaps.sm),
-                              child: Text(
-                                '«${profile.dailyStatusText}»',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: Colors.white,
-                                  fontStyle: FontStyle.italic,
-                                ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.wb_sunny_outlined, size: 16, color: Colors.white70),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      profile.dailyStatusText!,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        color: Colors.white70,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          // The product's own thing: how this person likes to talk (the pace card).
-                          if (pace != null)
+                          // The start of «О себе»: the person speaks before the cards do (cards are in the
+                          // full profile).
+                          if ((profile.aboutText ?? '').isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.only(top: Gaps.sm + 2),
-                              child: Text.rich(
-                                TextSpan(children: [
-                                  const TextSpan(
-                                      text: 'Темп  ',
-                                      style: TextStyle(color: Colors.white70)),
-                                  TextSpan(text: pace.label),
-                                ]),
-                                style: theme.textTheme.titleSmall
-                                    ?.copyWith(color: Colors.white),
+                              padding: const EdgeInsets.only(top: Gaps.sm),
+                              child: Text(
+                                profile.aboutText!,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodyLarge?.copyWith(color: Colors.white, height: 1.35),
                               ),
                             ),
                           if (profile.common.isNotEmpty)

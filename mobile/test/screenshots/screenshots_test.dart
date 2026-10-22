@@ -178,6 +178,10 @@ void main() {
   setUpAll(() async {
     if (skip) return;
     SharedPreferences.setMockInitialValues({});
+    // flutter_map caches tiles under the app cache directory: give it a temp one.
+    final cache = Directory.systemTemp.createTempSync('screenshots-cache').path;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'), (call) async => cache);
     await _loadFonts();
   });
 
@@ -319,6 +323,14 @@ void main() {
           profile: MyProfile.fromJson(fx.myProfile),
         ));
     await _shot(tester, 'section_lifestyle');
+    await _pump(
+        tester,
+        ProfileSectionScreen(
+          api: session.api,
+          step: profileSteps.firstWhere((s) => s.id == 'tags'),
+          profile: MyProfile.fromJson(fx.myProfile),
+        ));
+    await _shot(tester, 'section_tags');
     await _pump(tester, DiscoveryFiltersScreen(session: session, initial: const DiscoveryFilters()));
     await tester.drag(find.byType(ListView), const Offset(0, -300));
     await _settle(tester);

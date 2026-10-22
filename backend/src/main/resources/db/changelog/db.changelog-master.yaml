@@ -67,3 +67,5 @@ databaseChangeLog:
       file: db/changelog/changesets/033-presence.yaml
   - include:
       file: db/changelog/changesets/034-date-plans.yaml
+  - include:
+      file: db/changelog/changesets/035-one-card-per-category.yaml

@@ -180,7 +180,7 @@ public class DiscoveryService {
                         compatibility.get(p.getAccountId()),
                         boostBadges.contains(p.getAccountId()) ? Boolean.TRUE : null)
                         .withDistanceKm(sharedDistanceKm(viewer, p))
-                        .withCommon(commonWith(viewer, p)))
+                        .withCommon(commonWith(viewer, p), sharedTagCodes(viewer, p)))
                 .toList();
 
         return new DiscoveryPageResponseDto(items, query.page(), query.limit(),
@@ -296,6 +296,13 @@ public class DiscoveryService {
         candidate.getTags().stream().filter(t -> t.isActive() && myTags.contains(t.getCode()))
                 .map(CommunicationTag::getLabel).sorted().forEach(common::add);
         return common.size() > 2 ? List.copyOf(common.subList(0, 2)) : common;
+    }
+
+    /** Codes of the active communication cards both people chose. */
+    static List<String> sharedTagCodes(Profile viewer, Profile candidate) {
+        Set<String> myTags = viewer.getTags().stream().map(CommunicationTag::getCode).collect(Collectors.toSet());
+        return candidate.getTags().stream().filter(t -> t.isActive() && myTags.contains(t.getCode()))
+                .map(CommunicationTag::getCode).sorted().toList();
     }
 
     /** Whole km, at least 1; only when both share their location. */

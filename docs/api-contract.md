@@ -556,6 +556,8 @@ GET /artists?q=         (auth)   200 Artist[] (<= 10)  Artist = { id, name }; q 
 PUT /me/profile         + interestCodes: string[] (<= 10, [] clears; unknown → 400 fieldErrors.interestCodes),
                           artistIds: number[] (<= 5), showZodiac: boolean
 MyProfile               + interests: Interest[], artists: Artist[], showZodiac, zodiac: string|null (my sign, e.g. «Лев»)
+PublicProfile           + sharedTags: string[] (feed only: codes of the cards both chose; omitted when empty)
+PUT /me/profile tagCodes: at most one card per category, else 400 ONE_TAG_PER_CATEGORY (fieldErrors.tagCodes names them)
 PublicProfile           + interests, artists, zodiac (only when the owner shows it), common: string[] (feed only: up to 2
                           interests / artists / cards the viewer shares; omitted when empty)
 Every change of the profile stores its previous state in profile_history (no API; for moderation and support).

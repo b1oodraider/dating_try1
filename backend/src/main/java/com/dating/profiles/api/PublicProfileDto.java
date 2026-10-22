@@ -41,17 +41,21 @@ public record PublicProfileDto(
         @JsonInclude(JsonInclude.Include.NON_NULL) String zodiac,
         /** Feed only: up to 2 interests / artists / cards the viewer shares with this person. */
         @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> common,
-        FactsDto facts
+        FactsDto facts,
+        /** Feed only: codes of the communication cards both people chose (highlighted in the full profile). */
+        @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> sharedTags
 ) {
     /** @param distanceKm shown only when both people share their location (city centres would mislead) */
     public PublicProfileDto withDistanceKm(Integer distanceKm) {
         return new PublicProfileDto(id, displayName, age, city, aboutText, dailyStatusText, tags, photos, decorations,
-                heightCm, goals, premium, verified, compatibility, boosted, distanceKm, interests, artists, zodiac, common, facts);
+                heightCm, goals, premium, verified, compatibility, boosted, distanceKm, interests, artists, zodiac, common, facts,
+                sharedTags);
     }
 
-    public PublicProfileDto withCommon(List<String> common) {
+    public PublicProfileDto withCommon(List<String> common, List<String> sharedTags) {
         return new PublicProfileDto(id, displayName, age, city, aboutText, dailyStatusText, tags, photos, decorations,
-                heightCm, goals, premium, verified, compatibility, boosted, distanceKm, interests, artists, zodiac, common, facts);
+                heightCm, goals, premium, verified, compatibility, boosted, distanceKm, interests, artists, zodiac, common, facts,
+                sharedTags);
     }
 
     /** @param compatibility percent match by cards with the viewer, null when there is too little to compare */
@@ -83,7 +87,8 @@ public record PublicProfileDto(
                 ProfileService.artistsOf(profile),
                 profile.isShowZodiac() ? Zodiac.of(profile.getBirthDate()) : null,
                 List.of(),
-                FactsDto.from(profile)
+                FactsDto.from(profile),
+                List.of()
         );
     }
 }

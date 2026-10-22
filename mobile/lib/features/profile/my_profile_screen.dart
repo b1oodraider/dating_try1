@@ -132,7 +132,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   static Map<String, int> _gains(MyProfile profile) {
     const stepOf = {
       'NAME': 'name', 'AGE': 'identity', 'CITY': 'place', 'FIRST_PHOTO': 'photos', 'MORE_PHOTOS': 'photos',
-      'ABOUT': 'about', 'CARDS': 'tags', 'GOALS': 'heightGoals', 'HEIGHT': 'heightGoals', 'VERIFIED': 'verified',
+      'ABOUT': 'about', 'CARDS': 'tags', 'GOALS': 'goals', 'HEIGHT': 'height', 'VERIFIED': 'verified',
     };
     final gains = <String, int>{};
     for (final tip in profile.tips.where((t) => !t.done)) {

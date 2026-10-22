@@ -233,7 +233,8 @@ public class ProfileService {
             errors.put("ageTo", "Верхняя граница возраста меньше нижней");
         }
         if (!errors.isEmpty()) {
-            String code = errors.containsKey("tagCodes") ? "UNKNOWN_TAG"
+            String code = errors.getOrDefault("tagCodes", "").startsWith(ONE_PER_CATEGORY) ? "ONE_TAG_PER_CATEGORY"
+                    : errors.containsKey("tagCodes") ? "UNKNOWN_TAG"
                     : errors.containsKey("goalCodes") ? "UNKNOWN_GOAL" : "VALIDATION_ERROR";
             throw ApiException.validation(code, "Ошибка валидации входных данных", errors);
         }
@@ -445,6 +446,8 @@ public class ProfileService {
                 .toList();
     }
 
+    private static final String ONE_PER_CATEGORY = "В каждой категории — одна карточка: ";
+
     private Set<CommunicationTag> resolveTags(List<String> rawCodes, Map<String, String> errors) {
         Set<String> codes = rawCodes.stream()
                 .filter(Objects::nonNull)
@@ -459,6 +462,14 @@ public class ProfileService {
             Set<String> foundCodes = found.stream().map(CommunicationTag::getCode).collect(Collectors.toSet());
             List<String> unknown = codes.stream().filter(code -> !foundCodes.contains(code)).toList();
             errors.put("tagCodes", "Неизвестные карточки: " + String.join(", ", unknown));
+            return new HashSet<>(found);
+        }
+        // One answer per category (docs/matching.md, part 6): the cards of a category are steps of one scale.
+        List<String> crowded = found.stream()
+                .collect(Collectors.groupingBy(CommunicationTag::getCategoryLabel, Collectors.counting()))
+                .entrySet().stream().filter(e -> e.getValue() > 1).map(Map.Entry::getKey).sorted().toList();
+        if (!crowded.isEmpty()) {
+            errors.put("tagCodes", ONE_PER_CATEGORY + String.join(", ", crowded));
         }
         return new HashSet<>(found);
     }

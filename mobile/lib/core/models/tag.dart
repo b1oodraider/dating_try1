@@ -9,6 +9,7 @@ class Tag {
     required this.label,
     required this.description,
     required this.sortOrder,
+    this.scalePosition,
   });
 
   final String code;
@@ -20,6 +21,9 @@ class Tag {
   final String description;
   final int sortOrder;
 
+  /// Place on the category's scale (smaller = closer to its min end); null = the category is not a scale.
+  final int? scalePosition;
+
   factory Tag.fromJson(Map<String, dynamic> json) {
     return Tag(
       code: asString(json['code']),
@@ -28,6 +32,7 @@ class Tag {
       label: asString(json['label']),
       description: asString(json['description']),
       sortOrder: asInt(json['sortOrder']),
+      scalePosition: asIntOrNull(json['scalePosition']),
     );
   }
 }

@@ -129,6 +129,15 @@ final List<ProfileStep> profileSteps = [
     build: (c) => SeekingEditor(c),
   ),
   ProfileStep(
+    id: 'goals',
+    title: 'Цели знакомства',
+    question: 'Что вы ищете?',
+    icon: Icons.flag_outlined,
+    hasValue: (p) => p.goals.isNotEmpty,
+    summary: (p) => _join(p.goals.map((g) => g.displayLabel), max: 2),
+    build: (c) => GoalsEditor(c),
+  ),
+  ProfileStep(
     id: 'place',
     title: 'Где искать',
     question: 'Где вы ищете?',
@@ -153,16 +162,13 @@ final List<ProfileStep> profileSteps = [
     build: (c) => PhotosEditor(c),
   ),
   ProfileStep(
-    id: 'heightGoals',
-    title: 'Рост и цели',
-    question: 'Рост и цели знакомства',
+    id: 'height',
+    title: 'Рост',
+    question: 'Ваш рост',
     icon: Icons.straighten_rounded,
-    hasValue: (p) => p.heightCm != null || p.goals.isNotEmpty,
-    summary: (p) => [
-      if (p.heightCm != null) '${p.heightCm} см',
-      if (p.goals.isNotEmpty) _join(p.goals.map((g) => g.displayLabel), max: 2),
-    ].join(' · '),
-    build: (c) => HeightGoalsEditor(c),
+    hasValue: (p) => p.heightCm != null,
+    summary: (p) => p.heightCm == null ? '' : '${p.heightCm} см',
+    build: (c) => HeightEditor(c),
   ),
   ProfileStep(
     id: 'about',
@@ -770,22 +776,20 @@ class _PhotosEditorState extends State<PhotosEditor> {
   }
 }
 
-// ---------------------------------------------------------- height, goals
+// ---------------------------------------------------------------- height
 
-class HeightGoalsEditor extends StatefulWidget {
-  const HeightGoalsEditor(this.c, {super.key});
+class HeightEditor extends StatefulWidget {
+  const HeightEditor(this.c, {super.key});
 
   final StepContext c;
 
   @override
-  State<HeightGoalsEditor> createState() => _HeightGoalsEditorState();
+  State<HeightEditor> createState() => _HeightEditorState();
 }
 
-class _HeightGoalsEditorState extends State<HeightGoalsEditor> {
+class _HeightEditorState extends State<HeightEditor> {
   late bool _hasHeight = !widget.c.blank && widget.c.profile.heightCm != null;
   late double _height = (widget.c.blank ? null : widget.c.profile.heightCm)?.toDouble() ?? 170;
-  late final Set<String> _goals =
-      widget.c.blank ? <String>{} : widget.c.profile.goals.map((g) => g.code).toSet();
 
   @override
   Widget build(BuildContext context) {
@@ -793,11 +797,11 @@ class _HeightGoalsEditorState extends State<HeightGoalsEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const StepHint('По желанию. С премиумом другие могут искать по росту.'),
         Row(
           children: [
             Expanded(
-              child: Text(_hasHeight ? 'Рост: ${_height.round()} см' : 'Рост не указан',
-                  style: theme.textTheme.titleSmall),
+              child: Text(_hasHeight ? '${_height.round()} см' : 'Не указан', style: theme.textTheme.headlineSmall),
             ),
             Switch(
               value: _hasHeight,
@@ -819,42 +823,60 @@ class _HeightGoalsEditorState extends State<HeightGoalsEditor> {
             onChanged: (v) => setState(() => _height = v),
             onChangeEnd: (v) => widget.c.onChanged(ProfilePatch(heightCm: v.round())),
           ),
-        const StepHint('С премиумом другие могут искать по росту.'),
         _FieldError(widget.c.errors['heightCm']),
-        const SizedBox(height: Gaps.sm),
-        Text('Цели знакомства · до ${MyProfile.maxGoals}', style: theme.textTheme.titleSmall),
-        const SizedBox(height: Gaps.sm),
-        FutureBuilder<List<Goal>>(
-          future: Dictionaries.goals(widget.c.api),
-          builder: (context, snapshot) {
-            final goals = snapshot.data;
-            if (goals == null) {
-              return snapshot.hasError
-                  ? Text(describeError(snapshot.error!))
-                  : const LinearProgressIndicator();
-            }
-            return Wrap(
-              spacing: Gaps.sm,
-              runSpacing: Gaps.sm,
-              children: [
-                for (final goal in goals)
-                  FilterChip(
-                    label: Text(goal.displayLabel),
-                    selected: _goals.contains(goal.code),
-                    onSelected: (on) {
-                      if (on && _goals.length >= MyProfile.maxGoals) return;
-                      setState(() => on ? _goals.add(goal.code) : _goals.remove(goal.code));
-                      widget.c.onChanged(ProfilePatch(goalCodes: _goals.toList()));
-                    },
-                  ),
-              ],
-            );
-          },
-        ),
-        _FieldError(widget.c.errors['goalCodes']),
       ],
     );
   }
+}
+
+// ---------------------------------------------------------------- goals
+
+class GoalsEditor extends StatefulWidget {
+  const GoalsEditor(this.c, {super.key});
+
+  final StepContext c;
+
+  @override
+  State<GoalsEditor> createState() => _GoalsEditorState();
+}
+
+class _GoalsEditorState extends State<GoalsEditor> {
+  late final Set<String> _goals =
+      widget.c.blank ? <String>{} : widget.c.profile.goals.map((g) => g.code).toSet();
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const StepHint('До ${MyProfile.maxGoals}. В ленте вы увидите тех, у кого есть хотя бы одна общая цель.'),
+          FutureBuilder<List<Goal>>(
+            future: Dictionaries.goals(widget.c.api),
+            builder: (context, snapshot) {
+              final goals = snapshot.data;
+              if (goals == null) {
+                return snapshot.hasError ? Text(describeError(snapshot.error!)) : const LinearProgressIndicator();
+              }
+              return Wrap(
+                spacing: Gaps.sm,
+                runSpacing: Gaps.sm,
+                children: [
+                  for (final goal in goals)
+                    FilterChip(
+                      label: Text(goal.displayLabel),
+                      selected: _goals.contains(goal.code),
+                      onSelected: (on) {
+                        if (on && _goals.length >= MyProfile.maxGoals) return;
+                        setState(() => on ? _goals.add(goal.code) : _goals.remove(goal.code));
+                        widget.c.onChanged(ProfilePatch(goalCodes: _goals.toList()));
+                      },
+                    ),
+                ],
+              );
+            },
+          ),
+          _FieldError(widget.c.errors['goalCodes']),
+        ],
+      );
 }
 
 // ---------------------------------------------------------------- about
@@ -1261,8 +1283,16 @@ class TagsEditor extends StatefulWidget {
 }
 
 class _TagsEditorState extends State<TagsEditor> {
-  late final Set<String> _selected =
-      widget.c.blank ? <String>{} : widget.c.profile.tags.map((t) => t.code).toSet();
+  /// One card per category (docs/matching.md, part 6): category → card code.
+  late final Map<String, String> _selected = {
+    if (!widget.c.blank)
+      for (final t in widget.c.profile.tags.reversed) t.category: t.code,
+  };
+
+  void _choose(String category, String code) {
+    setState(() => _selected[category] == code ? _selected.remove(category) : _selected[category] = code);
+    widget.c.onChanged(ProfilePatch(tagCodes: _selected.values.toList()));
+  }
 
   @override
   Widget build(BuildContext context) => FutureBuilder<List<Tag>>(
@@ -1272,24 +1302,40 @@ class _TagsEditorState extends State<TagsEditor> {
           if (tags == null) {
             return snapshot.hasError ? Text(describeError(snapshot.error!)) : const LinearProgressIndicator();
           }
-          final groups = <String, List<(String, String)>>{};
+          final theme = Theme.of(context);
+          final groups = <String, List<Tag>>{};
           for (final t in tags) {
-            groups.putIfAbsent(t.categoryLabel.isEmpty ? 'Другое' : t.categoryLabel, () => []).add((t.code, t.label));
+            groups.putIfAbsent(t.category, () => []).add(t);
+          }
+          for (final group in groups.values) {
+            // A scale reads from one end to the other; other categories keep the editors' order.
+            group.sort((a, b) => (a.scalePosition ?? a.sortOrder).compareTo(b.scalePosition ?? b.sortOrder));
           }
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              StepHint('До ${MyProfile.maxTags} · выбрано ${_selected.length}. Помогают понять, совпадаете ли '
-                  'вы по стилю общения.'),
-              _GroupedChips(
-                groups: [for (final e in groups.entries) (e.key, e.value)],
-                selected: _selected,
-                max: MyProfile.maxTags,
-                onToggle: (code, on) {
-                  setState(() => on ? _selected.add(code) : _selected.remove(code));
-                  widget.c.onChanged(ProfilePatch(tagCodes: _selected.toList()));
-                },
-              ),
+              const StepHint('По одному ответу в каждой категории — можно пропустить. Нажмите ещё раз, '
+                  'чтобы снять выбор. Совпадения подсвечиваются в анкетах.'),
+              for (final group in groups.values) ...[
+                Padding(
+                  padding: const EdgeInsets.only(top: Gaps.md, bottom: Gaps.sm),
+                  child: Text(group.first.categoryLabel.isEmpty ? 'Другое' : group.first.categoryLabel,
+                      style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                ),
+                Wrap(
+                  spacing: Gaps.sm,
+                  runSpacing: Gaps.sm,
+                  children: [
+                    for (final t in group)
+                      ChoiceChip(
+                        label: Text(t.label),
+                        tooltip: t.description,
+                        selected: _selected[t.category] == t.code,
+                        onSelected: (_) => _choose(t.category, t.code),
+                      ),
+                  ],
+                ),
+              ],
               _FieldError(widget.c.errors['tagCodes']),
             ],
           );

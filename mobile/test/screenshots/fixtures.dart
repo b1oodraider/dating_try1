@@ -111,6 +111,8 @@ Map<String, Object?> _profile(
       'aboutText': about,
       'dailyStatusText': status,
       'tags': [for (final i in tagIdx) tags[i]],
+      // The viewer shares the first card (highlighted in the full profile).
+      'sharedTags': [for (final i in tagIdx.take(1)) tags[i]['code']],
       'photos': [for (var n = 1; n <= photos; n++) _photo(folder, n)],
       'heightCm': height,
       'goals': [for (final i in goalIdx) goals[i]],

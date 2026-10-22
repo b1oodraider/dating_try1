@@ -30,6 +30,7 @@ class PublicProfile {
     this.zodiac,
     this.facts = const Facts(),
     this.common = const <String>[],
+    this.sharedTags = const <String>[],
   });
 
   final String id;
@@ -74,6 +75,9 @@ class PublicProfile {
   final Facts facts;
 
   /// Feed only: up to 2 interests / artists / cards I share with this person.
+  /// Feed only: codes of the communication cards I chose too (highlighted).
+  final List<String> sharedTags;
+
   final List<String> common;
 
   Photo? get primaryPhoto {
@@ -108,6 +112,7 @@ class PublicProfile {
       zodiac: asStringOrNull(json['zodiac']),
       facts: Facts.fromJson(json['facts']),
       common: asStringList(json['common']),
+      sharedTags: asStringList(json['sharedTags']),
     );
   }
 }

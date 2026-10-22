@@ -89,6 +89,18 @@ class FactsIntegrationTest extends AdminTestSupport {
                 .andExpect(jsonPath("$.behavior").value(0.0));
     }
 
+    @Test
+    void oneCommunicationCardPerCategory() throws Exception {
+        String me = login(newPhone());
+        putProfile(me, "{\"tagCodes\": [\"PACE_ASYNCHRONOUS\", \"PACE_FAST_CHAT\"]}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ONE_TAG_PER_CATEGORY"))
+                .andExpect(jsonPath("$.fieldErrors.tagCodes", containsString("Темп переписки")));
+        putProfile(me, "{\"tagCodes\": [\"PACE_FAST_CHAT\", \"FORMAT_WALK_FIRST\"]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tags", hasSize(2)));
+    }
+
     private ResultActions feed(String token, String city) throws Exception {
         canSearch(token);
         return mvc.perform(get("/api/v1/discovery/profiles").queryParam("city", city)

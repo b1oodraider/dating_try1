@@ -141,8 +141,7 @@
       "PACE_ASYNCHRONOUS",
       "FORMAT_WALK_FIRST",
       "CALLS_PRE_CALL_CHECK",
-      "SOC_QUIET_SPACES",
-      "SOC_DEEP_TALKS"
+      "SOC_QUIET_SPACES"
     ],
     "goalCodes": [
       "SERIOUS_RELATIONSHIP",

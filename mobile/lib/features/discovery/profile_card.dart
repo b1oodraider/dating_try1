@@ -100,6 +100,10 @@ class ProfileCard extends StatelessWidget {
               _Fact(Icons.brightness_3_outlined, zodiac),
           ],
         ),
+        if (about != null && about.isNotEmpty)
+          _Section(
+              title: 'О себе',
+              child: Text(about, style: theme.textTheme.bodyLarge)),
         if (status != null && status.isNotEmpty) ...[
           const SizedBox(height: Gaps.md),
           Container(
@@ -126,14 +130,10 @@ class ProfileCard extends StatelessWidget {
         ],
         if (profile.goals.isNotEmpty)
           _Section(
-            title: 'Ищу',
+            title: 'Цели знакомства',
             child:
                 _Chips([for (final goal in profile.goals) goal.displayLabel]),
           ),
-        if (about != null && about.isNotEmpty)
-          _Section(
-              title: 'О себе',
-              child: Text(about, style: theme.textTheme.bodyLarge)),
         if (profile.interests.isNotEmpty)
           _Section(
             title: 'Интересы',
@@ -181,7 +181,9 @@ class ProfileCard extends StatelessWidget {
                       SizedBox(
                         width: width,
                         child: _TagCard(
-                            category: tag.categoryLabel, label: tag.label),
+                            category: tag.categoryLabel,
+                            label: tag.label,
+                            shared: profile.sharedTags.contains(tag.code)),
                       ),
                   ],
                 );
@@ -373,10 +375,13 @@ class _Chips extends StatelessWidget {
 }
 
 class _TagCard extends StatelessWidget {
-  const _TagCard({required this.category, required this.label});
+  const _TagCard({required this.category, required this.label, this.shared = false});
 
   final String category;
   final String label;
+
+  /// I chose this card too: a pale rose tint and «у вас тоже».
+  final bool shared;
 
   @override
   Widget build(BuildContext context) {
@@ -385,9 +390,9 @@ class _TagCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
+        color: shared ? scheme.primaryContainer : scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(Radii.md),
-        border: Border.all(color: scheme.outlineVariant),
+        border: shared ? null : Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -396,7 +401,12 @@ class _TagCard extends StatelessWidget {
             Text(category,
                 style: theme.textTheme.labelSmall
                     ?.copyWith(color: scheme.onSurfaceVariant)),
-          Text(label, style: theme.textTheme.titleSmall),
+          Text(label,
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(color: shared ? scheme.onPrimaryContainer : null)),
+          if (shared)
+            Text('у вас тоже',
+                style: theme.textTheme.labelSmall?.copyWith(color: scheme.onPrimaryContainer)),
         ],
       ),
     );
