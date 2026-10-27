@@ -14,6 +14,7 @@ import '../dates/date_plan_sheet.dart';
 import '../discovery/profile_details_sheet.dart';
 import '../safety/report_sheet.dart';
 import 'chats_controller.dart';
+import 'swipe_to_reply.dart';
 
 /// One conversation: history (older on demand), sending with a retry-safe
 /// clientMessageId, read receipts, new messages from the event stream.
@@ -408,13 +409,16 @@ class _ChatScreenState extends State<ChatScreen> {
                                       api: _chats.api, matchId: widget.matchId, planId: message.datePlanId),
                                 );
                               }
-                              return _Bubble(
-                                message: message,
-                                read: message.mine &&
-                                    readIndex >= 0 &&
-                                    index >= readIndex,
-                                otherName: match?.profile.displayName ?? '',
-                                onMenu: () => _messageMenu(message, match),
+                              return SwipeToReply(
+                                onReply: () => setState(() => _replyTo = message),
+                                child: _Bubble(
+                                  message: message,
+                                  read: message.mine &&
+                                      readIndex >= 0 &&
+                                      index >= readIndex,
+                                  otherName: match?.profile.displayName ?? '',
+                                  onMenu: () => _messageMenu(message, match),
+                                ),
                               );
                             },
                           ),
