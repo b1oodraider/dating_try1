@@ -43,7 +43,7 @@ jobs:
         env:
           FACE_MODELS_DIR: ${{ runner.temp }}/faces
       - uses: actions/upload-artifact@v4
-        with: { name: backend-jar, path: backend/build/libs/*.jar, retention-days: 7 }
+        with: { name: backend-jar, path: backend/build/libs/*.jar, retention-days: 1 }
 
   web:
     runs-on: ubuntu-latest
@@ -55,7 +55,7 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - uses: actions/upload-artifact@v4
-        with: { name: web, path: dist, retention-days: 7 }
+        with: { name: web, path: dist, retention-days: 1 }
 
   mobile:
     runs-on: ubuntu-latest
@@ -89,7 +89,7 @@ jobs:
         with:
           name: dating-apk
           path: mobile/build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 30
+          retention-days: 1
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
