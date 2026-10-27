@@ -42,8 +42,11 @@ jobs:
         working-directory: backend
         env:
           FACE_MODELS_DIR: ${{ runner.temp }}/faces
-      - uses: actions/upload-artifact@v4
-        with: { name: backend-jar, path: backend/build/libs/*.jar, retention-days: 1 }
+      # Build outputs reach the deploy job through the Actions cache: artifacts count against the account's small
+      # storage quota (it filled up and blocked deploys), the cache has its own 10 GB and evicts itself.
+      - uses: actions/cache/save@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        with: { path: backend/build/libs, key: 'deploy-${{ github.run_id }}-backend' }
 
   web:
     runs-on: ubuntu-latest
@@ -54,8 +57,9 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
-      - uses: actions/upload-artifact@v4
-        with: { name: web, path: dist, retention-days: 1 }
+      - uses: actions/cache/save@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        with: { path: dist, key: 'deploy-${{ github.run_id }}-web' }
 
   mobile:
     runs-on: ubuntu-latest
@@ -84,12 +88,11 @@ jobs:
       - name: APK
         if: github.event_name == 'push'
         run: flutter build apk --release --build-number=${{ github.run_number }} --dart-define=API_BASE_URL=$API_BASE_URL
-      - uses: actions/upload-artifact@v4
-        if: github.event_name == 'push'
+      - uses: actions/cache/save@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
         with:
-          name: dating-apk
           path: mobile/build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 1
+          key: 'deploy-${{ github.run_id }}-apk'
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
@@ -97,15 +100,21 @@ jobs:
     runs-on: ubuntu-latest
     environment: test-server
     steps:
-      - uses: actions/download-artifact@v4
-        with: { name: backend-jar, path: jar }
-      - uses: actions/download-artifact@v4
-        with: { name: web, path: web }
+      # The same paths the build jobs saved (a cache restores files where they were saved).
+      - uses: actions/cache/restore@v4
+        with: { path: backend/build/libs, key: 'deploy-${{ github.run_id }}-backend', fail-on-cache-miss: true }
+      - uses: actions/cache/restore@v4
+        with: { path: dist, key: 'deploy-${{ github.run_id }}-web', fail-on-cache-miss: true }
       # Testers download the latest build at https://<domain>/dating.apk (docs/testing.md).
-      - uses: actions/download-artifact@v4
-        with: { name: dating-apk, path: apk }
+      - uses: actions/cache/restore@v4
+        with:
+          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+          key: 'deploy-${{ github.run_id }}-apk'
+          fail-on-cache-miss: true
       - run: |
-          cp apk/app-release.apk web/dating.apk
+          mkdir -p jar && cp backend/build/libs/*.jar jar/
+          mv dist web
+          cp mobile/build/app/outputs/flutter-apk/app-release.apk web/dating.apk
           # The app compares this build number with its own («Проверить обновления»).
           SHA=$(sha256sum web/dating.apk | cut -d' ' -f1)
           echo "{\"build\": ${{ github.run_number }}, \"apk\": \"/dating.apk\", \"sha256\": \"$SHA\"}" > web/app-version.json
