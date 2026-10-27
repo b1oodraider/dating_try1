@@ -22,6 +22,7 @@ class ProfilePatch {
     this.clearHeight = false,
     this.goalCodes,
     this.interestCodes,
+    this.interestComments,
     this.artistIds,
     this.invisible,
     this.showPremiumBadge,
@@ -48,6 +49,8 @@ class ProfilePatch {
   final bool clearHeight;
   final List<String>? goalCodes;
   final List<String>? interestCodes;
+  /// interest code → comment; "" removes it.
+  final Map<String, String>? interestComments;
   final List<int>? artistIds;
   final bool? invisible;
   final bool? showPremiumBadge;
@@ -75,6 +78,7 @@ class ProfilePatch {
       goalCodes == null &&
       interestCodes == null &&
       artistIds == null &&
+      interestComments == null &&
       invisible == null &&
       showPremiumBadge == null &&
       showZodiac == null &&
@@ -106,6 +110,9 @@ class ProfilePatch {
         goalCodes: later.goalCodes ?? goalCodes,
         interestCodes: later.interestCodes ?? interestCodes,
         artistIds: later.artistIds ?? artistIds,
+        interestComments: interestComments == null && later.interestComments == null
+            ? null
+            : {...?interestComments, ...?later.interestComments},
         invisible: later.invisible ?? invisible,
         showPremiumBadge: later.showPremiumBadge ?? showPremiumBadge,
         showZodiac: later.showZodiac ?? showZodiac,
@@ -132,6 +139,7 @@ class ProfilePatch {
         clearHeight: clearHeight,
         goalCodes: goalCodes,
         interestCodes: interestCodes,
+        interestComments: interestComments,
         artistIds: artistIds,
         invisible: invisible,
         showPremiumBadge: showPremiumBadge,

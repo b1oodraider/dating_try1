@@ -1,0 +1,17 @@
+databaseChangeLog:
+  # A short comment on a chosen interest: «Кофе» — «латте, капучино» (docs/matching.md, part 1).
+  - changeSet:
+      id: 038-interest-comments
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE profile_interest_comments (
+                profile_id    UUID NOT NULL REFERENCES profiles (id) ON DELETE CASCADE,
+                interest_code VARCHAR(40) NOT NULL REFERENCES interests (code),
+                comment       VARCHAR(80) NOT NULL,
+                PRIMARY KEY (profile_id, interest_code)
+              )
+      rollback:
+        - sql:
+            sql: DROP TABLE profile_interest_comments

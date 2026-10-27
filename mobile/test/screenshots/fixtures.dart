@@ -98,6 +98,7 @@ Map<String, Object?> _profile(
   int? compatibility,
   int? distance,
   List<int> interestIdx = const [],
+  Map<String, String> interestComments = const {},
   List<int> artistIdx = const [],
   String? zodiac,
   List<String> common = const [],
@@ -120,7 +121,10 @@ Map<String, Object?> _profile(
       'verified': verified,
       'compatibility': compatibility,
       'distanceKm': distance,
-      'interests': [for (final i in interestIdx) interests[i]],
+      'interests': [
+        for (final i in interestIdx)
+          {...interests[i], 'comment': interestComments[interests[i]['code']]},
+      ],
       'artists': [for (final i in artistIdx) artists[i]],
       'zodiac': zodiac,
       'common': common,
@@ -151,6 +155,7 @@ final List<Map<String, Object?>> feed = [
       compatibility: 87,
       distance: 3,
       interestIdx: [0, 1, 2, 3, 4, 5],
+      interestComments: {'COFFEE': 'флэт уайт и раф', 'TRAVEL': 'Грузия и Алтай, хочу в Японию'},
       artistIdx: [0, 1, 2],
       zodiac: 'Лев',
       common: ['Бег', 'Земфира']),
@@ -483,7 +488,10 @@ final Map<String, Object?> myProfile = {
   'heightCm': 182,
   'goals': [goals[0], goals[2]],
   'premium': true,
-  'interests': [interests[0], interests[5]],
+  'interests': [
+    {...interests[0], 'comment': 'по утрам, 5 км'},
+    interests[5],
+  ],
   'artists': [artists[1]],
   'zodiac': 'Телец',
   'showZodiac': true,
@@ -536,6 +544,13 @@ http.Response respond(http.Request request) {
   if (path == '/me/profile' && get) return _json(myProfile);
   if (path == '/me/wallet') return _json(wallet);
   if (path == '/me/restrictions') return _json(<Object>[]);
+  if (path == '/venues') return _json(<Object>[]);
+  if (path == '/places/search') {
+    return _json([
+      {'name': 'Кофемания', 'address': 'Никольская улица 10, Москва', 'latitude': 55.757, 'longitude': 37.622},
+      {'name': 'Кофемания', 'address': 'Неглинная улица, Москва', 'latitude': 55.763, 'longitude': 37.620},
+    ]);
+  }
   if (path == '/profile-options') return _json(profileOptions);
   if (path == '/me/fact-filters') {
     return _json({'smoking': {'accept': ['NO', 'SOMETIMES'], 'unspecified': true}});

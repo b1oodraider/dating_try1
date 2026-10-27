@@ -1005,8 +1005,26 @@ class InterestsEditor extends StatefulWidget {
 }
 
 class _InterestsEditorState extends State<InterestsEditor> {
+  static const int _commentMax = 80;
+
   late final Set<String> _selected =
       widget.c.blank ? <String>{} : widget.c.profile.interests.map((i) => i.code).toSet();
+
+  /// One field per chosen interest, kept while the interest is unchosen and chosen again.
+  late final Map<String, TextEditingController> _comments = {
+    if (!widget.c.blank)
+      for (final i in widget.c.profile.interests) i.code: TextEditingController(text: i.comment ?? ''),
+  };
+
+  TextEditingController _comment(String code) => _comments.putIfAbsent(code, TextEditingController.new);
+
+  @override
+  void dispose() {
+    for (final c in _comments.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => FutureBuilder<List<InterestGroup>>(
@@ -1029,10 +1047,35 @@ class _InterestsEditorState extends State<InterestsEditor> {
                 max: InterestsEditor.max,
                 onToggle: (code, on) {
                   setState(() => on ? _selected.add(code) : _selected.remove(code));
-                  widget.c.onChanged(ProfilePatch(interestCodes: _selected.toList()));
+                  widget.c.onChanged(ProfilePatch(
+                    interestCodes: _selected.toList(),
+                    // The server drops the comment of an unchosen interest; a chosen-again one gets it back.
+                    interestComments: on && _comment(code).text.trim().isNotEmpty
+                        ? {code: _comment(code).text.trim()}
+                        : null,
+                  ));
                 },
               ),
               _FieldError(widget.c.errors['interestCodes']),
+              if (_selected.isNotEmpty) ...[
+                const SizedBox(height: Gaps.lg),
+                Text('Подробнее — по желанию', style: Theme.of(context).textTheme.titleSmall),
+                const StepHint('Например, «Кофе» — латте и капучино, «Кино» — комедии с Джимом Керри.'),
+                for (final g in groups)
+                  for (final i in g.items)
+                    if (_selected.contains(i.code))
+                      Padding(
+                        padding: const EdgeInsets.only(top: Gaps.sm),
+                        child: TextField(
+                          controller: _comment(i.code),
+                          maxLength: _commentMax,
+                          textCapitalization: TextCapitalization.sentences,
+                          decoration: InputDecoration(labelText: i.label, counterText: ''),
+                          onChanged: (text) => widget.c.onChanged(ProfilePatch(interestComments: {i.code: text.trim()})),
+                        ),
+                      ),
+                _FieldError(widget.c.errors['interestComments']),
+              ],
             ],
           );
         },

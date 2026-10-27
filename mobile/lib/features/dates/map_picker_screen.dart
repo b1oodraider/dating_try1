@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -52,6 +54,13 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   LatLng? _point;
   String? _error;
 
+  /// Search by address or name: the query, its results, and the address of the picked result.
+  final TextEditingController _search = TextEditingController();
+  Timer? _searchDebounce;
+  List<FoundPlace> _found = const <FoundPlace>[];
+  String? _foundAddress;
+  bool _locating = false;
+
   @override
   void initState() {
     super.initState();
@@ -69,6 +78,8 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _search.dispose();
     _name.dispose();
     super.dispose();
   }
@@ -90,6 +101,65 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     _loadVenues(_center);
   }
 
+  /// «Где я»: asks for the permission if needed, then centres the map on me.
+  Future<void> _myLocation() async {
+    setState(() => _locating = true);
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        if (mounted) setState(() => _error = 'Нет доступа к геолокации — разрешите его в настройках телефона');
+        return;
+      }
+      final position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(timeLimit: Duration(seconds: 10)));
+      if (!mounted) return;
+      _center = LatLng(position.latitude, position.longitude);
+      _map.move(_center, 15);
+      setState(() => _error = null);
+      _loadVenues(_center);
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Не удалось определить местоположение');
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  void _onSearchChanged(String text) {
+    _searchDebounce?.cancel();
+    if (text.trim().length < 2) {
+      setState(() => _found = const <FoundPlace>[]);
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () => _runSearch(text.trim()));
+  }
+
+  Future<void> _runSearch(String query) async {
+    final around = _map.camera.center;
+    try {
+      final found = await widget.api.searchPlaces(query, around.latitude, around.longitude);
+      // A slower answer to an older query must not replace the current one.
+      if (mounted && _search.text.trim() == query) setState(() => _found = found);
+    } catch (e) {
+      if (mounted) setState(() => _error = describeError(e));
+    }
+  }
+
+  void _pickFound(FoundPlace place) {
+    final point = LatLng(place.latitude, place.longitude);
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _found = const <FoundPlace>[];
+      _venue = null;
+      _point = point;
+      _foundAddress = place.address;
+      _name.text = place.name;
+      _error = null;
+    });
+    _map.move(point, 16);
+    _loadVenues(point);
+  }
+
   Future<void> _loadVenues(LatLng around) async {
     try {
       final venues = await widget.api.getVenues(around.latitude, around.longitude);
@@ -107,6 +177,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   void _pickPoint(LatLng point) => setState(() {
         _venue = null;
         _point = point;
+        _foundAddress = null;
       });
 
   void _done() {
@@ -120,7 +191,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     }
     Navigator.of(context).pop(PlacePick(
       name: name,
-      address: venue?.address,
+      address: venue?.address ?? _foundAddress,
       latitude: point.latitude,
       longitude: point.longitude,
       venue: venue,
@@ -136,44 +207,112 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
       appBar: AppBar(title: const Text('Место встречи')),
       body: Column(
         children: [
-          Expanded(
-            child: FlutterMap(
-              mapController: _map,
-              options: MapOptions(
-                initialCenter: _center,
-                initialZoom: 14,
-                onTap: (_, latLng) => _pickPoint(latLng),
-                onMapEvent: (event) {
-                  if (event is MapEventMoveEnd) _loadVenues(event.camera.center);
-                },
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Gaps.md, 0, Gaps.md, Gaps.sm),
+            child: TextField(
+              controller: _search,
+              onChanged: _onSearchChanged,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Адрес или название места',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _search.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Очистить',
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => setState(() {
+                          _search.clear();
+                          _found = const <FoundPlace>[];
+                        }),
+                      ),
               ),
+            ),
+          ),
+          Expanded(
+            child: Stack(
               children: [
-                mapTiles(),
-                MarkerLayer(markers: [
-                  for (final v in _venues)
-                    Marker(
-                      point: LatLng(v.latitude, v.longitude),
-                      width: 40,
-                      height: 40,
-                      child: GestureDetector(
-                        onTap: () => _pickVenue(v),
-                        child: Icon(
-                          Icons.place_rounded,
-                          size: 40,
-                          color: v.id == venue?.id ? Brand.rose : (v.ad != null ? Brand.gold : Brand.ink),
-                          semanticLabel: v.name,
+                FlutterMap(
+                  mapController: _map,
+                  options: MapOptions(
+                    initialCenter: _center,
+                    initialZoom: 14,
+                    onTap: (_, latLng) => _pickPoint(latLng),
+                    onMapEvent: (event) {
+                      if (event is MapEventMoveEnd) _loadVenues(event.camera.center);
+                    },
+                  ),
+                  children: [
+                    mapTiles(),
+                    MarkerLayer(markers: [
+                      for (final v in _venues)
+                        Marker(
+                          point: LatLng(v.latitude, v.longitude),
+                          width: 40,
+                          height: 40,
+                          child: GestureDetector(
+                            onTap: () => _pickVenue(v),
+                            child: Icon(
+                              Icons.place_rounded,
+                              size: 40,
+                              color: v.id == venue?.id ? Brand.rose : (v.ad != null ? Brand.gold : Brand.ink),
+                              semanticLabel: v.name,
+                            ),
+                          ),
+                        ),
+                      if (point != null && venue == null)
+                        Marker(
+                          point: point,
+                          width: 40,
+                          height: 40,
+                          child: const Icon(Icons.place_rounded, size: 40, color: Brand.rose),
+                        ),
+                    ]),
+                    const RichAttributionWidget(attributions: [
+                      TextSourceAttribution('© 2ГИС'),
+                      TextSourceAttribution('Поиск: © участники OpenStreetMap'),
+                    ]),
+                  ],
+                ),
+                Positioned(
+                  right: Gaps.md,
+                  bottom: 64, // above the attribution button
+                  child: FloatingActionButton.small(
+                    heroTag: null,
+                    tooltip: 'Где я',
+                    onPressed: _locating ? null : _myLocation,
+                    child: _locating
+                        ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.my_location_rounded),
+                  ),
+                ),
+                if (_found.isNotEmpty)
+                  Positioned(
+                    left: Gaps.md,
+                    right: Gaps.md,
+                    top: 0,
+                    child: Material(
+                      elevation: 4,
+                      borderRadius: BorderRadius.circular(Radii.md),
+                      clipBehavior: Clip.antiAlias,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 300),
+                        child: ListView(
+                          shrinkWrap: true,
+                          padding: EdgeInsets.zero,
+                          children: [
+                            for (final place in _found)
+                              ListTile(
+                                leading: const Icon(Icons.place_outlined),
+                                title: Text(place.name),
+                                subtitle: place.address == null ? null : Text(place.address!),
+                                onTap: () => _pickFound(place),
+                              ),
+                          ],
                         ),
                       ),
                     ),
-                  if (point != null && venue == null)
-                    Marker(
-                      point: point,
-                      width: 40,
-                      height: 40,
-                      child: const Icon(Icons.place_rounded, size: 40, color: Brand.rose),
-                    ),
-                ]),
-                const RichAttributionWidget(attributions: [TextSourceAttribution('© 2ГИС')]),
+                  ),
               ],
             ),
           ),
@@ -187,8 +326,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                 children: [
                   if (venue != null) ...[
                     Text(venue.name, style: theme.textTheme.titleMedium),
-                    if (venue.address != null)
-                      Text(venue.address!, style: theme.textTheme.bodyMedium),
+                    if (venue.address != null) Text(venue.address!, style: theme.textTheme.bodyMedium),
                     if (venue.description != null)
                       Text(venue.description!,
                           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
@@ -230,9 +368,7 @@ class AdLabel extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.only(top: Gaps.xs),
         child: Text(ad.text,
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            style:
+                Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
       );
 }

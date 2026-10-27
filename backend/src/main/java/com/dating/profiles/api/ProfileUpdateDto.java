@@ -10,6 +10,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * All fields optional: null means "leave unchanged" (height is removed with clearHeight = true). Trimmed-length rules (e.g. a name of spaces)
@@ -84,6 +85,9 @@ public record ProfileUpdateDto(
 
         /** Codes from GET /interests, up to 10; [] clears. */
         List<String> interestCodes,
+
+        /** interest code → comment (<= 80) on one of my chosen interests; "" removes it. Others are kept. */
+        Map<String, String> interestComments,
 
         /** Ids from GET /artists, up to 5; [] clears. */
         List<Long> artistIds,

@@ -6,8 +6,10 @@ import jakarta.persistence.*;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Period;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -121,6 +123,13 @@ public class Profile extends AssignedIdEntity {
             inverseJoinColumns = @JoinColumn(name = "interest_code")
     )
     private Set<Interest> interests = new HashSet<>();
+
+    /** interest code → my comment on it; only for chosen interests. */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "profile_interest_comments", joinColumns = @JoinColumn(name = "profile_id"))
+    @MapKeyColumn(name = "interest_code")
+    @Column(name = "comment")
+    private Map<String, String> interestComments = new HashMap<>();
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
@@ -371,6 +380,27 @@ public class Profile extends AssignedIdEntity {
     public void replaceInterests(Set<Interest> newInterests) {
         this.interests.clear();
         this.interests.addAll(newInterests);
+        Set<String> codes = newInterests.stream().map(Interest::getCode).collect(java.util.stream.Collectors.toSet());
+        this.interestComments.keySet().retainAll(codes); // a dropped interest takes its comment along
+        touch();
+    }
+
+    public Map<String, String> getInterestComments() {
+        return interestComments;
+    }
+
+    /** null or blank removes the comment. */
+    public void setInterestComment(String interestCode, String comment) {
+        if (comment == null || comment.isBlank()) {
+            interestComments.remove(interestCode);
+        } else {
+            interestComments.put(interestCode, comment);
+        }
+        touch();
+    }
+
+    public void clearInterestComments() {
+        interestComments.clear();
         touch();
     }
 

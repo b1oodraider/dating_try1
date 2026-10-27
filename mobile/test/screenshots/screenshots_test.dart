@@ -19,6 +19,7 @@ import 'package:dating_mobile/features/auth/session_controller.dart';
 import 'package:dating_mobile/core/models/date_plan.dart';
 import 'package:dating_mobile/core/models/discovery_filters.dart';
 import 'package:dating_mobile/features/dates/date_plan_editor.dart';
+import 'package:dating_mobile/features/dates/map_picker_screen.dart';
 import 'package:dating_mobile/features/premium/purchase_screen.dart';
 import 'package:dating_mobile/features/discovery/discovery_filters_screen.dart';
 import 'package:dating_mobile/features/discovery/discovery_screen.dart';
@@ -300,6 +301,15 @@ void main() {
         DatePlanEditorScreen(
             api: session.api, matchId: 'match1', plan: DatePlan.fromJson(fx.datePlan)));
     await _shot(tester, 'date_plan_editor');
+  });
+
+  testWidgets('map search', skip: skip, (tester) async {
+    final session = _session();
+    await _pump(tester, MapPickerScreen(api: session.api));
+    await tester.enterText(find.byType(TextField).first, 'кофемания');
+    await tester.pump(const Duration(milliseconds: 500));
+    await _settle(tester);
+    await _shot(tester, 'map_search');
   });
 
   testWidgets('gacha', skip: skip, (tester) async {

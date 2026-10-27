@@ -137,8 +137,21 @@ class ProfileCard extends StatelessWidget {
         if (profile.interests.isNotEmpty)
           _Section(
             title: 'Интересы',
-            child: _Chips(
-                [for (final interest in profile.interests) interest.label]),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _Chips([for (final interest in profile.interests) interest.label]),
+                for (final interest in profile.interests)
+                  if (interest.comment case final comment?)
+                    Padding(
+                      padding: const EdgeInsets.only(top: Gaps.sm),
+                      child: Text.rich(TextSpan(children: [
+                        TextSpan(text: '${interest.label} — ', style: const TextStyle(fontWeight: FontWeight.w600)),
+                        TextSpan(text: comment),
+                      ])),
+                    ),
+              ],
+            ),
           ),
         if (profile.artists.isNotEmpty)
           _Section(

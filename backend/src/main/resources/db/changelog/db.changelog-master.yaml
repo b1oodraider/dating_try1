@@ -73,3 +73,5 @@ databaseChangeLog:
       file: db/changelog/changesets/036-seeking-any.yaml
   - include:
       file: db/changelog/changesets/037-chat-replies.yaml
+  - include:
+      file: db/changelog/changesets/038-interest-comments.yaml

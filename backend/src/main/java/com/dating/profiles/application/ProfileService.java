@@ -66,6 +66,7 @@ public class ProfileService {
     private final tools.jackson.databind.json.JsonMapper jsonMapper;
 
     static final int MAX_INTERESTS = 10;
+    static final int MAX_INTEREST_COMMENT = 80;
     static final int MAX_ARTISTS = 5;
     private final CityRepository cityRepository;
 
@@ -113,7 +114,9 @@ public class ProfileService {
     public void clearTextsByModeration(UUID accountId, boolean aboutText, boolean dailyStatus) {
         Profile profile = lockOrCreateProfile(accountId);
         if (aboutText) {
+            // Interest comments are free text shown in the same profile: they go with «О себе».
             profile.setAboutText(null);
+            profile.clearInterestComments();
         }
         if (dailyStatus) {
             profile.setDailyStatus(null, null);
@@ -185,6 +188,12 @@ public class ProfileService {
         if (dto.interestCodes() != null) {
             interests = resolveInterests(dto.interestCodes(), errors);
         }
+        Map<String, String> interestComments = null;
+        if (dto.interestComments() != null) {
+            Set<String> chosen = (interests != null ? interests : profile.getInterests()).stream()
+                    .map(Interest::getCode).collect(Collectors.toSet());
+            interestComments = resolveInterestComments(dto.interestComments(), chosen, errors);
+        }
         Set<Artist> artists = null;
         if (dto.artistIds() != null) {
             artists = resolveArtists(dto.artistIds(), errors);
@@ -249,6 +258,9 @@ public class ProfileService {
         }
         if (interests != null) {
             profile.replaceInterests(interests);
+        }
+        if (interestComments != null) {
+            interestComments.forEach(profile::setInterestComment);
         }
         if (artists != null) {
             profile.replaceArtists(artists);
@@ -384,9 +396,26 @@ public class ProfileService {
         s.put("goals", p.getGoals().stream().map(RelationshipGoal::getCode).sorted().toList());
         s.put("tags", p.getTags().stream().map(CommunicationTag::getCode).sorted().toList());
         s.put("interests", p.getInterests().stream().map(Interest::getCode).sorted().toList());
+        s.put("interestComments", new java.util.TreeMap<>(p.getInterestComments()));
         s.put("artists", p.getArtists().stream().map(Artist::getId).sorted().toList());
         s.put("facts", FactsDto.from(p));
         return s;
+    }
+
+    private static Map<String, String> resolveInterestComments(Map<String, String> raw, Set<String> chosen,
+                                                               Map<String, String> errors) {
+        Map<String, String> comments = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : raw.entrySet()) {
+            String comment = entry.getValue() == null ? "" : entry.getValue().strip().replaceAll("\\s+", " ");
+            if (!chosen.contains(entry.getKey())) {
+                errors.put("interestComments", "Комментарий можно оставить только к выбранному увлечению");
+            } else if (comment.length() > MAX_INTEREST_COMMENT) {
+                errors.put("interestComments", "Комментарий — не длиннее " + MAX_INTEREST_COMMENT + " символов");
+            } else {
+                comments.put(entry.getKey(), comment);
+            }
+        }
+        return comments;
     }
 
     private Set<Interest> resolveInterests(List<String> rawCodes, Map<String, String> errors) {
@@ -423,7 +452,7 @@ public class ProfileService {
                 .filter(Interest::isActive)
                 .sorted(Comparator.comparingInt((Interest i) -> i.getCategory().getSortOrder())
                         .thenComparingInt(Interest::getSortOrder))
-                .map(InterestDto::from)
+                .map(interest -> InterestDto.from(interest, profile.getInterestComments().get(interest.getCode())))
                 .toList();
     }
 

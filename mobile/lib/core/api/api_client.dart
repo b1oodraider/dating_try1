@@ -156,6 +156,7 @@ class DatingApiClient {
     bool? invisible,
     bool? showPremiumBadge,
     List<String>? interestCodes,
+    Map<String, String>? interestComments,
     List<int>? artistIds,
     bool? showZodiac,
     int? heightCm,
@@ -188,6 +189,7 @@ class DatingApiClient {
         if (invisible != null) 'invisible': invisible,
         if (showPremiumBadge != null) 'showPremiumBadge': showPremiumBadge,
         if (interestCodes != null) 'interestCodes': List<String>.of(interestCodes),
+        if (interestComments != null) 'interestComments': Map<String, String>.of(interestComments),
         if (artistIds != null) 'artistIds': List<int>.of(artistIds),
         if (showZodiac != null) 'showZodiac': showZodiac,
         if (heightCm != null) 'heightCm': heightCm,
@@ -461,6 +463,14 @@ class DatingApiClient {
       DatePlan.fromJson(_expectMap(await _send('POST', '/date-plans/${_segment(planId)}/${_segment(action)}')));
 
   /// Places around a point, sponsored first (each with its ad label).
+  /// Address or place name near the map centre; [] when the search is unavailable.
+  Future<List<FoundPlace>> searchPlaces(String query, double latitude, double longitude) async {
+    final json = await _send('GET', '/places/search',
+        query: {'q': query, 'latitude': '$latitude', 'longitude': '$longitude'});
+    if (json is! List) throw _badResponse();
+    return json.whereType<Map<String, dynamic>>().map(FoundPlace.fromJson).toList();
+  }
+
   Future<List<Venue>> getVenues(double latitude, double longitude) async {
     final json = await _send('GET', '/venues',
         query: {'latitude': '$latitude', 'longitude': '$longitude'});

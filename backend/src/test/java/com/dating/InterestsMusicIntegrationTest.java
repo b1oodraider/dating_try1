@@ -60,6 +60,36 @@ class InterestsMusicIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void chosenInterestsTakeAShortCommentShownInTheFeed() throws Exception {
+        String city = uniqueCity();
+        String me = login(newPhone());
+        publishWith(me, "Ольга", city, List.of());
+        putProfile(me, "{\"interestCodes\": [\"COFFEE\", \"MOVIES\"], "
+                + "\"interestComments\": {\"COFFEE\": \"  латте,   капучино \", \"MOVIES\": \"комедии с Джимом Керри\"}}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.interests[?(@.code == 'COFFEE')].comment", contains("латте, капучино")));
+
+        putProfile(me, "{\"interestComments\": {\"TEA\": \"улун\"}}").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.interestComments").exists());
+        putProfile(me, "{\"interestComments\": {\"COFFEE\": \"" + "к".repeat(81) + "\"}}")
+                .andExpect(status().isBadRequest());
+        // "" removes one comment, the other stays; dropping an interest drops its comment.
+        putProfile(me, "{\"interestComments\": {\"COFFEE\": \"\"}}").andExpect(status().isOk())
+                .andExpect(jsonPath("$.interests[?(@.code == 'COFFEE')].comment", contains(nullValue())))
+                .andExpect(jsonPath("$.interests[?(@.code == 'MOVIES')].comment", contains("комедии с Джимом Керри")));
+
+        String viewer = login(newPhone());
+        canSearch(viewer);
+        mvc.perform(get("/api/v1/discovery/profiles").queryParam("city", city).header("Authorization", bearer(viewer)))
+                .andExpect(jsonPath("$.items[0].interests[?(@.code == 'MOVIES')].comment",
+                        contains("комедии с Джимом Керри")));
+
+        putProfile(me, "{\"interestCodes\": [\"COFFEE\"]}").andExpect(status().isOk());
+        putProfile(me, "{\"interestCodes\": [\"COFFEE\", \"MOVIES\"]}").andExpect(status().isOk())
+                .andExpect(jsonPath("$.interests[?(@.code == 'MOVIES')].comment", contains(nullValue())));
+    }
+
+    @Test
     void zodiacIsShownOnlyWhenTheOwnerWants() throws Exception {
         String city = uniqueCity();
         String me = login(newPhone());

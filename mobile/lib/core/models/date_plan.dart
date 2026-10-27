@@ -30,6 +30,23 @@ class VenueAd {
 }
 
 /// A place to suggest for a date (contract `Venue`).
+/// A place found by address or name (GET /places/search, OpenStreetMap for now).
+class FoundPlace {
+  const FoundPlace({required this.name, this.address, required this.latitude, required this.longitude});
+
+  final String name;
+  final String? address;
+  final double latitude;
+  final double longitude;
+
+  factory FoundPlace.fromJson(Map<String, dynamic> json) => FoundPlace(
+        name: asString(json['name']),
+        address: asStringOrNull(json['address']),
+        latitude: asDoubleOrNull(json['latitude']) ?? 0,
+        longitude: asDoubleOrNull(json['longitude']) ?? 0,
+      );
+}
+
 class Venue {
   const Venue({
     required this.id,

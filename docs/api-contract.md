@@ -506,6 +506,9 @@ POST   /date-plans/{id}/cancel        either side, open plans: 200 ; 409 PLAN_CL
 GET    /date-plans/{id}/history       200 [ { version, mine, action: PROPOSE|EDIT|ACCEPT|DECLINE|CANCEL, items, at } ]
 Every action posts a chat Message { type: 'DATE_PLAN', text: one-line summary, datePlanId } to both (SSE `message`, push).
 GET    /venues?latitude=&longitude=   200 Venue[] (<= 50, ~30 km, sponsored first); test accounts see only test places
+GET    /places/search?q=&latitude=&longitude=   200 { name, address|null, latitude, longitude }[] (<= 8, address or place
+                                      name, nearest to the point first); q < 2 chars or search off/unavailable → [];
+                                      429 RATE_LIMITED after 30 a minute. For now public Photon (OpenStreetMap), testing only
 GET|POST /admin/venues, PUT /admin/venues/{id}   (CONTENT_EDITOR, ADMIN) body { name, address?, latitude, longitude, category,
                                       description?, sponsored?, advertiser? (required when sponsored), erid?, active? } ; audited (VENUE)
 POST   /testing/venues                body { latitude, longitude }  201 — 3 test-only places around the point, one sponsored
@@ -560,6 +563,9 @@ Interest = { code, label, category, categoryLabel }
 GET /artists?q=         (auth)   200 Artist[] (<= 10)  Artist = { id, name }; q < 2 chars → []. Our dictionary first; with fewer
                         than 5 matches the server asks MusicBrainz once per query and adds what it finds (app.music.musicbrainz-enabled).
 PUT /me/profile         + interestCodes: string[] (<= 10, [] clears; unknown → 400 fieldErrors.interestCodes),
+                          interestComments: { code: string } (<= 80 each, only for chosen interests, "" removes;
+                          else 400 fieldErrors.interestComments). Interest = { code, label, category, categoryLabel,
+                          comment: string|null }; a dropped interest loses its comment,
                           artistIds: number[] (<= 5), showZodiac: boolean
 MyProfile               + interests: Interest[], artists: Artist[], showZodiac, zodiac: string|null (my sign, e.g. «Лев»)
 PublicProfile           + sharedTags: string[] (feed only: codes of the cards both chose; omitted when empty)

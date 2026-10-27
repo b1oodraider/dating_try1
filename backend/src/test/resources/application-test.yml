@@ -23,6 +23,8 @@ app:
         mode: ADD
   music:
     musicbrainz-enabled: false
+  places:
+    enabled: false
   verification-gate:
     enabled: false # on in VerificationGateIntegrationTest; other tests use unverified users
   testing:

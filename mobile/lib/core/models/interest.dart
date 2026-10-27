@@ -7,6 +7,7 @@ class Interest {
     required this.label,
     required this.category,
     required this.categoryLabel,
+    this.comment,
   });
 
   final String code;
@@ -14,11 +15,15 @@ class Interest {
   final String category;
   final String categoryLabel;
 
+  /// The owner's comment on it («латте, капучино»); null in the dictionary and when there is none.
+  final String? comment;
+
   factory Interest.fromJson(Map<String, dynamic> json) => Interest(
         code: asString(json['code']),
         label: asString(json['label']),
         category: asString(json['category']),
         categoryLabel: asString(json['categoryLabel']),
+        comment: asStringOrNull(json['comment']),
       );
 }
 

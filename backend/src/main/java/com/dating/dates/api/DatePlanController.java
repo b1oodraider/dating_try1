@@ -2,6 +2,7 @@ package com.dating.dates.api;
 
 import com.dating.common.security.AuthenticatedUser;
 import com.dating.dates.application.DatePlanService;
+import com.dating.dates.application.PlaceSearchService;
 import com.dating.dates.application.VenueService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -51,10 +52,12 @@ public class DatePlanController {
 
     private final DatePlanService plans;
     private final VenueService venues;
+    private final PlaceSearchService places;
 
-    public DatePlanController(DatePlanService plans, VenueService venues) {
+    public DatePlanController(DatePlanService plans, VenueService venues, PlaceSearchService places) {
         this.plans = plans;
         this.venues = venues;
+        this.places = places;
     }
 
     /** The plan in play in this chat: { plan: DatePlan | null }. */
@@ -109,6 +112,15 @@ public class DatePlanController {
     public List<VenueService.Venue> venues(@AuthenticationPrincipal AuthenticatedUser user,
                                            @RequestParam double latitude, @RequestParam double longitude) {
         return venues.near(user.accountId(), latitude, longitude);
+    }
+
+    /** Address or place name, nearest to the map centre first; [] when the search is off or unavailable. */
+    @GetMapping("/places/search")
+    public List<PlaceSearchService.Place> searchPlaces(@AuthenticationPrincipal AuthenticatedUser user,
+                                                       @RequestParam(name = "q", defaultValue = "") String query,
+                                                       @RequestParam(required = false) Double latitude,
+                                                       @RequestParam(required = false) Double longitude) {
+        return places.search(user.accountId(), query, latitude, longitude);
     }
 
     @GetMapping("/admin/venues")

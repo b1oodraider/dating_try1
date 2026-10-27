@@ -106,6 +106,9 @@ app:
     reports-per-hour: 20
   chat:
     messages-per-minute: 30
+  places:
+    # Search by address / place name on the date plan map: public Photon (OpenStreetMap), testing only.
+    enabled: ${APP_PLACES_ENABLED:true}
   music:
     # Artists missing from our dictionary are looked up on MusicBrainz (1 request/s, no key needed).
     musicbrainz-enabled: ${APP_MUSIC_MUSICBRAINZ_ENABLED:true}
