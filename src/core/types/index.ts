@@ -39,6 +39,7 @@ export type PublicationStatus = 'DRAFT' | 'PUBLISHED' | 'HIDDEN';
 export type PublishRequirement = 'displayName' | 'birthDate' | 'gender' | 'seeking' | 'city' | 'photos';
 
 export type Gender = 'MALE' | 'FEMALE';
+export type Seeking = Gender | 'ANY';
 
 export interface MyProfile {
   id: string;
@@ -48,7 +49,8 @@ export interface MyProfile {
   /** Locked after the first publish. */
   gender: Gender | null;
   /** Who I look for. */
-  seeking: Gender | null;
+  /** ANY = both men and women. */
+  seeking: Seeking | null;
   /** yyyy-MM-dd; locked after the first publish. */
   birthDate: string | null;
   /** Ages I accept (both ways); ageTo null = no upper limit. */
@@ -185,7 +187,7 @@ export interface ProfileUpdate {
   /** Legacy: an approximate birth date when birthDate is absent. */
   age?: number;
   gender?: Gender;
-  seeking?: Gender;
+  seeking?: Seeking;
   /** yyyy-MM-dd, 18..100 years. */
   birthDate?: string;
   ageFrom?: number;
@@ -366,6 +368,16 @@ export interface Message {
   createdAt: string;
   /** DATE_PLAN messages only (text is the plan's one-line summary). */
   datePlanId?: string | null;
+  /** The message this one answers (null when none or it is gone). */
+  replyTo?: ReplyPreview | null;
+}
+
+/** What a reply shows of the message it answers; text is null for stickers. */
+export interface ReplyPreview {
+  id: string;
+  mine: boolean;
+  type: MessageType;
+  text: string | null;
 }
 
 export interface Match {

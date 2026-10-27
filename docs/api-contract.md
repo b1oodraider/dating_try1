@@ -30,7 +30,7 @@ Photo      = { id, url, mimeType, sizeBytes, sortOrder, isPrimary, createdAt, un
              It needs NO Authorization header (usable directly in <img src> / Image.network after prefixing API origin).
              Refetch the profile/feed to get fresh URLs.
 MyProfile  = { id, displayName: string|null, age: number|null (computed from birthDate), city: string|null, aboutText: string|null,
-               gender: 'MALE'|'FEMALE'|null, seeking: 'MALE'|'FEMALE'|null, birthDate: 'yyyy-MM-dd'|null,
+               gender: 'MALE'|'FEMALE'|null, seeking: 'MALE'|'FEMALE'|'ANY'|null, birthDate: 'yyyy-MM-dd'|null,
                ageFrom: number (default 18), ageTo: number|null (no upper limit),
                cityId: number|null (dictionary city; city = its official name), searchRadiusKm: number|null,
                locationShared: boolean,
@@ -96,7 +96,7 @@ PUT  /me/profile           body (all optional; omitted = unchanged):
        { displayName?: string (2..50 after trim), age?: int 18..100, city?: string (1..60 after trim),
          aboutText?: string (<=1000, "" clears), tagCodes?: string[] (<=10, must be known active codes, else 400 UNKNOWN_TAG),
          dailyStatusText?: string (<=200; "" clears; sets 24h expiry),
-         gender?: 'MALE'|'FEMALE', seeking?: 'MALE'|'FEMALE', birthDate?: 'yyyy-MM-dd' (18..100),
+         gender?: 'MALE'|'FEMALE', seeking?: 'MALE'|'FEMALE'|'ANY' (ANY = both), birthDate?: 'yyyy-MM-dd' (18..100),
          ageFrom?: 18..100, ageTo?: 18..100 (>= ageFrom), clearAgeTo?: true,
          cityId?: number (from GET /cities; 400 fieldErrors.cityId if unknown), searchRadiusKm?: 1..20000,
          clearSearchRadius?: true }
@@ -457,7 +457,8 @@ POST /reports   body { profileId: uuid (required), messageId?: uuid, reason: 'SP
 Unmatched / blocked matches (or ones whose other account is gone) answer 404 MATCH_NOT_FOUND for both people.
 Message   = { id, matchId, mine: boolean, type: 'TEXT'|'STICKER', text: string|null (TEXT), stickerPackCode: string|null (STICKER),
               sticker: string|null (STICKER, a code from the pack's attributes.stickers), clientMessageId: string|null (only on my own
-              messages), createdAt }
+              messages), createdAt, replyTo: { id, mine, type, text: string|null (null for stickers) }|null (the message this
+              one answers; null when none or it is gone) }
 Match     = { id, createdAt, profile: PublicProfile (the other person), lastMessage: Message|null, unreadCount: number,
               myLastReadMessageId: uuid|null, otherLastReadMessageId: uuid|null, otherLastReadAt: string|null }   // other* = read receipt
 ReadState = { matchId, lastReadMessageId, lastReadAt, unreadCount }
@@ -470,7 +471,8 @@ GET    /matches/{matchId}/messages?before=<messageId>&limit=30
   404 MATCH_NOT_FOUND | MESSAGE_NOT_FOUND (before is not a message of this match)
 POST   /matches/{matchId}/messages
   body { clientMessageId: string (1..64, non-blank; generated once per message, reused on retry), type: 'TEXT'|'STICKER',
-         text?: string (TEXT: 1..2000 after trim; bean limit 4000 raw), stickerPackCode?: string (<= 50), sticker?: string (<= 50) }
+         text?: string (TEXT: 1..2000 after trim; bean limit 4000 raw), stickerPackCode?: string (<= 50), sticker?: string (<= 50),
+         replyToMessageId?: uuid (a message of this chat; else 404 MESSAGE_NOT_FOUND) }
   TEXT must not carry sticker fields; STICKER needs stickerPackCode + sticker and no text.
   200 Message (as seen by me). A retry with the same clientMessageId returns the original message (nothing stored twice,
   not rate limited, no new events).

@@ -88,9 +88,13 @@ public class ChatService {
         if (content.type() == MessageType.STICKER) {
             requireOwnedSticker(sender, content.stickerPackCode(), content.sticker());
         }
+        if (request.replyToMessageId() != null) {
+            requireMessage(matchId, request.replyToMessageId());
+        }
 
         boolean inserted = repository.insert(UUID.randomUUID(), matchId, sender, request.clientMessageId(),
-                content.type(), content.text(), content.stickerPackCode(), content.sticker());
+                content.type(), content.text(), content.stickerPackCode(), content.sticker(), null,
+                request.replyToMessageId());
         ChatMessage message = repository.findByClientId(matchId, sender, request.clientMessageId())
                 .orElseThrow(() -> new IllegalStateException("Message must exist after insert"));
         if (inserted) {
@@ -129,7 +133,7 @@ public class ChatService {
     public void postDatePlanMessage(UUID sender, UUID matchId, UUID planId, String text) {
         MatchInfo match = matchService.requireActive(matchId, sender);
         String clientId = "plan-" + UUID.randomUUID();
-        repository.insert(UUID.randomUUID(), matchId, sender, clientId, MessageType.DATE_PLAN, text, null, null, planId);
+        repository.insert(UUID.randomUUID(), matchId, sender, clientId, MessageType.DATE_PLAN, text, null, null, planId, null);
         ChatMessage message = repository.findByClientId(matchId, sender, clientId)
                 .orElseThrow(() -> new IllegalStateException("Message must exist after insert"));
         UUID recipient = match.other(sender);

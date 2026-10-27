@@ -419,6 +419,7 @@ class DatingApiClient {
     String? text,
     String? stickerPackCode,
     String? sticker,
+    String? replyToMessageId,
   }) async {
     final json = await _send(
       'POST',
@@ -429,6 +430,7 @@ class DatingApiClient {
         if (text != null) 'text': text,
         if (stickerPackCode != null) 'stickerPackCode': stickerPackCode,
         if (sticker != null) 'sticker': sticker,
+        if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
       },
     );
     return ChatMessage.fromJson(_expectMap(json));

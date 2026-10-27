@@ -40,7 +40,7 @@ class ProfileRulesTest {
         profile.setDisplayName("Анна");
         profile.setBirthDate(java.time.LocalDate.now().minusYears(26));
         profile.setGender(com.dating.profiles.domain.Gender.FEMALE);
-        profile.setSeeking(com.dating.profiles.domain.Gender.MALE);
+        profile.setSeeking(com.dating.profiles.domain.Seeking.MALE);
         profile.setCity("Москва");
         profile.setAboutText("Люблю долгие прогулки, плёночную фотографию и хороший кофе");
         profile.replaceTags(Set.of(tag("A"), tag("B"), tag("C")));

@@ -63,15 +63,22 @@ public class ArtistSearchService {
             q = q.substring(0, 100);
         }
         List<ArtistCatalog.Found> found = catalog.search(q, LIMIT);
-        if (found.size() < 5 && q.length() >= 3 && properties.musicbrainzEnabled()
-                && asked.size() < 50_000 && asked.add(ArtistCatalog.normalize(q))) {
-            askMusicBrainz(q);
+        String key = ArtistCatalog.normalize(q);
+        // Similar spellings («James Brown» for «Etta James») do not count: ask when nothing starts with the query.
+        boolean weak = found.size() < 5
+                || found.stream().noneMatch(f -> ArtistCatalog.normalize(f.name()).startsWith(key));
+        if (weak && q.length() >= 3 && properties.musicbrainzEnabled()
+                && asked.size() < 50_000 && asked.add(key)) {
+            if (!askMusicBrainz(q)) {
+                asked.remove(key); // a failed lookup is retried next time
+            }
             found = catalog.search(q, LIMIT);
         }
         return found.stream().map(f -> new ArtistDto(f.id(), f.name())).toList();
     }
 
-    private void askMusicBrainz(String q) {
+    /** @return false when MusicBrainz could not be asked (network, rate limit) */
+    private boolean askMusicBrainz(String q) {
         try {
             throttle();
             String url = "https://musicbrainz.org/ws/2/artist?fmt=json&limit=8&query="
@@ -83,8 +90,8 @@ public class ArtistSearchService {
                             .GET().build(),
                     HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() != 200) {
-                log.info("MusicBrainz answered {}", response.statusCode());
-                return;
+                log.warn("MusicBrainz answered {}", response.statusCode());
+                return false;
             }
             for (JsonNode artist : json.readTree(response.body()).path("artists")) {
                 if (artist.path("score").asInt(0) < MIN_SCORE) {
@@ -96,12 +103,14 @@ public class ArtistSearchService {
                     catalog.addFromMusicBrainz(name, UUID.fromString(id));
                 }
             }
+            return true;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } catch (Exception e) {
             // The dictionary still answers; a missing artist is not worth an error to the user.
-            log.info("MusicBrainz lookup failed: {}", e.toString());
+            log.warn("MusicBrainz lookup failed: {}", e.toString());
         }
+        return false;
     }
 
     private synchronized void throttle() throws InterruptedException {

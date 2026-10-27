@@ -32,10 +32,10 @@ public class Profile extends AssignedIdEntity {
     @Column(name = "gender", length = 6)
     private Gender gender;
 
-    /** The gender this person looks for. */
+    /** Who this person looks for. */
     @Enumerated(EnumType.STRING)
     @Column(name = "seeking", length = 6)
-    private Gender seeking;
+    private Seeking seeking;
 
     /** Ages this person accepts; a candidate outside them never sees this profile either. */
     @Column(name = "pref_age_min", nullable = false)
@@ -226,11 +226,11 @@ public class Profile extends AssignedIdEntity {
         touch();
     }
 
-    public Gender getSeeking() {
+    public Seeking getSeeking() {
         return seeking;
     }
 
-    public void setSeeking(Gender seeking) {
+    public void setSeeking(Seeking seeking) {
         this.seeking = seeking;
         touch();
     }

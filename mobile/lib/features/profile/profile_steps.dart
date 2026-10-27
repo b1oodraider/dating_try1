@@ -129,7 +129,7 @@ final List<ProfileStep> profileSteps = [
     hasValue: (p) => p.seeking != null,
     summary: (p) => p.seeking == null
         ? ''
-        : '${p.seeking == 'MALE' ? 'Мужчину' : 'Женщину'}, ${_ages(p)}',
+        : '${seekingLabels[p.seeking] ?? p.seeking}, ${_ages(p)}',
     build: (c) => SeekingEditor(c),
   ),
   ProfileStep(
@@ -448,6 +448,9 @@ class DateMask extends TextInputFormatter {
 
 // -------------------------------------------------------------- seeking
 
+/// Who I look for: a man, a woman, or both.
+const Map<String, String> seekingLabels = {'MALE': 'Мужчину', 'FEMALE': 'Женщину', 'ANY': 'Всех'};
+
 class SeekingEditor extends StatefulWidget {
   const SeekingEditor(this.c, {super.key});
 
@@ -484,9 +487,8 @@ class _SeekingEditorState extends State<SeekingEditor> {
         SizedBox(
           width: double.infinity,
           child: SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'MALE', label: Text('Мужчину')),
-              ButtonSegment(value: 'FEMALE', label: Text('Женщину')),
+            segments: [
+              for (final e in seekingLabels.entries) ButtonSegment(value: e.key, label: Text(e.value)),
             ],
             selected: {if (_seeking != null) _seeking!},
             emptySelectionAllowed: true,
@@ -857,6 +859,7 @@ class _GoalsEditorState extends State<GoalsEditor> {
                 children: [
                   for (final goal in goals)
                     FilterChip(
+                      chipAnimationStyle: instantChip,
                       label: Text(goal.displayLabel),
                       selected: _goals.contains(goal.code),
                       onSelected: (on) {
@@ -967,6 +970,7 @@ class _GroupedChips extends StatelessWidget {
             children: [
               for (final (code, label) in items)
                 FilterChip(
+                  chipAnimationStyle: instantChip,
                   label: Text(label),
                   selected: selected.contains(code),
                   onSelected: (on) {
@@ -1124,12 +1128,14 @@ class _FactsEditorState extends State<FactsEditor> {
                       for (final o in options.of(fact))
                         if (Facts.multi.contains(fact))
                           FilterChip(
+                            chipAnimationStyle: instantChip,
                             label: Text(o.label),
                             selected: _many[fact]!.contains(o.code),
                             onSelected: (on) => _toggleMany(fact, o.code, on),
                           )
                         else
                           ChoiceChip(
+                            chipAnimationStyle: instantChip,
                             label: Text(o.label),
                             selected: _one[fact] == o.code,
                             onSelected: (on) {
@@ -1323,6 +1329,7 @@ class _TagsEditorState extends State<TagsEditor> {
                   children: [
                     for (final t in group)
                       ChoiceChip(
+                        chipAnimationStyle: instantChip,
                         label: Text(t.label),
                         tooltip: t.description,
                         selected: _selected[t.category] == t.code,

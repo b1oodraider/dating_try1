@@ -1,6 +1,7 @@
 package com.dating.profiles.api;
 
 import com.dating.profiles.domain.Gender;
+import com.dating.profiles.domain.Seeking;
 
 import java.time.LocalDate;
 
@@ -49,7 +50,7 @@ public record ProfileUpdateDto(
         Gender gender,
 
         /** Who I look for; may change any time. */
-        Gender seeking,
+        Seeking seeking,
 
         /** ISO date (yyyy-MM-dd), 18..100 years; locked once the profile was published. */
         LocalDate birthDate,

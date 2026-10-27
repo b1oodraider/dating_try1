@@ -91,7 +91,8 @@ public class TestSocialController {
         MessageDto sent = chatService.send(seed, matchId, new SendMessageRequest(clientMessageId, type,
                 request.text(), request.stickerPackCode(), request.sticker()));
         return new MessageDto(sent.id(), sent.matchId(), false, sent.type(), sent.text(), sent.stickerPackCode(),
-                sent.sticker(), null, sent.createdAt(), sent.datePlanId());
+                sent.sticker(), null, sent.createdAt(), sent.datePlanId(),
+                sent.replyTo() == null ? null : sent.replyTo().flipped());
     }
 
     /** My passes are forgotten: those profiles come back to my feed. */

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api, ApiError, getErrorMessage } from '../../../core/api/client';
-import type { Match, Message, PublicProfile, Wallet } from '../../../core/types';
+import type { Match, Message, PublicProfile, ReplyPreview, Wallet } from '../../../core/types';
 import { useRealtime } from '../../../core/realtime/RealtimeContext';
 import { Button } from '../../../shared/components/Button';
 import { ReportModal } from '../../safety/components/ReportModal';
@@ -22,6 +22,8 @@ import {
   ShieldCheck,
   Crown,
   Flag,
+  Reply,
+  X,
   CalendarHeart,
 } from 'lucide-react';
 
@@ -88,6 +90,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [report, setReport] = useState<{ messageId?: string } | null>(null);
+  /** The message the next one answers. */
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [inspectProfile, setInspectProfile] = useState<PublicProfile | null>(null);
   /** The plan open in the modal, or a new proposal being written. */
   const [openPlanId, setOpenPlanId] = useState<string | null>(null);
@@ -109,6 +113,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const selectMatch = useCallback(
     (id: string | null) => {
       setSelectedMatchId(id);
+      setReplyTo(null);
       setIsMenuOpen(false);
       setIsStickerPickerOpen(false);
       setOpenPlanId(null);
@@ -281,7 +286,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
     sendingRef.current = true;
     setIsSending(true);
     try {
-      addMessage(await api.sendMessage(matchId, { ...payload, clientMessageId }));
+      addMessage(await api.sendMessage(matchId, { ...payload, clientMessageId, replyToMessageId: replyTo?.id }));
+      setReplyTo(null);
       return true;
     } catch (err) {
       showToast(getErrorMessage(err, 'Не удалось отправить сообщение'), 'error');
@@ -654,6 +660,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
                             : 'bg-white text-zinc-900 border border-zinc-200/80 rounded-bl-xs'
                         }`}
                       >
+                        {msg.replyTo && (
+                          <Quote reply={msg.replyTo} otherName={selectedMatch?.profile.displayName ?? ''} dark={isMine} />
+                        )}
                         {msg.type === 'STICKER' ? (
                           <div className="text-3xl py-1 text-center font-emoji" title={msg.sticker ?? undefined}>
                             {packEmoji.get(msg.stickerPackCode ?? '') ?? '✨'}
@@ -684,6 +693,17 @@ export const ChatView: React.FC<ChatViewProps> = ({
                           )}
                         </div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => setReplyTo(msg)}
+                        title="Ответить"
+                        aria-label="Ответить"
+                        className={`p-1 text-zinc-300 hover:text-zinc-700 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity ${
+                          isMine ? '-order-1' : ''
+                        }`}
+                      >
+                        <Reply className="w-3.5 h-3.5" />
+                      </button>
                       {!isMine && (
                         <button
                           type="button"
@@ -753,6 +773,27 @@ export const ChatView: React.FC<ChatViewProps> = ({
             )}
 
             {/* Message Input Box */}
+            {replyTo && (
+              <div className="px-3 pt-2 border-t border-zinc-200 bg-white flex items-center gap-2">
+                <Reply className="w-4 h-4 text-zinc-500 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <Quote
+                    reply={{ id: replyTo.id, mine: replyTo.mine, type: replyTo.type, text: replyTo.text }}
+                    otherName={selectedMatch?.profile.displayName ?? ''}
+                    dark={false}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReplyTo(null)}
+                  title="Не отвечать"
+                  aria-label="Не отвечать"
+                  className="p-1 text-zinc-400 hover:text-zinc-700"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
             <form
               onSubmit={handleSendMessage}
               className="p-3 border-t border-zinc-200 bg-white flex items-center gap-2"
@@ -841,3 +882,14 @@ export const ChatView: React.FC<ChatViewProps> = ({
     </div>
   );
 };
+
+/** The answered message above a reply (in a bubble or over the composer). */
+function Quote({ reply, otherName, dark }: { reply: ReplyPreview; otherName: string; dark: boolean }) {
+  const preview = reply.type === 'STICKER' ? 'Стикер' : reply.type === 'DATE_PLAN' ? 'План встречи' : (reply.text ?? '');
+  return (
+    <div className={`border-l-2 pl-2 mb-1 ${dark ? 'border-white/70' : 'border-rose-500'}`}>
+      <p className={`font-semibold ${dark ? 'text-white' : 'text-rose-600'}`}>{reply.mine ? 'Вы' : otherName}</p>
+      <p className={`line-clamp-2 ${dark ? 'text-zinc-300' : 'text-zinc-500'}`}>{preview}</p>
+    </div>
+  );
+}

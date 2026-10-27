@@ -316,6 +316,34 @@ class SocialChatIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void aReplyQuotesAMessageOfTheSameChat() throws Exception {
+        String city = uniqueCity();
+        User a = user(city, "Аня");
+        User b = user(city, "Борис");
+        UUID matchId = match(a, b);
+        String question = sendTextId(a, matchId, "Кофе или чай?");
+
+        send(b, matchId, "{\"clientMessageId\": \"r1\", \"type\": \"TEXT\", \"text\": \"Кофе\", \"replyToMessageId\": \""
+                + question + "\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.replyTo.id").value(question))
+                .andExpect(jsonPath("$.replyTo.mine").value(false))
+                .andExpect(jsonPath("$.replyTo.text").value("Кофе или чай?"));
+        page(a, matchId, null, 5)
+                .andExpect(jsonPath("$.items[0].replyTo.mine").value(true))
+                .andExpect(jsonPath("$.items[1].replyTo").value(nullValue()));
+
+        // A message of another chat cannot be quoted.
+        User c = user(city, "Вера");
+        UUID other = match(a, c);
+        String foreign = sendTextId(c, other, "чужое");
+        send(b, matchId, "{\"clientMessageId\": \"r2\", \"type\": \"TEXT\", \"text\": \"x\", \"replyToMessageId\": \""
+                + foreign + "\"}")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("MESSAGE_NOT_FOUND"));
+    }
+
+    @Test
     void readReceiptsMoveForwardOnlyAndShowInTheMatch() throws Exception {
         String city = uniqueCity();
         User a = user(city, "Аня");

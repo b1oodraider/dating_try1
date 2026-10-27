@@ -69,3 +69,7 @@ databaseChangeLog:
       file: db/changelog/changesets/034-date-plans.yaml
   - include:
       file: db/changelog/changesets/035-one-card-per-category.yaml
+  - include:
+      file: db/changelog/changesets/036-seeking-any.yaml
+  - include:
+      file: db/changelog/changesets/037-chat-replies.yaml

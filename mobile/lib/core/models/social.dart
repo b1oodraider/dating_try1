@@ -21,6 +21,30 @@ class ReactionResult {
 }
 
 /// Chat message (contract `Message`).
+/// What a reply shows of the message it answers.
+class ReplyPreview {
+  const ReplyPreview({required this.id, required this.mine, required this.type, this.text});
+
+  final String id;
+  final bool mine;
+  final String type;
+  final String? text;
+
+  /// One line for the quote.
+  String get preview => switch (type) {
+        'STICKER' => 'Стикер',
+        'DATE_PLAN' => 'План встречи',
+        _ => text ?? '',
+      };
+
+  factory ReplyPreview.fromJson(Map<String, dynamic> json) => ReplyPreview(
+        id: asString(json['id']),
+        mine: asBool(json['mine']),
+        type: asString(json['type'], 'TEXT'),
+        text: asStringOrNull(json['text']),
+      );
+}
+
 class ChatMessage {
   const ChatMessage({
     required this.id,
@@ -33,6 +57,7 @@ class ChatMessage {
     this.clientMessageId,
     this.createdAt,
     this.datePlanId,
+    this.replyTo,
   });
 
   final String id;
@@ -50,6 +75,12 @@ class ChatMessage {
   final String? clientMessageId;
   final DateTime? createdAt;
 
+  /// The message this one answers (null when none or it is gone).
+  final ReplyPreview? replyTo;
+
+  /// This message as a quote in a reply.
+  ReplyPreview get asReply => ReplyPreview(id: id, mine: mine, type: type, text: text);
+
   bool get isSticker => type == 'STICKER';
 
   bool get isDatePlan => type == 'DATE_PLAN';
@@ -65,6 +96,9 @@ class ChatMessage {
         clientMessageId: asStringOrNull(json['clientMessageId']),
         createdAt: asDateTimeOrNull(json['createdAt']),
         datePlanId: asStringOrNull(json['datePlanId']),
+        replyTo: json['replyTo'] is Map<String, dynamic>
+            ? ReplyPreview.fromJson(json['replyTo'] as Map<String, dynamic>)
+            : null,
       );
 }
 

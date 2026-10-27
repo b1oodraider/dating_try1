@@ -36,7 +36,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { SelfieVerificationModal } from '../../safety/components/SelfieVerificationModal';
-import type { Artist, Facts, ProfileUpdate, Tag } from '../../../core/types';
+import type { Artist, Facts, ProfileUpdate, Seeking, Tag } from '../../../core/types';
 
 // Limits from the API contract (PUT /me/profile).
 const NAME_MIN = 2;
@@ -207,7 +207,7 @@ export const ProfileEditor: React.FC = () => {
       if (birthDate) update.birthDate = birthDate;
       if (gender) update.gender = gender as 'MALE' | 'FEMALE';
     }
-    if (seeking) update.seeking = seeking as 'MALE' | 'FEMALE';
+    if (seeking) update.seeking = seeking as Seeking;
     const from = Number(ageFrom);
     if (!Number.isInteger(from) || from < AGE_MIN || from > AGE_MAX) {
       errors.ageFrom = `Возраст — от ${AGE_MIN} до ${AGE_MAX}`;
@@ -603,6 +603,7 @@ export const ProfileEditor: React.FC = () => {
                 <option value="">—</option>
                 <option value="MALE">Мужчину</option>
                 <option value="FEMALE">Женщину</option>
+                <option value="ANY">Всех</option>
               </select>
               <FieldError message={fieldErrors.seeking} />
             </div>

@@ -1,0 +1,29 @@
+databaseChangeLog:
+  # «Ищу и мужчину, и женщину» (tester feedback 2026-10-24).
+  - changeSet:
+      id: 036-seeking-any
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_seeking_check,
+                ADD CONSTRAINT profiles_seeking_check CHECK (seeking IN ('MALE', 'FEMALE', 'ANY'))
+      rollback:
+        - sql:
+            sql: >
+              UPDATE profiles SET seeking = NULL WHERE seeking = 'ANY';
+              ALTER TABLE profiles DROP CONSTRAINT profiles_seeking_check,
+                ADD CONSTRAINT profiles_seeking_check CHECK (seeking IN ('MALE', 'FEMALE'))
+  # «Пешие прогулки» were missing among interests (tester feedback 2026-10-24).
+  - changeSet:
+      id: 036-walking-interest
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              INSERT INTO interests (code, label, category_code, sort_order)
+              VALUES ('WALKING', 'Пешие прогулки', 'OUTDOORS', 5)
+              ON CONFLICT (code) DO NOTHING
+      rollback:
+        - sql:
+            sql: DELETE FROM interests WHERE code = 'WALKING'

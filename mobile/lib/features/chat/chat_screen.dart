@@ -58,6 +58,9 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _unsentText;
   String? _unsentId;
 
+  /// The message the next one answers (chosen from a message's menu).
+  ChatMessage? _replyTo;
+
   /// Active MESSAGES (or SUSPENDED) restriction: the composer is replaced by its reason.
   Restriction? _messagesRestriction;
 
@@ -231,10 +234,12 @@ class _ChatScreenState extends State<ChatScreen> {
         text: text,
         stickerPackCode: pack,
         sticker: sticker,
+        replyToMessageId: _replyTo?.id,
       );
       _unsentText = null;
       _unsentId = null;
       if (!mounted) return;
+      setState(() => _replyTo = null);
       _add(message);
       _chats.addMessage(message);
     } catch (e) {
@@ -252,6 +257,44 @@ class _ChatScreenState extends State<ChatScreen> {
   void _sendText() {
     final text = _input.text.trim();
     if (text.isNotEmpty) _send(text: text);
+  }
+
+  /// Long press on a message: reply to it, or report it (the other person's).
+  Future<void> _messageMenu(ChatMessage message, Match? match) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.reply_rounded),
+              title: const Text('Ответить'),
+              onTap: () => Navigator.of(context).pop('reply'),
+            ),
+            if (!message.mine && match != null)
+              ListTile(
+                leading: const Icon(Icons.flag_outlined),
+                title: const Text('Пожаловаться'),
+                onTap: () => Navigator.of(context).pop('report'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    switch (action) {
+      case 'reply':
+        setState(() => _replyTo = message);
+      case 'report':
+        await showReportSheet(
+          context,
+          api: _chats.api,
+          profileId: match!.profile.id,
+          name: match.profile.displayName,
+          messageId: message.id,
+        );
+    }
   }
 
   void _snack(String text) =>
@@ -370,15 +413,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                 read: message.mine &&
                                     readIndex >= 0 &&
                                     index >= readIndex,
-                                onReport: message.mine || match == null
-                                    ? null
-                                    : () => showReportSheet(
-                                          context,
-                                          api: _chats.api,
-                                          profileId: match.profile.id,
-                                          name: match.profile.displayName,
-                                          messageId: message.id,
-                                        ),
+                                otherName: match?.profile.displayName ?? '',
+                                onMenu: () => _messageMenu(message, match),
                               );
                             },
                           ),
@@ -407,7 +443,29 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
             )
-          else
+          else ...[
+            if (_replyTo case final reply?)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Gaps.md, Gaps.sm, Gaps.xs, 0),
+                child: Row(
+                  children: [
+                    const Icon(Icons.reply_rounded, size: 20),
+                    const SizedBox(width: Gaps.sm),
+                    Expanded(
+                      child: _Quote(
+                        reply: reply.asReply,
+                        otherName: match?.profile.displayName ?? '',
+                        onBubble: false,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Не отвечать',
+                      onPressed: () => setState(() => _replyTo = null),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
             SafeArea(
               top: false,
               child: Padding(
@@ -472,6 +530,38 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
             ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The answered message above a reply (in the bubble or over the composer).
+class _Quote extends StatelessWidget {
+  const _Quote({required this.reply, required this.otherName, required this.onBubble});
+
+  final ReplyPreview reply;
+  final String otherName;
+
+  /// Inside my (rose) bubble the colours are white.
+  final bool onBubble;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = onBubble ? Colors.white : Brand.rose;
+    final textColor = onBubble ? Colors.white70 : theme.colorScheme.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.only(left: Gaps.sm),
+      decoration: BoxDecoration(border: Border(left: BorderSide(color: accent, width: 3))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(reply.mine ? 'Вы' : otherName,
+              style: TextStyle(color: accent, fontWeight: FontWeight.w600, fontSize: 13)),
+          Text(reply.preview,
+              maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: textColor, fontSize: 13)),
         ],
       ),
     );
@@ -479,11 +569,14 @@ class _ChatScreenState extends State<ChatScreen> {
 }
 
 class _Bubble extends StatelessWidget {
-  const _Bubble({required this.message, required this.read, this.onReport});
+  const _Bubble({required this.message, required this.read, required this.otherName, required this.onMenu});
 
   final ChatMessage message;
   final bool read;
-  final VoidCallback? onReport;
+  final String otherName;
+
+  /// Long press: reply / report.
+  final VoidCallback onMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -493,7 +586,7 @@ class _Bubble extends StatelessWidget {
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
-        onLongPress: onReport,
+        onLongPress: onMenu,
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 3),
           padding: const EdgeInsets.fromLTRB(14, 9, 12, 7),
@@ -512,6 +605,11 @@ class _Bubble extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
+              if (message.replyTo case final reply?)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: Gaps.xs),
+                  child: _Quote(reply: reply, otherName: otherName, onBubble: mine),
+                ),
               Text(
                 message.isSticker
                     ? '✨ ${message.sticker ?? ''}'

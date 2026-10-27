@@ -1,6 +1,7 @@
 package com.dating.profiles.api;
 
 import com.dating.profiles.domain.Gender;
+import com.dating.profiles.domain.Seeking;
 
 import java.time.LocalDate;
 
@@ -39,7 +40,7 @@ public record MyProfileDto(
         boolean premium,
         boolean verified,
         Gender gender,
-        Gender seeking,
+        Seeking seeking,
         LocalDate birthDate,
         int ageFrom,
         Integer ageTo,

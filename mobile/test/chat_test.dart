@@ -62,4 +62,19 @@ void main() {
     chats.dispose();
     await events.close();
   });
+
+  test('a reply carries a quote of the answered message', () {
+    final message = ChatMessage.fromJson({
+      'id': 'r1',
+      'matchId': 'a',
+      'mine': true,
+      'type': 'TEXT',
+      'text': 'Кофе',
+      'replyTo': {'id': 'q1', 'mine': false, 'type': 'STICKER', 'text': null},
+    });
+    expect(message.replyTo!.id, 'q1');
+    expect(message.replyTo!.mine, isFalse);
+    expect(message.replyTo!.preview, 'Стикер');
+    expect(ChatMessage.fromJson({'id': 'x', 'matchId': 'a', 'type': 'TEXT'}).replyTo, isNull);
+  });
 }

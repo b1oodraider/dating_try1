@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/api/realtime.dart';
 import '../auth/session_controller.dart';
@@ -81,17 +82,39 @@ class _HomeScreenState extends State<HomeScreen> {
     ));
   }
 
+  /// Leaving the chats tab closes an open chat: hidden, it would mark new messages read.
+  void _selectTab(int index) {
+    if (index != 2) _chatsNavigator.currentState?.popUntil((route) => route.isFirst);
+    setState(() => _tab = index);
+  }
+
+  /// System «back»: closes an open chat, then returns to the feed, and only from the feed leaves the app.
+  Future<void> _back() async {
+    if (_tab == 2 && (_chatsNavigator.currentState?.canPop() ?? false)) {
+      await _chatsNavigator.currentState!.maybePop();
+    } else if (_tab != 0) {
+      _selectTab(0);
+    } else {
+      await SystemNavigator.pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final api = widget.session.api;
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _back();
+      },
+      child: Scaffold(
       body: IndexedStack(
         index: _tab,
         children: [
           DiscoveryScreen(
             session: widget.session,
             onOpenChat: _openChat,
-            onOpenProfile: () => setState(() => _tab = 4),
+            onOpenProfile: () => _selectTab(4),
           ),
           LikesScreen(api: api, events: _realtime.events, onOpenChat: _openChat),
           // Own navigator: the bottom bar stays visible inside a chat.
@@ -110,7 +133,7 @@ class _HomeScreenState extends State<HomeScreen> {
         listenable: _chats,
         builder: (context, _) => NavigationBar(
           selectedIndex: _tab,
-          onDestinationSelected: (index) => setState(() => _tab = index),
+          onDestinationSelected: _selectTab,
           destinations: [
             const NavigationDestination(
               icon: Icon(Icons.style_outlined),
@@ -128,7 +151,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 label: Text('${_chats.unreadChats}'),
                 child: const Icon(Icons.chat_bubble_outline),
               ),
-              selectedIcon: const Icon(Icons.chat_bubble),
+              selectedIcon: Badge(
+                isLabelVisible: _chats.unreadChats > 0,
+                label: Text('${_chats.unreadChats}'),
+                child: const Icon(Icons.chat_bubble),
+              ),
               label: 'Чаты',
             ),
             const NavigationDestination(
@@ -143,6 +170,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

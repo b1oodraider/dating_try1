@@ -8,6 +8,7 @@ import '../../core/models/excluded_goals.dart';
 import '../../core/models/facts.dart';
 import '../../core/models/goal.dart';
 import '../../core/models/wallet.dart';
+import '../../core/theme/app_theme.dart';
 import '../auth/session_controller.dart';
 import '../exclusion_words/exclusion_words_screen.dart';
 import '../premium/premium_badge.dart';
@@ -645,6 +646,7 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
                 children: [
                   for (final o in options.of(fact))
                     FilterChip(
+                      chipAnimationStyle: instantChip,
                       label: Text(o.label),
                       selected: _factAccept[fact]!.contains(o.code),
                       onSelected: (on) => setState(() {
@@ -737,6 +739,7 @@ class _GoalChips extends StatelessWidget {
       children: [
         for (final goal in goals)
           FilterChip(
+            chipAnimationStyle: instantChip,
             label: Text(goal.displayLabel),
             selected: selected.contains(goal.code),
             onSelected: enabled ? (value) => onChanged(goal.code, value) : null,

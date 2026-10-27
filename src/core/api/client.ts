@@ -676,6 +676,7 @@ export const api = {
       text?: string;
       stickerPackCode?: string;
       sticker?: string;
+      replyToMessageId?: string;
     }
   ): Promise<Message> {
     return request<Message>(`/matches/${encodeURIComponent(matchId)}/messages`, {

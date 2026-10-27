@@ -182,6 +182,7 @@ class _DatePlanEditorScreenState extends State<DatePlanEditorScreen> {
                       children: [
                         for (final e in dateActivities.entries)
                           ChoiceChip(
+                            chipAnimationStyle: instantChip,
                             label: Text(e.value),
                             selected: d.activity == e.key,
                             onSelected: (_) => setState(() => d.activity = e.key),

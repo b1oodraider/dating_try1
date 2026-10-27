@@ -1,0 +1,13 @@
+databaseChangeLog:
+  # A reply to a particular message (tester feedback 2026-10-24).
+  - changeSet:
+      id: 037-chat-replies
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              ALTER TABLE chat_messages
+                ADD COLUMN reply_to_message_id UUID REFERENCES chat_messages (id) ON DELETE SET NULL
+      rollback:
+        - sql:
+            sql: ALTER TABLE chat_messages DROP COLUMN reply_to_message_id

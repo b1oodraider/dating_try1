@@ -99,25 +99,28 @@ public class TestProfilesService {
         if (mine.gender() == null || mine.seeking() == null || mine.city() == null) {
             throw ApiException.badRequest("PROFILE_INCOMPLETE", "Сначала укажите в своей анкете пол, кого ищете и город");
         }
-        Gender gender = mine.seeking();
-        List<UUID> photos = new ArrayList<>();
+        // Seed photos of each gender the caller looks for (ANY: both, the crowd alternates).
+        Map<Gender, List<UUID>> photos = new LinkedHashMap<>();
         for (UUID seed : accountService.activeSeedAccountIds()) {
             MyProfileDto profile = profileService.getMyProfile(seed);
-            if (profile.gender() == gender && !profile.photos().isEmpty()) {
-                photos.add(profile.photos().getFirst().id());
+            if (profile.gender() != null && mine.seeking().accepts(profile.gender()) && !profile.photos().isEmpty()) {
+                photos.computeIfAbsent(profile.gender(), g -> new ArrayList<>()).add(profile.photos().getFirst().id());
             }
         }
         if (photos.isEmpty()) {
             throw ApiException.badRequest("NO_SEED_PHOTOS",
                     "Нет тестовых анкет нужного пола с фото: сначала загрузите анкеты из seed/");
         }
-        List<String> names = gender == Gender.FEMALE ? FEMALE_NAMES : MALE_NAMES;
+        List<Gender> genders = List.copyOf(photos.keySet());
         int ageTo = mine.ageTo() == null ? Math.min(mine.ageFrom() + 10, 60) : mine.ageTo();
         ThreadLocalRandom random = ThreadLocalRandom.current();
         int liked = 0;
         for (int i = 0; i < count; i++) {
             UUID accountId = accountService.createSeedAccount();
             int age = random.nextInt(mine.ageFrom(), ageTo + 1);
+            Gender gender = genders.get(i % genders.size());
+            List<String> names = gender == Gender.FEMALE ? FEMALE_NAMES : MALE_NAMES;
+            List<UUID> genderPhotos = photos.get(gender);
             Map<String, Object> fields = new LinkedHashMap<>();
             fields.put("displayName", names.get(random.nextInt(names.size())));
             fields.put("birthDate", LocalDate.now().minusYears(age).minusDays(random.nextInt(1, 360)).toString());
@@ -130,7 +133,7 @@ public class TestProfilesService {
             }
             fields.put("aboutText", "Тестовая анкета из толпы №" + (i + 1));
             profileService.updateProfile(accountId, jsonMapper.convertValue(fields, ProfileUpdateDto.class));
-            mediaService.copyPhotoForTesting(photos.get(i % photos.size()), accountId);
+            mediaService.copyPhotoForTesting(genderPhotos.get(i % genderPhotos.size()), accountId);
             profileService.publishProfile(accountId);
             if (likeMe) {
                 reactionService.reactForTesting(accountId, me, ReactionType.LIKE);

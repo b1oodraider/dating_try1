@@ -39,6 +39,22 @@ class MatchingFiltersIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void seekingAnyMeansBothMenAndWomen() throws Exception {
+        String city = uniqueCity();
+        String any = person(city, "Оба", "FEMALE", "ANY", 30, "");
+        person(city, "Мужчина", "MALE", "FEMALE", 30, "");
+        person(city, "Женщина", "FEMALE", "ANY", 30, "");
+        person(city, "Ищет-мужчин", "FEMALE", "MALE", 30, "");                // does not look for women
+
+        discovery(any, city, null, null, 50)
+                .andExpect(jsonPath("$.items[*].displayName", containsInAnyOrder("Мужчина", "Женщина")));
+        // A man looking for women sees her too.
+        String man = loginAs(city, "Мужчина-2", "MALE", "FEMALE", 30);
+        discovery(man, city, null, null, 50)
+                .andExpect(jsonPath("$.items[*].displayName", org.hamcrest.Matchers.hasItem("Оба")));
+    }
+
+    @Test
     void testAccountsChangeGenderAndAgeAfterPublishing() throws Exception {
         String challenge = com.jayway.jsonpath.JsonPath.read(body(mvc.perform(post("/api/v1/auth/otp/request")
                 .contentType("application/json").content(phoneBody("+78000000001")))

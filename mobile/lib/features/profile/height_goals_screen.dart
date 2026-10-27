@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/models/goal.dart';
 import '../../core/models/my_profile.dart';
+import '../../core/theme/app_theme.dart';
 import '../auth/session_controller.dart';
 
 /// Edits the height and relationship goals of the caller's own profile
@@ -233,6 +234,7 @@ class _HeightGoalsScreenState extends State<HeightGoalsScreen> {
             children: [
               for (final goal in _goals)
                 FilterChip(
+                  chipAnimationStyle: instantChip,
                   label: Text(goal.displayLabel),
                   selected: _selectedGoals.contains(goal.code),
                   onSelected: _saving ||

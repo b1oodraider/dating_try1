@@ -19,7 +19,9 @@ import com.dating.profiles.application.ProfileDecorationQuery;
 import com.dating.profiles.application.ProfilePhotoQuery;
 import com.dating.common.errors.ApiException;
 import com.dating.profiles.domain.CommunicationTag;
+import com.dating.profiles.domain.Gender;
 import com.dating.profiles.domain.Profile;
+import com.dating.profiles.domain.Seeking;
 import java.util.stream.Collectors;
 import com.dating.profiles.domain.Artist;
 import com.dating.profiles.domain.Interest;
@@ -241,9 +243,11 @@ public class DiscoveryService {
             maxAge = maxAge == null ? query.maxAge() : Math.min(maxAge, query.maxAge());
         }
         Integer maxAgeFinal = maxAge;
+        Seeking viewerSeeks = viewer.getSeeking();
         Specification<Profile> spec = (root, q, cb) -> cb.and(
-                cb.equal(root.get("gender"), viewer.getSeeking()),
-                cb.equal(root.get("seeking"), viewer.getGender()),
+                viewerSeeks == Seeking.ANY ? cb.conjunction()
+                        : cb.equal(root.get("gender"), Gender.valueOf(viewerSeeks.name())),
+                root.get("seeking").in(Seeking.valueOf(viewer.getGender().name()), Seeking.ANY),
                 cb.lessThanOrEqualTo(root.get("birthDate"), today.minusYears(minAge)),
                 maxAgeFinal == null ? cb.conjunction()
                         : cb.greaterThan(root.get("birthDate"), today.minusYears(maxAgeFinal + 1L)),

@@ -18,6 +18,9 @@ abstract final class Brand {
 }
 
 /// Spacing scale (4/8 dp rhythm) and corner radii used across screens.
+/// Chips switch at once: the default fade of two chips at a time (one off, one on) read as blinking.
+final ChipAnimationStyle instantChip = ChipAnimationStyle(selectAnimation: AnimationStyle.noAnimation);
+
 abstract final class Gaps {
   static const double xs = 4;
   static const double sm = 8;

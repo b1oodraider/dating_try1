@@ -19,8 +19,14 @@ public record ChatMessage(
         String sticker,
         Instant createdAt,
         /** DATE_PLAN messages only. */
-        UUID datePlanId
+        UUID datePlanId,
+        /** The message this one answers; null when it is not a reply or that message is gone. */
+        Reply replyTo
 ) {
+    /** What a reply shows of the message it answers. */
+    public record Reply(UUID id, UUID senderAccountId, MessageType type, String text) {
+    }
+
     /** Human-readable content for moderation snapshots. */
     public String snapshot() {
         return switch (type) {
