@@ -65,6 +65,7 @@ public class TestProfilesService {
     private final CosmeticsService cosmeticsService;
     private final ReactionService reactionService;
     private final JsonMapper jsonMapper;
+    private final SeedProfileEnricher enricher;
 
     private static final List<String> FEMALE_NAMES = List.of("Алёна", "Вера", "Дина", "Ева", "Жанна", "Зоя", "Инна",
             "Карина", "Лиля", "Майя", "Нина", "Олеся", "Полина", "Рита", "Света", "Тая", "Ульяна", "Яна", "Ксения",
@@ -75,7 +76,8 @@ public class TestProfilesService {
 
     public TestProfilesService(AccountService accountService, ProfileService profileService, MediaService mediaService,
                                EconomyService economyService, CosmeticsService cosmeticsService,
-                               ReactionService reactionService, JsonMapper jsonMapper) {
+                               ReactionService reactionService, JsonMapper jsonMapper, SeedProfileEnricher enricher) {
+        this.enricher = enricher;
         this.accountService = accountService;
         this.profileService = profileService;
         this.mediaService = mediaService;
@@ -134,6 +136,7 @@ public class TestProfilesService {
             fields.put("aboutText", "Тестовая анкета из толпы №" + (i + 1));
             profileService.updateProfile(accountId, jsonMapper.convertValue(fields, ProfileUpdateDto.class));
             mediaService.copyPhotoForTesting(genderPhotos.get(i % genderPhotos.size()), accountId);
+            enricher.enrich(accountId);
             profileService.publishProfile(accountId);
             if (likeMe) {
                 reactionService.reactForTesting(accountId, me, ReactionType.LIKE);
@@ -181,6 +184,7 @@ public class TestProfilesService {
     @Transactional
     public SeedProfileDto publish(UUID accountId) {
         requireSeed(accountId);
+        enricher.enrich(accountId); // whatever the seed file did not set: interests, facts, badge, …
         profileService.publishProfile(accountId);
         return dto(accountId);
     }

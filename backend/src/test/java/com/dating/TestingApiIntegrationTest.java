@@ -171,7 +171,16 @@ class TestingApiIntegrationTest extends IntegrationTestBase {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isPrimary").value(true));
         testing(tester, post(seedPath + "/publish"), null)
-                .andExpect(jsonPath("$.profile.publicationStatus").value("PUBLISHED"));
+                .andExpect(jsonPath("$.profile.publicationStatus").value("PUBLISHED"))
+                // What the seed did not set is filled in, so testers see every feature; what it set stays.
+                .andExpect(jsonPath("$.profile.heightCm").value(170))
+                .andExpect(jsonPath("$.profile.goals[*].code", contains("DATING")))
+                .andExpect(jsonPath("$.profile.interests", hasSize(greaterThanOrEqualTo(5))))
+                .andExpect(jsonPath("$.profile.interests[*].comment", hasItem(notNullValue())))
+                .andExpect(jsonPath("$.profile.artists", not(empty())))
+                .andExpect(jsonPath("$.profile.facts.smoking").exists())
+                .andExpect(jsonPath("$.profile.facts.profession").exists())
+                .andExpect(jsonPath("$.profile.tags", hasSize(greaterThanOrEqualTo(3))));
         testing(tester, put(seedPath), "{\"aboutText\": \"Люблю море\"}")
                 .andExpect(jsonPath("$.profile.aboutText").value("Люблю море"));
 
