@@ -159,6 +159,23 @@ class ProfileCard extends StatelessWidget {
             child: _Chips([for (final artist in profile.artists) artist.name],
                 icon: Icons.music_note_rounded),
           ),
+        if (profile.communities.isNotEmpty)
+          _Section(
+            title: 'Группы',
+            child: Wrap(
+              spacing: Gaps.sm,
+              runSpacing: Gaps.sm,
+              children: [
+                // Groups I am in too: tinted like shared cards.
+                for (final group in profile.communities)
+                  Chip(
+                    label: Text(group.shared ? '${group.display} · у вас тоже' : group.display),
+                    backgroundColor: group.shared ? Theme.of(context).colorScheme.primaryContainer : null,
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+          ),
         for (final (title, keys) in _factSections)
           if (options case final o? when keys.any(profile.facts.values.containsKey))
             _Section(

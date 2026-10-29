@@ -505,6 +505,18 @@ POST   /date-plans/{id}/accept|decline   only the side it was proposed to: 200 ;
 POST   /date-plans/{id}/cancel        either side, open plans: 200 ; 409 PLAN_CLOSED
 GET    /date-plans/{id}/history       200 [ { version, mine, action: PROPOSE|EDIT|ACCEPT|DECLINE|CANCEL, items, at } ]
 Every action posts a chat Message { type: 'DATE_PLAN', text: one-line summary, datePlanId } to both (SSE `message`, push).
+Community = { id, title, kind: 'FRANCHISE'|'FILM'|'SERIES'|'BOOK'|'ANIME'|'GAME'|'MUSIC'|'OTHER', kindLabel, emoji|null,
+              description|null, members, subscribed }        (docs/communities.md)
+GET    /communities?q=&kind=          200 Community[] (<= 100, active, most members first); unknown kind → 400 UNKNOWN_KIND
+GET    /communities/{id}              200 Community ; 404 COMMUNITY_NOT_FOUND
+GET    /me/communities                200 Community[] (mine, latest joined first)
+PUT|DELETE /communities/{id}/subscription   200 Community (subscribe / unsubscribe; repeating is a no-op)
+POST   /communities/suggestions       body { title (2..80), comment? (<= 300) } 201 ; 429 RATE_LIMITED after 5 a day
+GET|POST /admin/communities, PUT /admin/communities/{id}   (CONTENT_EDITOR, ADMIN) body { slug (create only, ^[a-z0-9-]),
+                                      title, kind, emoji?, description?, sortOrder?, active? }
+GET    /admin/communities/suggestions ; POST /admin/communities/suggestions/{id}/decision { accepted: boolean } 204
+Discovery: GET /discovery/profiles?communityIds=1,2 — only members of at least one; PublicProfile.communities =
+  [{ id, title, emoji, shared }] (shared = the viewer is in it too, listed first); shared group titles come first in `common`.
 GET    /venues?latitude=&longitude=   200 Venue[] (<= 50, ~30 km, sponsored first); test accounts see only test places
 GET    /places/search?q=&latitude=&longitude=   200 { name, address|null, latitude, longitude }[] (<= 8, address or place
                                       name, nearest to the point first); q < 2 chars or search off/unavailable → [];

@@ -6,6 +6,7 @@ import '../../core/api/api_exception.dart';
 import '../../core/format.dart';
 import '../../core/widgets/empty_state.dart';
 import '../../core/models/account.dart';
+import '../../core/models/community.dart';
 import '../../core/models/discovery_filters.dart';
 import '../../core/models/public_profile.dart';
 import '../../core/models/social.dart';
@@ -35,9 +36,13 @@ class DiscoveryScreen extends StatefulWidget {
     required this.session,
     this.onOpenChat,
     this.onOpenProfile,
+    this.groupSearch,
   });
 
   final SessionController session;
+
+  /// «Начать поиск» on a group page: the feed is set to that group (and the value is taken back to null).
+  final ValueNotifier<Community?>? groupSearch;
 
   /// Opens the chat of a new match (from the "It's a match" dialog).
   final void Function(String matchId)? onOpenChat;
@@ -109,10 +114,40 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   DiscoveryFilters get _effectiveFilters =>
       _advancedLocked ? _filters.withoutAdvanced() : _filters;
 
+  /// Titles of the groups searched among, for the bar above the feed.
+  final Map<int, String> _groupNames = {};
+
   @override
   void initState() {
     super.initState();
+    widget.groupSearch?.addListener(_onGroupSearch);
     _start();
+  }
+
+  void _onGroupSearch() {
+    final group = widget.groupSearch?.value;
+    if (group == null) return;
+    widget.groupSearch!.value = null;
+    _groupNames[group.id] = group.display;
+    _setFilters(_filters.withCommunities([group.id]));
+    _restartFeed();
+  }
+
+  /// Names for group ids that came from storage or the filters.
+  Future<void> _loadGroupNames() async {
+    for (final id in _filters.communityIds.where((id) => !_groupNames.containsKey(id)).toList()) {
+      try {
+        final group = await widget.session.api.getCommunity(id);
+        if (mounted) setState(() => _groupNames[id] = group.display);
+      } catch (e) {
+        debugPrint('Group $id: $e');
+      }
+    }
+  }
+
+  void _stopGroupSearch() {
+    _setFilters(_filters.withCommunities(const <int>[]));
+    _restartFeed();
   }
 
   Future<void> _start() async {
@@ -150,6 +185,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   @override
   void dispose() {
+    widget.groupSearch?.removeListener(_onGroupSearch);
     _flushViews();
     super.dispose();
   }
@@ -232,6 +268,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           _filters = saved;
           _filtersReady = true;
         });
+        _loadGroupNames();
       }
     }
 
@@ -352,6 +389,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       _filters = filters;
       _filtersReady = true;
     });
+    _loadGroupNames();
     final account = _account;
     if (account != null) {
       widget.session.filtersStore.save(account.id, filters);
@@ -595,7 +633,17 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           ),
         ],
       ),
-      body: _buildBody(),
+      body: _filters.communityIds.isEmpty
+          ? _buildBody()
+          : Column(
+              children: [
+                _GroupSearchBar(
+                  names: [for (final id in _filters.communityIds) _groupNames[id] ?? 'группа'],
+                  onClose: _stopGroupSearch,
+                ),
+                Expanded(child: _buildBody()),
+              ],
+            ),
     );
   }
 
@@ -716,4 +764,38 @@ class _ErrorView extends StatelessWidget {
         message: message,
         actions: [FilledButton(onPressed: onRetry, child: const Text('Повторить'))],
       );
+}
+
+/// «Поиск по группе: ⚡ Гарри Поттер ✕» above the feed.
+class _GroupSearchBar extends StatelessWidget {
+  const _GroupSearchBar({required this.names, required this.onClose});
+
+  final List<String> names;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
+        child: Row(
+          children: [
+            const Icon(Icons.groups_outlined, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '${names.length == 1 ? 'Поиск по группе' : 'Поиск по группам'}: ${names.join(', ')}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onPrimaryContainer),
+              ),
+            ),
+            IconButton(tooltip: 'Искать среди всех', icon: const Icon(Icons.close_rounded), onPressed: onClose),
+          ],
+        ),
+      ),
+    );
+  }
 }

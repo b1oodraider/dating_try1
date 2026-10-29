@@ -1,3 +1,4 @@
+import 'community.dart';
 import 'decoration.dart';
 import 'goal.dart';
 import 'facts.dart';
@@ -31,6 +32,7 @@ class PublicProfile {
     this.facts = const Facts(),
     this.common = const <String>[],
     this.sharedTags = const <String>[],
+    this.communities = const <CommunityRef>[],
   });
 
   final String id;
@@ -78,6 +80,9 @@ class PublicProfile {
   /// Feed only: codes of the communication cards I chose too (highlighted).
   final List<String> sharedTags;
 
+  /// Interest groups, the ones I am in too first ([CommunityRef.shared]).
+  final List<CommunityRef> communities;
+
   final List<String> common;
 
   Photo? get primaryPhoto {
@@ -113,6 +118,7 @@ class PublicProfile {
       facts: Facts.fromJson(json['facts']),
       common: asStringList(json['common']),
       sharedTags: asStringList(json['sharedTags']),
+      communities: asList<CommunityRef>(json['communities'], CommunityRef.fromJson),
     );
   }
 }

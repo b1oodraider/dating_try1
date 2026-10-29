@@ -7,6 +7,7 @@ import '../models/account.dart';
 import '../models/achievement.dart';
 import '../models/auth.dart';
 import '../models/city.dart';
+import '../models/community.dart';
 import '../models/discovery_filters.dart';
 import '../models/discovery_page.dart';
 import '../models/excluded_goals.dart';
@@ -305,6 +306,7 @@ class DatingApiClient {
     int? minHeight,
     int? maxHeight,
     List<String> goalCodes = const <String>[],
+    List<int> communityIds = const <int>[],
   }) async {
     final trimmedCity = city?.trim();
     final json = await _send(
@@ -323,6 +325,7 @@ class DatingApiClient {
         if (minHeight != null) 'minHeight': '$minHeight',
         if (maxHeight != null) 'maxHeight': '$maxHeight',
         if (goalCodes.isNotEmpty) 'goalCodes': goalCodes.join(','),
+        if (communityIds.isNotEmpty) 'communityIds': communityIds.join(','),
       },
     );
     return DiscoveryPage.fromJson(_expectMap(json));
@@ -343,7 +346,40 @@ class DatingApiClient {
         minHeight: filters.minHeight,
         maxHeight: filters.maxHeight,
         goalCodes: filters.goalCodes,
+        communityIds: filters.communityIds,
       );
+
+  // -------------------------------------------------------- Interest groups
+
+  /// Active groups by title and kind, the most popular first.
+  Future<List<Community>> getCommunities({String query = '', String? kind}) async {
+    final json = await _send('GET', '/communities', query: {
+      if (query.trim().isNotEmpty) 'q': query.trim(),
+      if (kind != null) 'kind': kind,
+    });
+    if (json is! List) throw _badResponse();
+    return json.whereType<Map<String, dynamic>>().map(Community.fromJson).toList();
+  }
+
+  Future<Community> getCommunity(int id) async =>
+      Community.fromJson(_expectMap(await _send('GET', '/communities/$id')));
+
+  Future<List<Community>> getMyCommunities() async {
+    final json = await _send('GET', '/me/communities');
+    if (json is! List) throw _badResponse();
+    return json.whereType<Map<String, dynamic>>().map(Community.fromJson).toList();
+  }
+
+  Future<Community> setCommunitySubscription(int id, {required bool subscribed}) async =>
+      Community.fromJson(_expectMap(await _send(subscribed ? 'PUT' : 'DELETE', '/communities/$id/subscription')));
+
+  /// A user's idea for a new group; 429 RATE_LIMITED after 5 a day.
+  Future<void> suggestCommunity(String title, {String? comment}) async {
+    await _send('POST', '/communities/suggestions', body: {
+      'title': title,
+      if (comment != null && comment.trim().isNotEmpty) 'comment': comment.trim(),
+    });
+  }
 
   // ----------------------------------------------------------- Reactions
 

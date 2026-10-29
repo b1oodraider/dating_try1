@@ -37,11 +37,12 @@ public class DiscoveryController {
             @RequestParam(required = false) Integer minHeight,
             @RequestParam(required = false) Integer maxHeight,
             @RequestParam(required = false) Set<String> goalCodes,
+            @RequestParam(required = false) Set<Long> communityIds,
             @RequestParam(required = false, defaultValue = "0") int page,
             @RequestParam(required = false, defaultValue = "20") int limit
     ) {
         DiscoveryQueryDto query = new DiscoveryQueryDto(city, minAge, maxAge, tagCodes, TagLogic.parse(tagLogic),
-                minHeight, maxHeight, goalCodes, page, limit, cityId, radiusKm);
+                minHeight, maxHeight, goalCodes, page, limit, cityId, radiusKm, communityIds);
         return ResponseEntity.ok(discoveryService.searchProfiles(user.accountId(), query));
     }
 }

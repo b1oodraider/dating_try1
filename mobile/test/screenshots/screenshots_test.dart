@@ -312,10 +312,16 @@ void main() {
     await _shot(tester, 'map_search');
   });
 
-  testWidgets('gacha', skip: skip, (tester) async {
+  testWidgets('interest groups', skip: skip, (tester) async {
     await _feed(tester);
-    await _tapTab(tester, 'Удача');
-    await _shot(tester, 'gacha');
+    await _tapTab(tester, 'Интересы');
+    await _shot(tester, 'groups');
+    await tester.tap(find.text('Гарри Поттер').last);
+    await _settle(tester);
+    await _shot(tester, 'group');
+    await tester.tap(find.text('Начать поиск'));
+    await _settle(tester);
+    await _shot(tester, 'feed_group_search');
   });
 
   testWidgets('profile', skip: skip, (tester) async {

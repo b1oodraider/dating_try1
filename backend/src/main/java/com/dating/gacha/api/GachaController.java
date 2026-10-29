@@ -10,6 +10,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,6 +19,8 @@ import java.util.List;
  * Gacha for users: banners with disclosed rates, pulls (paid with the banner's cost item, GACHA_TICKET by default),
  * history and the duplicate-shards exchange.
  */
+// Hidden for now in favour of interest groups (docs/communities.md); data and the admin API are kept.
+@ConditionalOnProperty(prefix = "app.gacha", name = "enabled", havingValue = "true")
 @RestController
 @RequestMapping("/api/v1/gacha")
 public class GachaController {

@@ -6,6 +6,7 @@ import '../../core/api/api_exception.dart';
 import '../../core/models/discovery_filters.dart';
 import '../../core/models/excluded_goals.dart';
 import '../../core/models/facts.dart';
+import '../../core/models/community.dart';
 import '../../core/models/goal.dart';
 import '../../core/models/my_profile.dart';
 import '../../core/models/wallet.dart';
@@ -49,6 +50,10 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
       'Расширенный поиск доступен с премиумом. '
       'Кого ищу, город и образ жизни работают и без него.';
 
+  /// My interest groups and the ones to search among (free; none = not by groups).
+  List<Community>? _myGroups;
+  late Set<int> _groupIds = widget.initial.communityIds.toSet();
+
   /// My profile: who I look for and where (saved there, at once).
   MyProfile? _myProfile;
   String? _myProfileError;
@@ -90,6 +95,17 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
     _loadAdvanced();
     _loadFacts();
     _loadMyProfile();
+    _loadGroups();
+  }
+
+  Future<void> _loadGroups() async {
+    try {
+      final groups = await widget.session.api.getMyCommunities();
+      if (mounted) setState(() => _myGroups = groups);
+    } catch (e) {
+      debugPrint('Failed to load my groups: $e');
+      if (mounted) setState(() => _myGroups = const <Community>[]);
+    }
   }
 
   Future<void> _loadMyProfile() async {
@@ -252,6 +268,7 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
         _goalCodes = <String>{};
       }
       if (_factOptions != null) _setFactChips(const {});
+      _groupIds = <int>{};
       _applyError = null;
     });
   }
@@ -269,6 +286,7 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
         minHeight: widget.initial.minHeight,
         maxHeight: widget.initial.maxHeight,
         goalCodes: widget.initial.goalCodes,
+        communityIds: _groupIds.toList(),
       );
     }
 
@@ -283,6 +301,7 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
       minHeight: minHeight > DiscoveryFilters.heightMin ? minHeight : null,
       maxHeight: maxHeight < DiscoveryFilters.heightMax ? maxHeight : null,
       goalCodes: _orderedCodes(_goalCodes),
+      communityIds: _groupIds.toList(),
     );
   }
 
@@ -394,6 +413,10 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
             const SizedBox(height: 24),
             const Divider(height: 1),
             const SizedBox(height: 16),
+            ..._buildGroupsSection(context),
+            const SizedBox(height: 24),
+            const Divider(height: 1),
+            const SizedBox(height: 16),
             ..._buildFactsSection(context),
             const SizedBox(height: 24),
             const Divider(height: 1),
@@ -454,6 +477,47 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
       const SizedBox(height: 4),
       tile(seekingStep),
       tile(searchAreaStep),
+    ];
+  }
+
+  /// Search among people from my interest groups (any of the chosen ones).
+  List<Widget> _buildGroupsSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final groups = _myGroups;
+    // A group searched from its page without a subscription still shows here, so it can be turned off.
+    final extra = _groupIds.where((id) => !(groups ?? const <Community>[]).any((g) => g.id == id)).toList();
+    return [
+      Text('Общие группы', style: theme.textTheme.titleMedium),
+      const SizedBox(height: 4),
+      Text('Только люди, которые тоже в выбранных группах',
+          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+      const SizedBox(height: 12),
+      if (groups == null)
+        const LinearProgressIndicator()
+      else if (groups.isEmpty && extra.isEmpty)
+        Text('Подпишитесь на группы во вкладке «Интересы»', style: theme.textTheme.bodyMedium)
+      else
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final g in groups)
+              FilterChip(
+                chipAnimationStyle: instantChip,
+                label: Text(g.display),
+                selected: _groupIds.contains(g.id),
+                onSelected: _applying
+                    ? null
+                    : (on) => setState(() => on ? _groupIds.add(g.id) : _groupIds.remove(g.id)),
+              ),
+            for (final id in extra)
+              InputChip(
+                label: Text('Группа №$id'),
+                selected: true,
+                onDeleted: () => setState(() => _groupIds.remove(id)),
+              ),
+          ],
+        ),
     ];
   }
 

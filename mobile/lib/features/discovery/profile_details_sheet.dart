@@ -94,7 +94,7 @@ Future<ProfileDetailsResult?> showProfileDetails(
                       onPressed: () => Navigator.of(sheetContext)
                           .pop(ProfileDetailsResult.like),
                       icon: const Icon(Icons.favorite),
-                      label: const Text('Нравится'),
+                      label: const FittedBox(child: Text('Нравится')),
                     ),
                   ),
                 ],

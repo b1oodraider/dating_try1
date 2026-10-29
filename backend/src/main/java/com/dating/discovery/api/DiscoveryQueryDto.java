@@ -27,7 +27,9 @@ public record DiscoveryQueryDto(
         int page,
         int limit,
         Integer cityId,
-        Integer radiusKm
+        Integer radiusKm,
+        /** Interest groups: only people subscribed to at least one of them. */
+        Set<Long> communityIds
 ) {
     public static final int DEFAULT_LIMIT = 20;
     public static final int MAX_LIMIT = 50;
@@ -40,6 +42,10 @@ public record DiscoveryQueryDto(
         city = city == null || city.isBlank() || city.trim().equalsIgnoreCase("ALL") ? null : city.trim();
         tagCodes = clean(tagCodes);
         goalCodes = clean(goalCodes);
+        communityIds = communityIds == null ? Set.of() : Set.copyOf(communityIds);
+        if (communityIds.size() > 50) {
+            throw ApiException.badRequest("VALIDATION_ERROR", "Слишком много групп в фильтре");
+        }
         if (tagCodes.size() > MAX_TAGS) {
             throw ApiException.badRequest("VALIDATION_ERROR", "Можно выбрать не более " + MAX_TAGS + " карточек в фильтре");
         }

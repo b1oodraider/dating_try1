@@ -29,7 +29,8 @@ class DiscoveryFiltersStore {
       final raw = prefs.getString(keyFor(accountId));
       if (raw == null) return DiscoveryFilters.none;
       // City and age moved to the profile («Кого и где ищу»); an old saved city would filter with no way to undo.
-      return decode(raw).onlyAdvanced();
+      final saved = decode(raw);
+      return saved.onlyAdvanced().withCommunities(saved.communityIds);
     } catch (e) {
       debugPrint('Failed to load discovery filters: $e');
       return DiscoveryFilters.none;
@@ -72,6 +73,7 @@ class DiscoveryFiltersStore {
         if (filters.minHeight != null) 'minHeight': filters.minHeight,
         if (filters.maxHeight != null) 'maxHeight': filters.maxHeight,
         if (filters.goalCodes.isNotEmpty) 'goalCodes': filters.goalCodes,
+        if (filters.communityIds.isNotEmpty) 'communityIds': filters.communityIds,
       });
 
   /// Tolerant decoding: anything malformed is dropped; unparsable JSON
@@ -108,7 +110,13 @@ class DiscoveryFiltersStore {
             .toList(growable: false)
         : const <String>[];
 
+    final rawCommunities = json['communityIds'];
+    final communityIds = rawCommunities is List
+        ? rawCommunities.whereType<int>().where((id) => id > 0).toSet().toList(growable: false)
+        : const <int>[];
+
     return DiscoveryFilters(
+      communityIds: communityIds,
       city: city is String && city.trim().isNotEmpty ? city.trim() : null,
       minAge: minAge,
       maxAge: maxAge,

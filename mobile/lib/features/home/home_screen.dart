@@ -2,18 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/api/realtime.dart';
+import '../../core/models/community.dart';
 import '../auth/session_controller.dart';
 import '../chat/chat_screen.dart';
 import '../chat/chats_controller.dart';
 import '../chat/chats_screen.dart';
 import '../discovery/discovery_screen.dart';
-import '../gacha/gacha_screen.dart';
+import '../communities/communities_screen.dart';
 import '../likes/likes_screen.dart';
 import '../profile/my_profile_screen.dart';
 import '../profile/profile_wizard.dart';
 import '../update/update_checker.dart';
 
-/// The signed-in app: feed, likes, chats, gacha, my profile. Owns the event stream
+/// The signed-in app: feed, likes, chats, interest groups, my profile. Owns the event stream
 /// and the match list for the whole session.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.session});
@@ -31,6 +32,9 @@ class _HomeScreenState extends State<HomeScreen> {
       ChatsController(widget.session.api, _realtime.events);
   final GlobalKey<NavigatorState> _chatsNavigator = GlobalKey<NavigatorState>();
   int _tab = 0;
+
+  /// «Начать поиск» on a group: handed to the feed.
+  final ValueNotifier<Community?> _groupSearch = ValueNotifier<Community?>(null);
 
   @override
   void initState() {
@@ -66,6 +70,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _chats.dispose();
+    _groupSearch.dispose();
     _realtime.close();
     super.dispose();
   }
@@ -115,6 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
             session: widget.session,
             onOpenChat: _openChat,
             onOpenProfile: () => _selectTab(4),
+            groupSearch: _groupSearch,
           ),
           LikesScreen(api: api, events: _realtime.events, onOpenChat: _openChat),
           // Own navigator: the bottom bar stays visible inside a chat.
@@ -125,8 +131,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   ChatsScreen(controller: _chats, events: _realtime.events),
             ),
           ),
-          GachaScreen(api: api),
-          MyProfileScreen(session: widget.session),
+          CommunitiesScreen(
+            api: api,
+            onSearch: (group) {
+              _selectTab(0);
+              _groupSearch.value = group;
+            },
+          ),
+          MyProfileScreen(session: widget.session, onOpenGroups: () => _selectTab(3)),
         ],
       ),
       bottomNavigationBar: ListenableBuilder(
@@ -159,9 +171,9 @@ class _HomeScreenState extends State<HomeScreen> {
               label: 'Чаты',
             ),
             const NavigationDestination(
-              icon: Icon(Icons.casino_outlined),
-              selectedIcon: Icon(Icons.casino),
-              label: 'Удача',
+              icon: Icon(Icons.groups_outlined),
+              selectedIcon: Icon(Icons.groups),
+              label: 'Интересы',
             ),
             const NavigationDestination(
               icon: Icon(Icons.person_outline),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/format.dart';
 import '../../core/models/account.dart';
+import '../../core/models/community.dart';
 import '../../core/models/facts.dart';
 import '../../core/models/my_profile.dart';
 import '../../core/models/social.dart';
@@ -41,9 +42,12 @@ const Map<String, String> _missingText = {
 /// it is with «Редактировать». Who I look for and the search city are in the filters; my location, visibility and
 /// the account are in the settings (gear).
 class MyProfileScreen extends StatefulWidget {
-  const MyProfileScreen({super.key, required this.session});
+  const MyProfileScreen({super.key, required this.session, this.onOpenGroups});
 
   final SessionController session;
+
+  /// «Изменить» under my groups: the «Интересы» tab.
+  final VoidCallback? onOpenGroups;
 
   @override
   State<MyProfileScreen> createState() => _MyProfileScreenState();
@@ -54,6 +58,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   ProfileSaver? _saver;
   Account? _account;
   List<Restriction> _restrictions = const <Restriction>[];
+  List<Community> _groups = const <Community>[];
   bool _loading = true;
   bool _busy = false;
   String? _error;
@@ -75,7 +80,8 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   Future<void> _load() async {
     try {
       final api = widget.session.api;
-      final results = await Future.wait<Object>([api.getMyProfile(), api.getMe(), api.getRestrictions()]);
+      final results = await Future.wait<Object>(
+          [api.getMyProfile(), api.getMe(), api.getRestrictions(), api.getMyCommunities()]);
       if (!mounted) return;
       final profile = results[0] as MyProfile;
       setState(() {
@@ -86,6 +92,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
         }
         _account = results[1] as Account;
         _restrictions = results[2] as List<Restriction>;
+        _groups = results[3] as List<Community>;
         _loading = false;
         _error = null;
       });
@@ -326,6 +333,11 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             title: 'Музыка',
             onEdit: () => _open('music'),
             child: profile.artists.isEmpty ? null : _chips([for (final a in profile.artists) a.name]),
+          ),
+          _Block(
+            title: 'Группы',
+            onEdit: widget.onOpenGroups,
+            child: _groups.isEmpty ? null : _chips([for (final g in _groups) g.display]),
           ),
           for (final (id, title, keys) in _factBlocks)
             _Block(

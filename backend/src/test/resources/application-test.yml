@@ -25,6 +25,8 @@ app:
     musicbrainz-enabled: false
   places:
     enabled: false
+  gacha:
+    enabled: true
   verification-gate:
     enabled: false # on in VerificationGateIntegrationTest; other tests use unverified users
   testing:

@@ -130,6 +130,10 @@ Map<String, Object?> _profile(
       'zodiac': zodiac,
       'common': common,
       'facts': facts,
+      'communities': [
+        {'id': 1, 'title': 'Гарри Поттер', 'emoji': '⚡', 'shared': true},
+        {'id': 5, 'title': 'Студия Ghibli', 'emoji': '🌱', 'shared': false},
+      ],
     };
 
 final List<Map<String, Object?>> feed = [
@@ -435,6 +439,31 @@ final List<Map<String, Object?>> banners = [
   },
 ];
 
+Map<String, Object?> _community(int id, String title, String kind, String kindLabel, String emoji, int members,
+        {bool subscribed = false, String? description}) =>
+    {
+      'id': id,
+      'title': title,
+      'kind': kind,
+      'kindLabel': kindLabel,
+      'emoji': emoji,
+      'description': description,
+      'members': members,
+      'subscribed': subscribed,
+    };
+
+final List<Map<String, Object?>> communities = [
+  _community(1, 'Гарри Поттер', 'FRANCHISE', 'Вселенные', '⚡', 1240, subscribed: true,
+      description: 'Хогвартс, факультеты и вечный спор, кто лучший — Гермиона или Снейп.'),
+  _community(2, 'Властелин колец', 'FRANCHISE', 'Вселенные', '💍', 860),
+  _community(3, 'Друзья', 'SERIES', 'Сериалы', '☕', 731, subscribed: true),
+  _community(4, 'Фильмы Нолана', 'FILM', 'Фильмы', '🌀', 512),
+  _community(5, 'Студия Ghibli', 'ANIME', 'Аниме', '🌱', 498),
+  _community(6, 'Стругацкие', 'BOOK', 'Книги', '🚀', 301),
+  _community(7, 'Настольные игры', 'GAME', 'Игры', '♟️', 287),
+  _community(8, 'Земфира', 'MUSIC', 'Музыка', '🎤', 154),
+];
+
 /// Off for the shot of the «Подтвердите анкету» banner.
 bool myProfileVerified = true;
 
@@ -548,6 +577,12 @@ http.Response respond(http.Request request) {
   if (path == '/me/profile' && get) return _json({...myProfile, 'verified': myProfileVerified});
   if (path == '/me/wallet') return _json(wallet);
   if (path == '/me/restrictions') return _json(<Object>[]);
+  if (path == '/me/communities') return _json([for (final c in communities) if (c['subscribed'] == true) c]);
+  if (path == '/communities') return _json(communities);
+  if (path.startsWith('/communities/')) {
+    final id = int.parse(path.split('/')[2]);
+    return _json(communities.firstWhere((c) => c['id'] == id));
+  }
   if (path == '/venues') return _json(<Object>[]);
   if (path == '/places/search') {
     return _json([

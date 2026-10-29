@@ -1,5 +1,7 @@
 package com.dating.social.application;
 
+import com.dating.communities.api.CommunityRefDto;
+import com.dating.communities.application.CommunityService;
 import com.dating.profiles.application.CompatibilityService;
 import com.dating.common.entitlements.FeatureAccess;
 import com.dating.profiles.api.DecorationDto;
@@ -32,10 +34,12 @@ public class PublicProfileAssembler {
     private final ProfileDecorationQuery decorationQuery;
     private final FeatureAccess featureAccess;
     private final CompatibilityService compatibilityService;
+    private final CommunityService communities;
 
     public PublicProfileAssembler(ProfileRepository profileRepository, ProfilePhotoQuery photoQuery,
                                   ProfileDecorationQuery decorationQuery, FeatureAccess featureAccess,
-                                  CompatibilityService compatibilityService) {
+                                  CompatibilityService compatibilityService, CommunityService communities) {
+        this.communities = communities;
         this.compatibilityService = compatibilityService;
         this.profileRepository = profileRepository;
         this.photoQuery = photoQuery;
@@ -60,11 +64,13 @@ public class PublicProfileAssembler {
         Map<UUID, Map<String, DecorationDto>> decorations = decorationQuery.publicDecorations(owners);
 
         Map<UUID, Integer> compatibility = compatibilityService.forViewer(viewer, profiles);
+        Map<UUID, List<CommunityRefDto>> groups = communities.of(viewer, owners);
         Map<UUID, PublicProfileDto> result = new HashMap<>();
         for (Profile p : profiles) {
             result.put(p.getAccountId(), PublicProfileDto.from(p, photos.getOrDefault(p.getId(), List.of()),
                     decorations.getOrDefault(p.getAccountId(), Map.of()), premiumOwners.contains(p.getAccountId()),
-                    compatibility.get(p.getAccountId()), null));
+                    compatibility.get(p.getAccountId()), null)
+                    .withCommunities(groups.getOrDefault(p.getAccountId(), List.of())));
         }
         return result;
     }

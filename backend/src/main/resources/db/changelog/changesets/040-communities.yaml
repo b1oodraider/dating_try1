@@ -1,0 +1,122 @@
+databaseChangeLog:
+  # Interest groups (docs/communities.md): a community around a film, book, series, game or franchise. People subscribe
+  # and can search the feed among members of the groups they pick. Groups are created by staff; users suggest new ones.
+  - changeSet:
+      id: 040-communities
+      author: dating-team
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE communities (
+                id          BIGSERIAL PRIMARY KEY,
+                slug        VARCHAR(60) NOT NULL UNIQUE,
+                title       VARCHAR(80) NOT NULL,
+                kind        VARCHAR(20) NOT NULL
+                            CHECK (kind IN ('FILM', 'SERIES', 'BOOK', 'GAME', 'ANIME', 'MUSIC', 'FRANCHISE', 'OTHER')),
+                emoji       VARCHAR(16),
+                description VARCHAR(500),
+                sort_order  INT NOT NULL DEFAULT 0,
+                active      BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                updated_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+              )
+        - sql:
+            sql: CREATE INDEX idx_communities_title_trgm ON communities USING gin (lower(title) gin_trgm_ops)
+        - sql:
+            sql: >
+              CREATE TABLE community_members (
+                account_id   UUID NOT NULL,
+                community_id BIGINT NOT NULL REFERENCES communities (id) ON DELETE CASCADE,
+                joined_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                PRIMARY KEY (account_id, community_id)
+              )
+        - sql:
+            sql: CREATE INDEX idx_community_members_community ON community_members (community_id)
+        - sql:
+            sql: >
+              CREATE TABLE community_suggestions (
+                id         UUID PRIMARY KEY,
+                account_id UUID NOT NULL,
+                title      VARCHAR(80) NOT NULL,
+                comment    VARCHAR(300),
+                status     VARCHAR(10) NOT NULL DEFAULT 'NEW' CHECK (status IN ('NEW', 'ACCEPTED', 'REJECTED')),
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                decided_at TIMESTAMP WITH TIME ZONE
+              )
+        - sql:
+            sql: CREATE INDEX idx_community_suggestions_status ON community_suggestions (status, created_at)
+        - sql:
+            sql: >
+              INSERT INTO communities (slug, title, kind, emoji, description, sort_order) VALUES
+                ('harry-potter', 'Гарри Поттер', 'FRANCHISE', '⚡', 'Хогвартс, факультеты и вечный спор, кто лучший — Гермиона или Снейп.', 0),
+                ('lord-of-the-rings', 'Властелин колец', 'FRANCHISE', '💍', 'Средиземье: книги Толкина, фильмы Джексона и «Кольца власти».', 10),
+                ('star-wars', 'Звёздные войны', 'FRANCHISE', '🌌', 'Джедаи, ситхи, «Мандалорец» и споры о новой трилогии.', 20),
+                ('marvel', 'Marvel', 'FRANCHISE', '🦸', 'Киновселенная Marvel: от «Железного человека» до последних фаз.', 30),
+                ('dc', 'DC', 'FRANCHISE', '🦇', 'Бэтмен, Супермен и вся вселенная DC.', 40),
+                ('witcher', 'Ведьмак', 'FRANCHISE', '🐺', 'Сапковский, игры CD Projekt и сериал.', 50),
+                ('game-of-thrones', 'Игра престолов', 'SERIES', '🐉', 'Вестерос, «Дом дракона» и книги Мартина.', 60),
+                ('friends', 'Друзья', 'SERIES', '☕', 'Central Perk, «Мы были в перерыве!» и бесконечные пересмотры.', 70),
+                ('the-office', 'Офис', 'SERIES', '📎', 'Дандер Миффлин, Майкл Скотт и неловкие паузы.', 80),
+                ('breaking-bad', 'Во все тяжкие', 'SERIES', '🧪', 'Уолтер Уайт, Джесси и «Лучше звоните Солу».', 90),
+                ('sherlock', 'Шерлок', 'SERIES', '🔍', 'Шерлок во всех версиях: от Ливанова до Камбербэтча.', 100),
+                ('stranger-things', 'Очень странные дела', 'SERIES', '🚲', 'Хокинс, Изнанка и музыка 80-х.', 110),
+                ('the-big-bang-theory', 'Теория большого взрыва', 'SERIES', '🔬', 'Шелдон, Леонард и «Бугагашенька».', 120),
+                ('doctor-who', 'Доктор Кто', 'SERIES', '🚪', 'ТАРДИС, регенерации и путешествия во времени.', 130),
+                ('black-mirror', 'Чёрное зеркало', 'SERIES', '📱', 'Технологии и их тёмная сторона — серия за серией.', 140),
+                ('kitchen-ru', 'Кухня', 'SERIES', '🍳', 'Ресторан «Claude Monet», Барин и Сеня.', 150),
+                ('interns', 'Интерны', 'SERIES', '🩺', 'Быков и интерны — классика российского ситкома.', 160),
+                ('nolan', 'Фильмы Нолана', 'FILM', '🌀', '«Начало», «Интерстеллар», «Оппенгеймер» и спор о финале «Престижа».', 170),
+                ('tarantino', 'Фильмы Тарантино', 'FILM', '🎬', 'Длинные диалоги, саундтреки и «Криминальное чтиво».', 180),
+                ('studio-ghibli', 'Студия Ghibli', 'ANIME', '🌱', 'Миядзаки: «Унесённые призраками», «Тоторо», «Ходячий замок».', 190),
+                ('naruto', 'Наруто', 'ANIME', '🍥', 'Деревня Листа, шиноби и путь ниндзя.', 200),
+                ('attack-on-titan', 'Атака титанов', 'ANIME', '🧱', 'Стены, титаны и один из самых обсуждаемых финалов.', 210),
+                ('one-piece', 'Ван-Пис', 'ANIME', '🏴‍☠️', 'Луффи, Соломенные шляпы и поиски сокровища.', 220),
+                ('jojo', 'ДжоДжо', 'ANIME', '⭐', 'Невероятные приключения ДжоДжо и стенды.', 230),
+                ('balabanov', 'Фильмы Балабанова', 'FILM', '🎞️', '«Брат», «Брат 2», «Груз 200» — разговоры о русском кино.', 240),
+                ('soviet-comedies', 'Советские комедии', 'FILM', '😂', 'Гайдай, Рязанов, Данелия: «Иван Васильевич» и «Ирония судьбы».', 250),
+                ('pixar', 'Pixar и Disney', 'FILM', '🎈', '«Вверх», «Тайна Коко», «Головоломка» и мультики, над которыми плачут взрослые.', 260),
+                ('horror-fans', 'Хорроры', 'FILM', '👻', 'От «Сияния» до A24: ужасы, которые обсуждают неделями.', 270),
+                ('dune', 'Дюна', 'FRANCHISE', '🏜️', 'Арракис, пряность и фильмы Вильнёва.', 280),
+                ('stephen-king', 'Стивен Кинг', 'BOOK', '🎈', '«Оно», «Сияние», «Тёмная башня» и всё, что под кроватью.', 290),
+                ('strugatsky', 'Стругацкие', 'BOOK', '🚀', '«Пикник на обочине», «Трудно быть богом» и мир Полудня.', 300),
+                ('bulgakov', 'Булгаков', 'BOOK', '🐈‍⬛', '«Мастер и Маргарита», «Собачье сердце» и Воланд.', 310),
+                ('dostoevsky', 'Достоевский', 'BOOK', '🪓', '«Преступление и наказание», «Идиот» и вечные вопросы.', 320),
+                ('pelevin', 'Пелевин', 'BOOK', '🦊', 'От «Generation П» до новых романов — каждую осень.', 330),
+                ('agatha-christie', 'Агата Кристи', 'BOOK', '🕵️', 'Пуаро, мисс Марпл и «Десять негритят».', 340),
+                ('sapkowski', 'Фэнтези', 'BOOK', '🧙', 'Толкин, Сандерсон, Ротфусс — большие миры и толстые книги.', 350),
+                ('sci-fi-books', 'Научная фантастика', 'BOOK', '👽', 'Азимов, Лем, «Задача трёх тел» и далёкий космос.', 360),
+                ('nonfiction', 'Нон-фикшн', 'BOOK', '🧠', 'Книги про мозг, деньги и историю человечества.', 370),
+                ('manga', 'Манга', 'BOOK', '📖', 'Читаем мангу, обсуждаем главы и экранизации.', 380),
+                ('poetry', 'Поэзия', 'BOOK', '🪶', 'От Пушкина и Бродского до современных поэтов.', 390),
+                ('dota', 'Dota 2', 'GAME', '🛡️', 'Мид, лейн, The International и вечный поиск пятого.', 400),
+                ('cs', 'Counter-Strike', 'GAME', '🎯', 'Матчи, мейджоры и «раш Б».', 410),
+                ('minecraft', 'Minecraft', 'GAME', '⛏️', 'Строим замки, выживаем и дружим с криперами.', 420),
+                ('genshin', 'Genshin Impact', 'GAME', '🗡️', 'Тейват, крутки и любимые персонажи.', 430),
+                ('baldurs-gate', 'Baldur''s Gate 3', 'GAME', '🎲', 'Астарион, Карлах и сотни часов кампании.', 440),
+                ('elden-ring', 'Elden Ring и соулс-игры', 'GAME', '🔥', 'Умираем красиво и не сдаёмся.', 450),
+                ('mass-effect', 'Mass Effect', 'GAME', '🛸', 'Шепард, Гаррус и «Нормандия».', 460),
+                ('the-sims', 'The Sims', 'GAME', '🏠', 'Строим дома, придумываем истории и убираем лестницы из бассейна.', 470),
+                ('board-games', 'Настольные игры', 'GAME', '♟️', 'Каркассон, «Кодовые имена», евроигры и вечера с друзьями.', 480),
+                ('dnd', 'Dungeons & Dragons', 'GAME', '🐲', 'Ролевые кампании, мастера и любимые персонажи.', 490),
+                ('pokemon', 'Покемоны', 'FRANCHISE', '⚡', 'Пикачу, карточки, игры и Pokémon GO.', 500),
+                ('zemfira', 'Земфира', 'MUSIC', '🎤', 'Песни, концерты и любимые альбомы.', 510),
+                ('kino-group', 'Кино и Цой', 'MUSIC', '🎸', '«Группа крови», «Звезда по имени Солнце» и «Цой жив».', 520),
+                ('queen', 'Queen', 'MUSIC', '👑', 'Фредди, «Богемская рапсодия» и стадионные гимны.', 530),
+                ('the-beatles', 'The Beatles', 'MUSIC', '🪲', 'Ливерпульская четвёрка и всё, что после неё.', 540),
+                ('taylor-swift', 'Тейлор Свифт', 'MUSIC', '💌', 'Эры, альбомы и пасхалки в клипах.', 550),
+                ('k-pop', 'K-pop', 'MUSIC', '💜', 'BTS, BLACKPINK, Stray Kids и камбэки.', 560),
+                ('russian-rock', 'Русский рок', 'MUSIC', '🤘', 'ДДТ, Сплин, Би-2, Король и Шут.', 570),
+                ('rap-ru', 'Русский рэп', 'MUSIC', '🎧', 'Баттлы, альбомы и разборы текстов.', 580),
+                ('jazz-club', 'Джаз', 'MUSIC', '🎷', 'Джем-сейшены, старые пластинки и живые концерты.', 590),
+                ('classic-music', 'Классическая музыка', 'MUSIC', '🎻', 'Филармония, опера и любимые композиторы.', 600),
+                ('eurovision', 'Евровидение', 'OTHER', '🎶', 'Смотрим, болеем и спорим о баллах.', 610),
+                ('f1', 'Формула-1', 'OTHER', '🏎️', 'Гран-при, пит-стопы и «Драйв выживания».', 620),
+                ('football-fans', 'Футбольные болельщики', 'OTHER', '⚽', 'РПЛ, Лига чемпионов и матчи в баре.', 630),
+                ('hockey-fans', 'Хоккей', 'OTHER', '🏒', 'КХЛ, НХЛ и «Шайбу! Шайбу!».', 640),
+                ('kvn', 'КВН', 'OTHER', '😄', 'Высшая лига, любимые команды и шутки, которые помнят годами.', 650),
+                ('what-where-when', 'Что? Где? Когда?', 'OTHER', '🦉', 'Знатоки, сова и минута на размышление.', 660),
+                ('true-crime', 'Тру-крайм', 'OTHER', '🔎', 'Подкасты и документалки о реальных расследованиях.', 670),
+                ('space-fans', 'Космос', 'OTHER', '🪐', 'Запуски ракет, телескоп «Уэбб» и новости о Марсе.', 680)
+      rollback:
+        - sql:
+            sql: DROP TABLE community_suggestions; DROP TABLE community_members; DROP TABLE communities

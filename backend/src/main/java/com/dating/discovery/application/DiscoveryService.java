@@ -19,6 +19,9 @@ import com.dating.profiles.application.ProfileDecorationQuery;
 import com.dating.profiles.application.ProfilePhotoQuery;
 import com.dating.common.errors.ApiException;
 import com.dating.profiles.domain.CommunicationTag;
+import com.dating.communities.api.CommunityRefDto;
+import com.dating.communities.application.CommunityService;
+import com.dating.communities.domain.CommunityMember;
 import com.dating.profiles.domain.Gender;
 import com.dating.profiles.domain.Profile;
 import com.dating.profiles.domain.Seeking;
@@ -68,13 +71,15 @@ public class DiscoveryService {
     private final CompatibilityService compatibilityService;
     private final CityRepository cities;
     private final VerificationGateProperties gate;
+    private final CommunityService communities;
 
     public DiscoveryService(ProfileRepository profileRepository, ProfilePhotoQuery photoQuery,
                             ExclusionWordsService exclusionWords, ProfileDecorationQuery decorationQuery,
                             AccountService accountService, ExcludedGoalsService excludedGoals,
                             FeatureAccess featureAccess, DiscoveryBoosts boosts, BehaviorService behavior,
                             CompatibilityService compatibilityService, CityRepository cities,
-                            VerificationGateProperties gate) {
+                            VerificationGateProperties gate, CommunityService communities) {
+        this.communities = communities;
         this.gate = gate;
         this.cities = cities;
         this.behavior = behavior;
@@ -155,6 +160,9 @@ public class DiscoveryService {
         if (!query.goalCodes().isEmpty()) {
             spec = spec.and(hasAnyGoal(query.goalCodes()));
         }
+        if (!query.communityIds().isEmpty()) {
+            spec = spec.and(inAnyCommunity(query.communityIds()));
+        }
         // Saved hard filters: kept when premium ends, applied only while the feature is available.
         Set<String> goalsToExclude = excludedGoals.activeGoalsOf(callerAccountId);
         if (!goalsToExclude.isEmpty()) {
@@ -176,13 +184,16 @@ public class DiscoveryService {
                 decorationQuery.publicDecorations(page.getContent().stream().map(Profile::getAccountId).toList());
 
         Map<UUID, Integer> compatibility = compatibilityService.forViewer(callerAccountId, page.getContent());
+        Map<UUID, List<CommunityRefDto>> groups = communities.of(callerAccountId, owners);
         List<PublicProfileDto> items = page.getContent().stream()
                 .map(p -> PublicProfileDto.from(p, photos.getOrDefault(p.getId(), List.of()),
                         decorations.getOrDefault(p.getAccountId(), Map.of()), premiumOwners.contains(p.getAccountId()),
                         compatibility.get(p.getAccountId()),
                         boostBadges.contains(p.getAccountId()) ? Boolean.TRUE : null)
                         .withDistanceKm(sharedDistanceKm(viewer, p))
-                        .withCommon(commonWith(viewer, p), sharedTagCodes(viewer, p)))
+                        .withCommon(commonWith(viewer, p, groups.getOrDefault(p.getAccountId(), List.of())),
+                                sharedTagCodes(viewer, p))
+                        .withCommunities(groups.getOrDefault(p.getAccountId(), List.of())))
                 .toList();
 
         return new DiscoveryPageResponseDto(items, query.page(), query.limit(),
@@ -288,8 +299,10 @@ public class DiscoveryService {
     }
 
     /** Up to two things both people chose: interests first, then artists, then communication cards. */
-    static List<String> commonWith(Profile viewer, Profile candidate) {
+    /** Up to 2 things both share: interest groups first (the most telling), then interests, artists, cards. */
+    static List<String> commonWith(Profile viewer, Profile candidate, List<CommunityRefDto> candidateGroups) {
         List<String> common = new ArrayList<>();
+        candidateGroups.stream().filter(CommunityRefDto::shared).map(CommunityRefDto::title).forEach(common::add);
         Set<String> myInterests = viewer.getInterests().stream().map(Interest::getCode).collect(Collectors.toSet());
         candidate.getInterests().stream().filter(i -> i.isActive() && myInterests.contains(i.getCode()))
                 .map(Interest::getLabel).sorted().forEach(common::add);
@@ -337,6 +350,18 @@ public class DiscoveryService {
             spec = spec.and(exclusion.visibleTo(viewerAccountId));
         }
         return spec;
+    }
+
+    /** Subscribed to at least one of these interest groups. */
+    private static Specification<Profile> inAnyCommunity(Set<Long> communityIds) {
+        return (root, q, cb) -> {
+            Subquery<Long> member = q.subquery(Long.class);
+            Root<CommunityMember> m = member.from(CommunityMember.class);
+            member.select(m.get("id").get("communityId")).where(
+                    cb.equal(m.get("id").get("accountId"), root.get("accountId")),
+                    m.get("id").get("communityId").in(communityIds));
+            return cb.exists(member);
+        };
     }
 
     /** @param goalCodes null = any goal at all */
