@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_exception.dart';
 import '../../core/format.dart';
 import '../../core/models/account.dart';
+import '../../core/models/facts.dart';
 import '../../core/models/my_profile.dart';
 import '../../core/models/social.dart';
 import '../../core/theme/app_theme.dart';
@@ -10,14 +11,14 @@ import '../auth/session_controller.dart';
 import '../collection/collection_screen.dart';
 import '../discovery/profile_card.dart';
 import '../discovery/profile_preview.dart';
-import '../safety/verification_screen.dart';
+import '../safety/verification_intro_screen.dart';
 import '../support/support_screen.dart';
 import '../testing/test_panel_screen.dart';
-import '../update/update_checker.dart';
+import 'profile_saver.dart';
 import 'profile_section_screen.dart';
-import '../premium/purchase_screen.dart';
 import 'profile_steps.dart';
 import 'profile_wizard.dart';
+import 'settings_screen.dart';
 
 const Map<String, String> _restrictionText = {
   'LIKES': 'Лайки временно недоступны',
@@ -31,13 +32,14 @@ const Map<String, String> _missingText = {
   'displayName': 'имя',
   'birthDate': 'дата рождения',
   'gender': 'пол',
-  'seeking': 'кого ищете',
-  'city': 'город',
+  'seeking': 'кого ищете (в фильтрах)',
+  'city': 'город поиска (в фильтрах)',
   'photos': 'фото',
 };
 
-/// My profile: an overview of sections (each opens its own screen and saves as you go), visibility switches,
-/// «как видят другие», «заполнить заново», and the rest of the app (verification, collection, help, updates).
+/// My profile as it reads: photos, «О себе» right below (saved as you type), goals, then each section shown as
+/// it is with «Редактировать». Who I look for and the search city are in the filters; my location, visibility and
+/// the account are in the settings (gear).
 class MyProfileScreen extends StatefulWidget {
   const MyProfileScreen({super.key, required this.session});
 
@@ -48,12 +50,15 @@ class MyProfileScreen extends StatefulWidget {
 }
 
 class _MyProfileScreenState extends State<MyProfileScreen> {
-  MyProfile? _profile;
+  /// Holds the latest profile and saves «О себе» typed right here.
+  ProfileSaver? _saver;
   Account? _account;
   List<Restriction> _restrictions = const <Restriction>[];
   bool _loading = true;
   bool _busy = false;
   String? _error;
+
+  MyProfile? get _profile => _saver?.profile;
 
   @override
   void initState() {
@@ -61,10 +66,10 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     _load();
   }
 
-  /// Premium page on top; after a purchase the profile reloads with premium on.
-  Future<void> _buyPremium() async {
-    final bought = await openPurchase(context, api: widget.session.api, kind: PurchaseKind.premium);
-    if (bought && mounted) _load();
+  @override
+  void dispose() {
+    _saver?.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -72,8 +77,13 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       final api = widget.session.api;
       final results = await Future.wait<Object>([api.getMyProfile(), api.getMe(), api.getRestrictions()]);
       if (!mounted) return;
+      final profile = results[0] as MyProfile;
       setState(() {
-        _profile = results[0] as MyProfile;
+        if (_saver == null) {
+          _saver = ProfileSaver(api, profile, onError: _snack)..addListener(_onSaved);
+        } else {
+          _saver!.replace(profile);
+        }
         _account = results[1] as Account;
         _restrictions = results[2] as List<Restriction>;
         _loading = false;
@@ -88,48 +98,60 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     }
   }
 
-  void _snack(String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  void _onSaved() {
+    if (mounted) setState(() {});
+  }
+
+  void _snack(String text) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
 
   Future<void> _openSection(ProfileStep step) async {
     final profile = _profile;
     if (profile == null) return;
+    await _saver!.flush();
+    if (!mounted) return;
     final updated = await Navigator.of(context).push<MyProfile>(MaterialPageRoute<MyProfile>(
-      builder: (_) => ProfileSectionScreen(api: widget.session.api, step: step, profile: profile),
+      builder: (_) => ProfileSectionScreen(api: widget.session.api, step: step, profile: _profile!),
     ));
     if (!mounted) return;
-    if (updated != null) setState(() => _profile = updated);
+    if (updated != null) _saver!.replace(updated);
     _load();
   }
+
+  Future<void> _open(String stepId) => _openSection(profileSteps.firstWhere((s) => s.id == stepId));
 
   Future<void> _refill() async {
     final profile = _profile;
     if (profile == null) return;
-    final ok = await _confirm(
-      'Заполнить анкету заново?',
-      'Пройдёте все шаги с чистого листа. На каждом шаге можно оставить текущее. Фото и прежние данные не '
-          'теряются.',
-      'Начать',
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Заполнить анкету заново?'),
+        content: const Text('Пройдёте все шаги с чистого листа. На каждом шаге можно оставить текущее. Фото и '
+            'прежние данные не теряются.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(c).pop(false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.of(c).pop(true), child: const Text('Начать')),
+        ],
+      ),
     );
-    if (!ok || !mounted) return;
+    if (ok != true || !mounted) return;
     await Navigator.of(context).push<bool>(MaterialPageRoute<bool>(
       builder: (_) => ProfileWizardScreen(api: widget.session.api, profile: profile, mode: WizardMode.refill),
     ));
     if (mounted) _load();
   }
 
-  Future<void> _togglePublished() async {
-    final profile = _profile;
-    if (profile == null) return;
+  Future<void> _publish() async {
     setState(() => _busy = true);
     try {
-      final updated = profile.isPublished
-          ? await widget.session.api.hideProfile()
-          : await widget.session.api.publishProfile();
+      final updated = await widget.session.api.publishProfile();
       if (!mounted) return;
-      setState(() => _profile = updated);
-      _snack(updated.isPublished ? 'Анкета опубликована — её видят в ленте' : 'Анкета скрыта');
+      _saver!.replace(updated);
+      _snack('Анкета опубликована — её видят в ленте');
     } catch (e) {
-      if (mounted) _snack(describeError(e));
+      _snack(describeError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -149,55 +171,9 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
     return gains;
   }
 
-  /// Visibility switches are saved at once.
-  Future<void> _setVisibility({bool? invisible, bool? showPremiumBadge, bool? showZodiac}) async {
-    setState(() => _busy = true);
-    try {
-      final updated = await widget.session.api
-          .updateMyProfile(invisible: invisible, showPremiumBadge: showPremiumBadge, showZodiac: showZodiac);
-      if (mounted) setState(() => _profile = updated);
-    } catch (e) {
-      if (mounted) _snack(describeError(e));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   Future<void> _push(Widget screen) async {
     await Navigator.of(context).push<void>(MaterialPageRoute<void>(builder: (_) => screen));
     if (mounted) _load();
-  }
-
-  Future<bool> _confirm(String title, String text, String action) async {
-    final answer = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text(title),
-        content: Text(text),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(c).pop(false), child: const Text('Отмена')),
-          FilledButton(onPressed: () => Navigator.of(c).pop(true), child: Text(action)),
-        ],
-      ),
-    );
-    return answer == true;
-  }
-
-  Future<void> _logout() async {
-    if (await _confirm('Выйти из аккаунта?', 'Войти снова можно по номеру телефона.', 'Выйти')) {
-      await widget.session.signOut();
-    }
-  }
-
-  Future<void> _deleteAccount() async {
-    final ok = await _confirm('Удалить аккаунт?',
-        'Анкета, фото, пары и переписки будут удалены без возможности восстановления.', 'Удалить');
-    if (!ok) return;
-    try {
-      await widget.session.deleteAccount();
-    } catch (e) {
-      if (mounted) _snack(describeError(e));
-    }
   }
 
   @override
@@ -210,6 +186,13 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
               icon: const Icon(Icons.help_outline_rounded),
               onPressed: () => _push(SupportScreen(api: widget.session.api)),
             ),
+            IconButton(
+              tooltip: 'Настройки',
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: _profile == null
+                  ? null
+                  : () => _push(SettingsScreen(session: widget.session, profile: _profile!, account: _account)),
+            ),
           ],
         ),
         body: _buildBody(),
@@ -218,7 +201,8 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
   Widget _buildBody() {
     if (_loading) return const Center(child: CircularProgressIndicator());
     final profile = _profile;
-    if (profile == null) {
+    final saver = _saver;
+    if (profile == null || saver == null) {
       return Center(
         child: TextButton(
           onPressed: _load,
@@ -234,6 +218,10 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(Gaps.md, Gaps.sm, Gaps.md, Gaps.xl),
         children: [
+          if (!profile.verified) ...[
+            _VerifyBanner(gain: gains['verified'], onTap: () => _push(VerificationIntroScreen(api: api))),
+            const SizedBox(height: Gaps.md),
+          ],
           for (final r in _restrictions)
             Card(
               color: theme.colorScheme.errorContainer,
@@ -247,7 +235,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             profile: profile,
             photoUrl: api.resolveMediaUrl,
             missing: profile.missingForPublish.map((f) => _missingText[f] ?? f).toList(),
-            onPublish: _busy ? null : _togglePublished,
+            onPublish: _busy ? null : _publish,
             onPreview: () => showMyProfileAsOthers(context, api: api, profile: profile),
             onRefill: _refill,
           ),
@@ -256,100 +244,127 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
             profile: profile,
             gain: gains['photos'],
             photoUrl: api.resolveMediaUrl,
-            onOpen: () => _openSection(profileSteps.firstWhere((s) => s.id == 'photos')),
+            onOpen: () => _open('photos'),
           ),
           const SizedBox(height: Gaps.lg),
-          const _Section('Анкета'),
-          Card(
-            clipBehavior: Clip.antiAlias,
+          Row(
+            children: [
+              const Expanded(child: _Section('О себе')),
+              if (gains['about'] case final gain?) _GainText(gain),
+              Padding(
+                padding: const EdgeInsets.only(left: Gaps.sm, bottom: Gaps.sm),
+                child: Text(saver.statusText,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                        color: saver.state == SaveState.failed
+                            ? theme.colorScheme.error
+                            : theme.colorScheme.onSurfaceVariant)),
+              ),
+            ],
+          ),
+          AboutEditor(inline: true, StepContext(
+            api: api,
+            profile: profile,
+            onChanged: saver.onChanged,
+            onProfile: saver.replace,
+            errors: saver.errors,
+          )),
+          const SizedBox(height: Gaps.md),
+          _Block(
+            title: 'Цели знакомства',
+            gain: gains['goals'],
+            onEdit: () => _open('goals'),
+            child: profile.goals.isEmpty ? null : _chips([for (final g in profile.goals) g.displayLabel]),
+          ),
+          _Block(
+            title: 'Основное',
+            gain: gains['name'] ?? gains['identity'],
+            onEdit: null,
             child: Column(
               children: [
-                for (final step in profileSteps)
-                  if (step.id != 'photos')
+                for (final id in const ['name', 'identity'])
+                  if (profileSteps.firstWhere((s) => s.id == id) case final step)
                     ListTile(
+                      contentPadding: EdgeInsets.zero,
                       leading: Icon(step.icon),
                       title: Text(step.title),
-                      subtitle: Text(
-                        step.hasValue(profile) ? step.summary(profile) : 'Не заполнено',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: step.hasValue(profile) || !step.requiredToPublish
-                            ? null
-                            : TextStyle(color: theme.colorScheme.error),
-                      ),
-                      trailing: _Gain(gains[step.id]),
+                      subtitle: Text(step.hasValue(profile) ? step.summary(profile) : 'Не заполнено',
+                          style: step.hasValue(profile) ? null : TextStyle(color: theme.colorScheme.error)),
+                      trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () => _openSection(step),
                     ),
               ],
             ),
           ),
-          const SizedBox(height: Gaps.md),
-          const _Section('Видимость'),
-          Card(
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              children: [
-                if (profile.isPublished || profile.publicationStatus == 'HIDDEN')
-                  SwitchListTile(
-                    title: const Text('Анкета в ленте'),
-                    subtitle: Text(profile.isPublished ? 'Её видят другие' : 'Скрыта: её никто не видит'),
-                    value: profile.isPublished,
-                    onChanged: _busy ? null : (_) => _togglePublished(),
-                  ),
-                SwitchListTile(
-                  title: const Text('Показывать знак зодиака'),
-                  subtitle: Text(profile.zodiac ?? 'Укажите дату рождения'),
-                  value: profile.showZodiac,
-                  onChanged: _busy || profile.zodiac == null ? null : (on) => _setVisibility(showZodiac: on),
-                ),
-                SwitchListTile(
-                  title: const Text('Невидимка'),
-                  subtitle: Text(
-                      profile.premium ? 'Анкету видят только те, кого вы лайкнули' : 'Доступно с премиумом'),
-                  value: profile.invisible && profile.premium,
-                  onChanged: _busy
-                      ? null
-                      : profile.premium
-                          ? (on) => _setVisibility(invisible: on)
-                          : (_) => _buyPremium(),
-                ),
-                if (profile.premium)
-                  SwitchListTile(
-                    title: const Text('Показывать значок премиума'),
-                    value: profile.showPremiumBadge,
-                    onChanged: _busy ? null : (on) => _setVisibility(showPremiumBadge: on),
-                  ),
-              ],
-            ),
+          _Block(
+            title: 'Карточки общения',
+            gain: gains['tags'],
+            onEdit: () => _open('tags'),
+            child: profile.tags.isEmpty ? null : _chips([for (final t in profile.tags) t.label]),
           ),
-          const SizedBox(height: Gaps.md),
-          const _Section('Ещё'),
+          _Block(
+            title: 'Увлечения',
+            onEdit: () => _open('interests'),
+            child: profile.interests.isEmpty
+                ? null
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _chips([for (final i in profile.interests) i.display]),
+                      for (final i in profile.interests)
+                        if (i.comment case final comment?)
+                          Padding(
+                            padding: const EdgeInsets.only(top: Gaps.sm),
+                            child: Text.rich(TextSpan(children: [
+                              TextSpan(text: '${i.display} — ', style: const TextStyle(fontWeight: FontWeight.w600)),
+                              TextSpan(text: comment),
+                            ])),
+                          ),
+                    ],
+                  ),
+          ),
+          _Block(
+            title: 'Музыка',
+            onEdit: () => _open('music'),
+            child: profile.artists.isEmpty ? null : _chips([for (final a in profile.artists) a.name]),
+          ),
+          for (final (id, title, keys) in _factBlocks)
+            _Block(
+              title: title,
+              onEdit: () => _open(id),
+              child: keys.any(profile.facts.values.containsKey)
+                  ? FutureBuilder(
+                      future: Dictionaries.options(api),
+                      builder: (context, snapshot) => Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (snapshot.data case final options?)
+                            for (final key in keys)
+                              if (options.describe(profile.facts, key) case final text?)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: Gaps.xs),
+                                  child: Text.rich(TextSpan(children: [
+                                    TextSpan(
+                                        text: '${Facts.titles[key] ?? key}: ',
+                                        style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
+                                    TextSpan(text: text),
+                                  ])),
+                                ),
+                        ],
+                      ),
+                    )
+                  : null,
+            ),
+          const SizedBox(height: Gaps.sm),
           Card(
             clipBehavior: Clip.antiAlias,
             child: Column(
               children: [
-                ListTile(
-                  leading: Icon(profile.verified ? Icons.verified : Icons.camera_front_outlined,
-                      color: profile.verified ? Brand.verified : null),
-                  title: Text(profile.verified ? 'Селфи проверено' : 'Пройти проверку селфи'),
-                  subtitle: const Text('Значок «Проверен» и показ анкеты в ленте'),
-                  trailing: profile.verified ? null : _Gain(gains['verified']),
-                  onTap: profile.verified ? null : () => _push(VerificationScreen(api: api)),
-                ),
                 ListTile(
                   leading: const Icon(Icons.collections_bookmark_outlined),
                   title: const Text('Коллекция и премиум'),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => _push(CollectionScreen(session: widget.session)),
                 ),
-                ListTile(
-                  leading: const Icon(Icons.support_agent_rounded),
-                  title: const Text('Помощь и поддержка'),
-                  subtitle: const Text('Частые вопросы и обращения'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => _push(SupportScreen(api: api)),
-                ),
-                CheckForUpdatesTile(api: api),
                 if (_account?.testAccount ?? false)
                   ListTile(
                     leading: const Icon(Icons.science_outlined),
@@ -360,25 +375,105 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
               ],
             ),
           ),
-          const SizedBox(height: Gaps.md),
-          Card(
-            clipBehavior: Clip.antiAlias,
-            child: Column(
+        ],
+      ),
+    );
+  }
+
+  static Widget _chips(List<String> labels) => Wrap(
+        spacing: Gaps.sm,
+        runSpacing: Gaps.sm,
+        children: [for (final l in labels) Chip(label: Text(l), visualDensity: VisualDensity.compact)],
+      );
+}
+
+const List<(String, String, List<String>)> _factBlocks = [
+  ('lifestyle', 'Образ жизни', ['kidsHas', 'kidsPlans', 'smoking', 'alcohol', 'sport', 'pets']),
+  ('work', 'Работа и учёба', ['profession', 'educationLevel', 'university', 'languages']),
+];
+
+/// «Подтвердите анкету»: at the very top until the selfie is verified; opens what verification gives.
+class _VerifyBanner extends StatelessWidget {
+  const _VerifyBanner({required this.onTap, this.gain});
+
+  final VoidCallback onTap;
+  final int? gain;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: Brand.verified.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(Radii.card),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(Radii.card),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(Gaps.md),
+          child: Row(
+            children: [
+              const Icon(Icons.verified_outlined, color: Brand.verified, size: 32),
+              const SizedBox(width: Gaps.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Подтвердите анкету', style: theme.textTheme.titleSmall),
+                    const SizedBox(height: 2),
+                    Text('Селфи с жестом откроет все возможности приложения',
+                        style: theme.textTheme.bodyMedium),
+                  ],
+                ),
+              ),
+              if (gain != null) _GainText(gain!),
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A section shown as it is, with «Редактировать» below (null [onEdit]: the content edits itself).
+class _Block extends StatelessWidget {
+  const _Block({required this.title, required this.onEdit, this.child, this.gain});
+
+  final String title;
+  final Widget? child;
+  final VoidCallback? onEdit;
+  final int? gain;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: const EdgeInsets.only(bottom: Gaps.md),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(Gaps.md, Gaps.md, Gaps.md, Gaps.xs),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                ListTile(
-                  leading: const Icon(Icons.logout_rounded),
-                  title: const Text('Выйти'),
-                  onTap: _logout,
-                ),
-                ListTile(
-                  leading: Icon(Icons.delete_outline_rounded, color: theme.colorScheme.error),
-                  title: Text('Удалить аккаунт', style: TextStyle(color: theme.colorScheme.error)),
-                  onTap: _deleteAccount,
-                ),
+                Expanded(child: Text(title, style: theme.textTheme.titleMedium)),
+                if (gain != null) _GainText(gain!),
               ],
             ),
-          ),
-        ],
+            const SizedBox(height: Gaps.sm),
+            child ??
+                Text('Не заполнено',
+                    style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            if (onEdit != null)
+              TextButton.icon(
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: const Text('Редактировать'),
+              )
+            else
+              const SizedBox(height: Gaps.sm),
+          ],
+        ),
       ),
     );
   }
@@ -493,7 +588,7 @@ class _Header extends StatelessWidget {
   final String Function(String url) photoUrl;
   final List<String> missing;
 
-  /// Publishing is the header's one job while the profile is not in the feed; hiding lives in «Видимость».
+  /// Publishing is the header's one job while the profile is not in the feed; hiding is in the settings.
   final VoidCallback? onPublish;
   final VoidCallback onPreview;
   final VoidCallback onRefill;
@@ -612,23 +707,18 @@ class _Header extends StatelessWidget {
   }
 }
 
-/// «+5%» before the chevron: what filling this section adds to completeness.
-class _Gain extends StatelessWidget {
-  const _Gain(this.percent);
+/// «+5%»: what filling this section adds to completeness.
+class _GainText extends StatelessWidget {
+  const _GainText(this.percent);
 
-  final int? percent;
+  final int percent;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (percent != null)
-          Text('+$percent%',
-              style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.primary)),
-        const Icon(Icons.chevron_right_rounded),
-      ],
+    return Padding(
+      padding: const EdgeInsets.only(left: Gaps.sm),
+      child: Text('+$percent%', style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.primary)),
     );
   }
 }

@@ -22,7 +22,9 @@ class InterestsMusicIntegrationTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$[0].code").value("SPORT"))
                 .andExpect(jsonPath("$[0].label").value("Спорт"))
                 .andExpect(jsonPath("$[0].items[0].code").value("RUNNING"))
-                .andExpect(jsonPath("$[0].items[0].categoryLabel").value("Спорт"));
+                .andExpect(jsonPath("$[0].items[0].categoryLabel").value("Спорт"))
+                .andExpect(jsonPath("$[0].items[0].emoji").value("🏃"))
+                .andExpect(jsonPath("$[*].items[*].emoji", everyItem(notNullValue())));
     }
 
     @Test

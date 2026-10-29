@@ -7,6 +7,7 @@ class Interest {
     required this.label,
     required this.category,
     required this.categoryLabel,
+    this.emoji,
     this.comment,
   });
 
@@ -14,6 +15,12 @@ class Interest {
   final String label;
   final String category;
   final String categoryLabel;
+
+  /// Shown before the label (☕); null when the interest has none.
+  final String? emoji;
+
+  /// «☕ Кофе»: how the app names an interest.
+  String get display => emoji == null ? label : '$emoji $label';
 
   /// The owner's comment on it («латте, капучино»); null in the dictionary and when there is none.
   final String? comment;
@@ -23,6 +30,7 @@ class Interest {
         label: asString(json['label']),
         category: asString(json['category']),
         categoryLabel: asString(json['categoryLabel']),
+        emoji: asStringOrNull(json['emoji']),
         comment: asStringOrNull(json['comment']),
       );
 }

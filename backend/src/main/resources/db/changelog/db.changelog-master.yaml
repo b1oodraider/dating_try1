@@ -75,3 +75,5 @@ databaseChangeLog:
       file: db/changelog/changesets/037-chat-replies.yaml
   - include:
       file: db/changelog/changesets/038-interest-comments.yaml
+  - include:
+      file: db/changelog/changesets/039-interest-emoji.yaml

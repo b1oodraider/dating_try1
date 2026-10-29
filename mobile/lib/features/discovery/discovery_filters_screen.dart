@@ -7,16 +7,19 @@ import '../../core/models/discovery_filters.dart';
 import '../../core/models/excluded_goals.dart';
 import '../../core/models/facts.dart';
 import '../../core/models/goal.dart';
+import '../../core/models/my_profile.dart';
 import '../../core/models/wallet.dart';
 import '../../core/theme/app_theme.dart';
 import '../auth/session_controller.dart';
 import '../exclusion_words/exclusion_words_screen.dart';
 import '../premium/premium_badge.dart';
 import '../premium/purchase_screen.dart';
-import '../profile/profile_steps.dart' show Dictionaries;
+import '../profile/profile_section_screen.dart';
+import '../profile/profile_steps.dart' show Dictionaries, ProfileStep, searchAreaStep, seekingStep;
 
-/// Discovery filters: city and age are free; height, "looking for" goals,
-/// saved excluded goals and exclusion words are premium.
+/// Discovery filters: who I look for (gender, ages) and the search city with its radius are saved in my profile
+/// and are free, as are lifestyle filters; height, "looking for" goals, saved excluded goals and exclusion words
+/// are premium.
 ///
 /// The single entry point for everything filter-related in discovery.
 ///
@@ -44,10 +47,12 @@ class DiscoveryFiltersScreen extends StatefulWidget {
 class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
   static const String _premiumRequiredText =
       'Расширенный поиск доступен с премиумом. '
-      'Город и возраст можно применить и без него.';
+      'Кого ищу, город и образ жизни работают и без него.';
 
-  late final TextEditingController _cityController;
-  late RangeValues _age;
+  /// My profile: who I look for and where (saved there, at once).
+  MyProfile? _myProfile;
+  String? _myProfileError;
+
   late RangeValues _height;
   late Set<String> _goalCodes;
 
@@ -77,11 +82,6 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
   void initState() {
     super.initState();
     final initial = widget.initial;
-    _cityController = TextEditingController(text: initial.city ?? '');
-    _age = RangeValues(
-      (initial.minAge ?? DiscoveryFilters.ageMin).toDouble(),
-      (initial.maxAge ?? DiscoveryFilters.ageMax).toDouble(),
-    );
     _height = RangeValues(
       (initial.minHeight ?? DiscoveryFilters.heightMin).toDouble(),
       (initial.maxHeight ?? DiscoveryFilters.heightMax).toDouble(),
@@ -89,6 +89,33 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
     _goalCodes = initial.goalCodes.toSet();
     _loadAdvanced();
     _loadFacts();
+    _loadMyProfile();
+  }
+
+  Future<void> _loadMyProfile() async {
+    try {
+      final profile = await widget.session.api.getMyProfile();
+      if (!mounted) return;
+      setState(() {
+        _myProfile = profile;
+        _myProfileError = null;
+      });
+    } catch (e) {
+      if (!mounted || (e is ApiException && e.isUnauthorized)) return;
+      setState(() => _myProfileError = describeError(e));
+    }
+  }
+
+  /// «Кого ищу» / «Город поиска»: the profile section, saved as you go; the feed reloads after.
+  Future<void> _editProfile(ProfileStep step) async {
+    final profile = _myProfile;
+    if (profile == null) return;
+    final updated = await Navigator.of(context).push<MyProfile>(MaterialPageRoute<MyProfile>(
+      builder: (_) => ProfileSectionScreen(api: widget.session.api, step: step, profile: profile),
+    ));
+    if (updated == null || !mounted) return;
+    setState(() => _myProfile = updated);
+    widget.onSavedFiltersChanged?.call();
   }
 
   Future<void> _loadFacts() async {
@@ -141,12 +168,6 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
       _factOptions != null &&
       jsonEncode(_builtFactFilters().map((k, v) => MapEntry(k, v.toJson()))) !=
           jsonEncode(_savedFactFilters.map((k, v) => MapEntry(k, v.toJson())));
-
-  @override
-  void dispose() {
-    _cityController.dispose();
-    super.dispose();
-  }
 
   /// Height and goals are unavailable: premium-only and premium is off
   /// (by the wallet, the `active` flag of excluded goals or a 403).
@@ -222,11 +243,6 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
 
   void _reset() {
     setState(() {
-      _cityController.clear();
-      _age = const RangeValues(
-        DiscoveryFilters.ageMin * 1.0,
-        DiscoveryFilters.ageMax * 1.0,
-      );
       // Locked premium values cannot be edited here, so they are kept.
       if (!_advancedLocked) {
         _height = const RangeValues(
@@ -241,14 +257,8 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
   }
 
   DiscoveryFilters _buildFilters() {
-    final city = _cityController.text.trim();
-    final minAge = _age.start.round();
-    final maxAge = _age.end.round();
-    final basic = DiscoveryFilters(
-      city: city.isEmpty ? null : city,
-      minAge: minAge > DiscoveryFilters.ageMin ? minAge : null,
-      maxAge: maxAge < DiscoveryFilters.ageMax ? maxAge : null,
-    );
+    // Who I look for and the city now live in my profile: the feed takes them from there.
+    const basic = DiscoveryFilters.none;
     // Locked: the controls are disabled, keep the saved values as they are;
     // the feed does not send them until premium is back.
     if (_advancedLocked) {
@@ -426,40 +436,24 @@ class _DiscoveryFiltersScreenState extends State<DiscoveryFiltersScreen> {
 
   List<Widget> _buildBasicSection(BuildContext context) {
     final theme = Theme.of(context);
+    final profile = _myProfile;
+    Widget tile(ProfileStep step) => ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(step.icon),
+          title: Text(step.title),
+          subtitle: Text(profile == null
+              ? (_myProfileError ?? 'Загрузка…')
+              : step.hasValue(profile)
+                  ? step.summary(profile)
+                  : 'Не указано'),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: profile == null || _applying ? null : () => _editProfile(step),
+        );
     return [
-      Text('Основные', style: theme.textTheme.titleMedium),
-      const SizedBox(height: 12),
-      TextField(
-        controller: _cityController,
-        enabled: !_applying,
-        textInputAction: TextInputAction.done,
-        textCapitalization: TextCapitalization.words,
-        decoration: const InputDecoration(
-          labelText: 'Город',
-          hintText: 'Любой',
-        ),
-      ),
-      const SizedBox(height: 16),
-      _RangeHeader(
-        title: 'Возраст',
-        value: _rangeText(
-          _age,
-          DiscoveryFilters.ageMin,
-          DiscoveryFilters.ageMax,
-          unit: '',
-        ),
-      ),
-      RangeSlider(
-        values: _age,
-        min: DiscoveryFilters.ageMin.toDouble(),
-        max: DiscoveryFilters.ageMax.toDouble(),
-        divisions: DiscoveryFilters.ageMax - DiscoveryFilters.ageMin,
-        labels: RangeLabels(
-          '${_age.start.round()}',
-          '${_age.end.round()}',
-        ),
-        onChanged: _applying ? null : (values) => setState(() => _age = values),
-      ),
+      Text('Кого и где ищу', style: theme.textTheme.titleMedium),
+      const SizedBox(height: 4),
+      tile(seekingStep),
+      tile(searchAreaStep),
     ];
   }
 

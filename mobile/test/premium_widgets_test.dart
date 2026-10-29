@@ -209,13 +209,11 @@ void main() {
     expect(_chip(tester, 'Общение', 1).selected, isTrue);
     expect(_chip(tester, 'Общение', 1).onSelected, isNull);
 
-    await tester.enterText(find.widgetWithText(TextField, 'Город'), 'Казань');
     await tester.tap(find.text('Применить'));
     await tester.pumpAndSettle();
 
     expect(requests.where((r) => r.method == 'PUT'), isEmpty);
     expect(result, isNotNull);
-    expect(result!.city, 'Казань');
     // Kept (not sent by the feed while premium is locked).
     expect(result!.minHeight, 170);
     expect(result!.goalCodes, ['FAMILY']);

@@ -399,10 +399,6 @@ public class Profile extends AssignedIdEntity {
         touch();
     }
 
-    public void clearInterestComments() {
-        interestComments.clear();
-        touch();
-    }
 
     public Set<Artist> getArtists() {
         return artists;

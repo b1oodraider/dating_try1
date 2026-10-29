@@ -140,13 +140,13 @@ class ProfileCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _Chips([for (final interest in profile.interests) interest.label]),
+                _Chips([for (final interest in profile.interests) interest.display]),
                 for (final interest in profile.interests)
                   if (interest.comment case final comment?)
                     Padding(
                       padding: const EdgeInsets.only(top: Gaps.sm),
                       child: Text.rich(TextSpan(children: [
-                        TextSpan(text: '${interest.label} — ', style: const TextStyle(fontWeight: FontWeight.w600)),
+                        TextSpan(text: '${interest.display} — ', style: const TextStyle(fontWeight: FontWeight.w600)),
                         TextSpan(text: comment),
                       ])),
                     ),

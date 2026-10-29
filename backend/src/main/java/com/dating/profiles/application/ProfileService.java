@@ -114,9 +114,7 @@ public class ProfileService {
     public void clearTextsByModeration(UUID accountId, boolean aboutText, boolean dailyStatus) {
         Profile profile = lockOrCreateProfile(accountId);
         if (aboutText) {
-            // Interest comments are free text shown in the same profile: they go with «О себе».
             profile.setAboutText(null);
-            profile.clearInterestComments();
         }
         if (dailyStatus) {
             profile.setDailyStatus(null, null);

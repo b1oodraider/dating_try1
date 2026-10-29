@@ -28,7 +28,8 @@ class DiscoveryFiltersStore {
       final prefs = await _preferences();
       final raw = prefs.getString(keyFor(accountId));
       if (raw == null) return DiscoveryFilters.none;
-      return decode(raw);
+      // City and age moved to the profile («Кого и где ищу»); an old saved city would filter with no way to undo.
+      return decode(raw).onlyAdvanced();
     } catch (e) {
       debugPrint('Failed to load discovery filters: $e');
       return DiscoveryFilters.none;

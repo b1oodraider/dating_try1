@@ -53,19 +53,20 @@ void main() {
       final store = DiscoveryFiltersStore();
 
       await store.save('acc-1', _full);
-      await store.save('acc-2', const DiscoveryFilters(city: 'Казань'));
+      await store.save('acc-2', const DiscoveryFilters(minHeight: 170));
 
       final first = await store.load('acc-1');
-      expect(first.city, 'Москва');
-      expect(first.minAge, 25);
-      expect(first.maxAge, 35);
+      // City and age moved to the profile: old saved values are not applied any more.
+      expect(first.city, isNull);
+      expect(first.minAge, isNull);
+      expect(first.maxAge, isNull);
       expect(first.minHeight, 165);
       expect(first.maxHeight, 190);
       expect(first.goalCodes, ['FAMILY', 'CHAT']);
 
       final second = await store.load('acc-2');
-      expect(second.city, 'Казань');
-      expect(second.hasAdvanced, isFalse);
+      expect(second.minHeight, 170);
+      expect(second.goalCodes, isEmpty);
 
       expect((await store.load('acc-3')).isEmpty, isTrue);
 
@@ -175,7 +176,7 @@ void main() {
       await expectLater(session.deleteAccount(), throwsA(anything));
 
       expect(session.api.token, 'tkn');
-      expect((await session.filtersStore.load('acc-1')).city, 'Москва');
+      expect((await session.filtersStore.load('acc-1')).minHeight, 165);
     });
   });
 
@@ -323,9 +324,6 @@ void main() {
       expect(feed.single.url.queryParameters, {
         'page': '0',
         'limit': '20',
-        'city': 'Москва',
-        'minAge': '25',
-        'maxAge': '35',
         'minHeight': '165',
         'maxHeight': '190',
         'goalCodes': 'FAMILY,CHAT',
@@ -344,9 +342,6 @@ void main() {
       expect(feed.url.queryParameters, {
         'page': '0',
         'limit': '20',
-        'city': 'Москва',
-        'minAge': '25',
-        'maxAge': '35',
       });
       final prefs = await SharedPreferences.getInstance();
       expect(

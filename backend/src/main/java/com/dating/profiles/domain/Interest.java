@@ -30,6 +30,10 @@ public class Interest {
     @Column(nullable = false)
     private boolean active;
 
+    /** Shown before the label in the app; null for an interest added without one. */
+    @Column(length = 16)
+    private String emoji;
+
     protected Interest() {
     }
 
@@ -51,5 +55,9 @@ public class Interest {
 
     public boolean isActive() {
         return active;
+    }
+
+    public String getEmoji() {
+        return emoji;
     }
 }

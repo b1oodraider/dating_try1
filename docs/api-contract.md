@@ -564,7 +564,7 @@ GET /artists?q=         (auth)   200 Artist[] (<= 10)  Artist = { id, name }; q 
                         than 5 matches the server asks MusicBrainz once per query and adds what it finds (app.music.musicbrainz-enabled).
 PUT /me/profile         + interestCodes: string[] (<= 10, [] clears; unknown → 400 fieldErrors.interestCodes),
                           interestComments: { code: string } (<= 80 each, only for chosen interests, "" removes;
-                          else 400 fieldErrors.interestComments). Interest = { code, label, category, categoryLabel,
+                          else 400 fieldErrors.interestComments). Interest = { code, label, emoji|null, category, categoryLabel,
                           comment: string|null }; a dropped interest loses its comment,
                           artistIds: number[] (<= 5), showZodiac: boolean
 MyProfile               + interests: Interest[], artists: Artist[], showZodiac, zodiac: string|null (my sign, e.g. «Лев»)

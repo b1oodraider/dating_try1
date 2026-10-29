@@ -152,7 +152,7 @@ final List<ProfileStep> profileSteps = [
       if ((p.city ?? '').isNotEmpty) p.city!,
       p.searchRadiusKm == null ? 'без радиуса' : 'до ${p.searchRadiusKm} км',
     ].join(' · '),
-    build: (c) => PlaceEditor(c),
+    build: (c) => PlaceEditor(c, withLocation: true),
   ),
   ProfileStep(
     id: 'photos',
@@ -180,7 +180,7 @@ final List<ProfileStep> profileSteps = [
     question: 'Чем вы увлекаетесь?',
     icon: Icons.interests_outlined,
     hasValue: (p) => p.interests.isNotEmpty,
-    summary: (p) => _join(p.interests.map((i) => i.label)),
+    summary: (p) => _join(p.interests.map((i) => i.display)),
     build: (c) => InterestsEditor(c),
   ),
   ProfileStep(
@@ -220,6 +220,23 @@ final List<ProfileStep> profileSteps = [
     build: (c) => TagsEditor(c),
   ),
 ];
+
+/// «Кого ищу» — shown in the search filters.
+ProfileStep get seekingStep => profileSteps.firstWhere((s) => s.id == 'seeking');
+
+/// «Город поиска»: the city and radius, shown in the search filters (my location lives in the settings).
+final ProfileStep searchAreaStep = ProfileStep(
+  id: 'searchArea',
+  title: 'Город поиска',
+  question: 'Где вы ищете?',
+  icon: Icons.place_outlined,
+  hasValue: (p) => (p.city ?? '').isNotEmpty,
+  summary: (p) => [
+    if ((p.city ?? '').isNotEmpty) p.city!,
+    p.searchRadiusKm == null ? 'без радиуса' : 'до ${p.searchRadiusKm} км',
+  ].join(' · '),
+  build: (c) => PlaceEditor(c),
+);
 
 const List<String> _lifestyle = ['kidsHas', 'kidsPlans', 'smoking', 'alcohol', 'sport', 'pets'];
 const List<String> _work = ['profession', 'educationLevel', 'university', 'languages'];
@@ -524,9 +541,12 @@ class _SeekingEditorState extends State<SeekingEditor> {
 // ---------------------------------------------------------------- place
 
 class PlaceEditor extends StatefulWidget {
-  const PlaceEditor(this.c, {super.key});
+  const PlaceEditor(this.c, {super.key, this.withLocation = false});
 
   final StepContext c;
+
+  /// The wizard asks for the location here; elsewhere it is in the settings.
+  final bool withLocation;
 
   @override
   State<PlaceEditor> createState() => _PlaceEditorState();
@@ -538,43 +558,10 @@ class _PlaceEditorState extends State<PlaceEditor> {
   late double _radius = widget.c.blank
       ? _noRadius.toDouble()
       : (widget.c.profile.searchRadiusKm ?? _noRadius).clamp(5, _noRadius).toDouble();
-  bool _locating = false;
 
   void _emitRadius() => widget.c.onChanged(_radius >= _noRadius
       ? const ProfilePatch(clearSearchRadius: true)
       : ProfilePatch(searchRadiusKm: _radius.round()));
-
-  Future<void> _toggleLocation(bool on) async {
-    setState(() => _locating = true);
-    try {
-      final MyProfile updated;
-      if (on) {
-        var permission = await Geolocator.checkPermission();
-        if (permission == LocationPermission.denied) {
-          permission = await Geolocator.requestPermission();
-        }
-        if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-          _snack('Нет доступа к местоположению — расстояния будут от центра города');
-          return;
-        }
-        final position = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(accuracy: LocationAccuracy.low),
-        );
-        updated = await widget.c.api.updateLocation(position.latitude, position.longitude);
-      } else {
-        updated = await widget.c.api.clearLocation();
-      }
-      widget.c.onProfile(updated);
-    } catch (e) {
-      _snack(e is ApiException ? e.message : 'Не удалось определить местоположение');
-    } finally {
-      if (mounted) setState(() => _locating = false);
-    }
-  }
-
-  void _snack(String text) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -611,16 +598,68 @@ class _PlaceEditorState extends State<PlaceEditor> {
           onChanged: (v) => setState(() => _radius = v),
           onChangeEnd: (_) => _emitRadius(),
         ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Учитывать моё местоположение'),
-          subtitle: const Text('Приблизительно, до ~1 км. Без него расстояния считаются от центра города'),
-          value: widget.c.profile.locationShared,
-          onChanged: _locating ? null : _toggleLocation,
-        ),
+        if (widget.withLocation)
+          LocationSwitch(api: widget.c.api, shared: widget.c.profile.locationShared, onProfile: widget.c.onProfile),
       ],
     );
   }
+}
+
+/// «Учитывать моё местоположение»: asks for the permission and saves at once.
+class LocationSwitch extends StatefulWidget {
+  const LocationSwitch({super.key, required this.api, required this.shared, required this.onProfile});
+
+  final DatingApiClient api;
+  final bool shared;
+  final ValueChanged<MyProfile> onProfile;
+
+  @override
+  State<LocationSwitch> createState() => _LocationSwitchState();
+}
+
+class _LocationSwitchState extends State<LocationSwitch> {
+  bool _locating = false;
+
+  Future<void> _toggle(bool on) async {
+    setState(() => _locating = true);
+    try {
+      final MyProfile updated;
+      if (on) {
+        var permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+        }
+        if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+          _snack('Нет доступа к местоположению — расстояния будут от центра города');
+          return;
+        }
+        final position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.low),
+        );
+        updated = await widget.api.updateLocation(position.latitude, position.longitude);
+      } else {
+        updated = await widget.api.clearLocation();
+      }
+      widget.onProfile(updated);
+    } catch (e) {
+      _snack(e is ApiException ? e.message : 'Не удалось определить местоположение');
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  void _snack(String text) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  @override
+  Widget build(BuildContext context) => SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Учитывать моё местоположение'),
+        subtitle: const Text('Приблизительно, до ~1 км. Без него расстояния считаются от центра города'),
+        value: widget.shared,
+        onChanged: _locating ? null : _toggle,
+      );
 }
 
 // --------------------------------------------------------------- photos
@@ -880,9 +919,12 @@ class _GoalsEditorState extends State<GoalsEditor> {
 // ---------------------------------------------------------------- about
 
 class AboutEditor extends StatefulWidget {
-  const AboutEditor(this.c, {super.key});
+  const AboutEditor(this.c, {super.key, this.inline = false});
 
   final StepContext c;
+
+  /// Right on «Моя анкета», under its own «О себе» heading: no field label.
+  final bool inline;
 
   @override
   State<AboutEditor> createState() => _AboutEditorState();
@@ -911,7 +953,7 @@ class _AboutEditorState extends State<AboutEditor> {
             maxLength: 1000,
             textCapitalization: TextCapitalization.sentences,
             decoration: InputDecoration(
-              labelText: 'О себе',
+              labelText: widget.inline ? null : 'О себе',
               hintText: 'Чем живёте, что ищете, какой идеальный выходной',
               alignLabelWithHint: true,
               errorText: widget.c.errors['aboutText'],
@@ -937,13 +979,14 @@ class _AboutEditorState extends State<AboutEditor> {
 
 // ------------------------------------------------- grouped chip selection
 
-/// Chips grouped under headers, up to [max] selected.
+/// Chips grouped under headers, up to [max] selected; [onLongPress] gets the chip's code.
 class _GroupedChips extends StatelessWidget {
   const _GroupedChips({
     required this.groups,
     required this.selected,
     required this.max,
     required this.onToggle,
+    this.onLongPress,
   });
 
   /// Header → (code, label) in order.
@@ -951,6 +994,7 @@ class _GroupedChips extends StatelessWidget {
   final Set<String> selected;
   final int max;
   final void Function(String code, bool on) onToggle;
+  final void Function(String code)? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -969,19 +1013,20 @@ class _GroupedChips extends StatelessWidget {
             runSpacing: Gaps.sm,
             children: [
               for (final (code, label) in items)
-                FilterChip(
-                  chipAnimationStyle: instantChip,
-                  label: Text(label),
-                  selected: selected.contains(code),
-                  onSelected: (on) {
-                    if (on && selected.length >= max) {
-                      ScaffoldMessenger.of(context)
-                        ..hideCurrentSnackBar()
-                        ..showSnackBar(SnackBar(content: Text('Можно выбрать до $max')));
-                      return;
-                    }
-                    onToggle(code, on);
-                  },
+                GestureDetector(
+                  onLongPress: onLongPress == null ? null : () => onLongPress!(code),
+                  child: FilterChip(
+                    chipAnimationStyle: instantChip,
+                    label: Text(label),
+                    selected: selected.contains(code),
+                    onSelected: (on) {
+                      if (on && selected.length >= max) {
+                        _tooMany(context, max);
+                        return;
+                      }
+                      onToggle(code, on);
+                    },
+                  ),
                 ),
             ],
           ),
@@ -991,8 +1036,57 @@ class _GroupedChips extends StatelessWidget {
   }
 }
 
+void _tooMany(BuildContext context, int max) => ScaffoldMessenger.of(context)
+  ..hideCurrentSnackBar()
+  ..showSnackBar(SnackBar(content: Text('Можно выбрать до $max')));
+
 // ------------------------------------------------------------ interests
 
+/// A small window over the screen for one interest's comment: saved only by «Сохранить» (null = «Отмена»).
+Future<String?> editInterestComment(BuildContext context, {required String title, String? initial}) =>
+    showDialog<String>(context: context, builder: (_) => _CommentDialog(title: title, initial: initial));
+
+class _CommentDialog extends StatefulWidget {
+  const _CommentDialog({required this.title, this.initial});
+
+  static const int max = 80;
+
+  final String title;
+  final String? initial;
+
+  @override
+  State<_CommentDialog> createState() => _CommentDialogState();
+}
+
+class _CommentDialogState extends State<_CommentDialog> {
+  late final TextEditingController _text = TextEditingController(text: widget.initial ?? '');
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text(widget.title),
+        content: TextField(
+          controller: _text,
+          autofocus: true,
+          maxLength: _CommentDialog.max,
+          minLines: 1,
+          maxLines: 3,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(hintText: 'Например: латте и капучино'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(_text.text.trim()), child: const Text('Сохранить')),
+        ],
+      );
+}
+
+/// Interests in two tabs: «Увлечения» (choose; a long press comments) and «Комментарии» (all comments).
 class InterestsEditor extends StatefulWidget {
   const InterestsEditor(this.c, {super.key});
 
@@ -1005,25 +1099,46 @@ class InterestsEditor extends StatefulWidget {
 }
 
 class _InterestsEditorState extends State<InterestsEditor> {
-  static const int _commentMax = 80;
-
   late final Set<String> _selected =
       widget.c.blank ? <String>{} : widget.c.profile.interests.map((i) => i.code).toSet();
 
-  /// One field per chosen interest, kept while the interest is unchosen and chosen again.
-  late final Map<String, TextEditingController> _comments = {
+  /// Comments by interest code; kept while an interest is unchosen and chosen again.
+  late final Map<String, String> _comments = {
     if (!widget.c.blank)
-      for (final i in widget.c.profile.interests) i.code: TextEditingController(text: i.comment ?? ''),
+      for (final i in widget.c.profile.interests)
+        if (i.comment case final c?) i.code: c,
   };
 
-  TextEditingController _comment(String code) => _comments.putIfAbsent(code, TextEditingController.new);
+  int _tab = 0;
 
-  @override
-  void dispose() {
-    for (final c in _comments.values) {
-      c.dispose();
+  void _toggle(String code, bool on) {
+    setState(() => on ? _selected.add(code) : _selected.remove(code));
+    final comment = _comments[code];
+    widget.c.onChanged(ProfilePatch(
+      interestCodes: _selected.toList(),
+      // The server drops the comment of an unchosen interest; a chosen-again one gets it back.
+      interestComments: on && comment != null ? {code: comment} : null,
+    ));
+  }
+
+  /// Long press or a tap in «Комментарии»: the comment window; an unchosen interest is chosen on save.
+  Future<void> _comment(Interest interest) async {
+    final text = await editInterestComment(context, title: interest.display, initial: _comments[interest.code]);
+    if (text == null || !mounted) return;
+    final choose = !_selected.contains(interest.code);
+    if (choose && text.isEmpty) return;
+    if (choose && _selected.length >= InterestsEditor.max) {
+      _tooMany(context, InterestsEditor.max);
+      return;
     }
-    super.dispose();
+    setState(() {
+      text.isEmpty ? _comments.remove(interest.code) : _comments[interest.code] = text;
+      _selected.add(interest.code);
+    });
+    widget.c.onChanged(ProfilePatch(
+      interestCodes: choose ? _selected.toList() : null,
+      interestComments: {interest.code: text},
+    ));
   }
 
   @override
@@ -1034,48 +1149,56 @@ class _InterestsEditorState extends State<InterestsEditor> {
           if (groups == null) {
             return snapshot.hasError ? Text(describeError(snapshot.error!)) : const LinearProgressIndicator();
           }
+          final byCode = {for (final g in groups) for (final i in g.items) i.code: i};
           return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              StepHint('До ${InterestsEditor.max} · выбрано ${_selected.length}. Общие увлечения поднимают '
-                  'анкету в ленте того, с кем они совпадают.'),
-              _GroupedChips(
-                groups: [
-                  for (final g in groups) (g.label, [for (final i in g.items) (i.code, i.label)]),
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('Увлечения')),
+                  ButtonSegment(value: 1, label: Text('Комментарии')),
                 ],
-                selected: _selected,
-                max: InterestsEditor.max,
-                onToggle: (code, on) {
-                  setState(() => on ? _selected.add(code) : _selected.remove(code));
-                  widget.c.onChanged(ProfilePatch(
-                    interestCodes: _selected.toList(),
-                    // The server drops the comment of an unchosen interest; a chosen-again one gets it back.
-                    interestComments: on && _comment(code).text.trim().isNotEmpty
-                        ? {code: _comment(code).text.trim()}
-                        : null,
-                  ));
-                },
+                selected: {_tab},
+                showSelectedIcon: false,
+                onSelectionChanged: (v) => setState(() => _tab = v.first),
               ),
-              _FieldError(widget.c.errors['interestCodes']),
-              if (_selected.isNotEmpty) ...[
-                const SizedBox(height: Gaps.lg),
-                Text('Подробнее — по желанию', style: Theme.of(context).textTheme.titleSmall),
-                const StepHint('Например, «Кофе» — латте и капучино, «Кино» — комедии с Джимом Керри.'),
+              const SizedBox(height: Gaps.md),
+              if (_tab == 0) ...[
+                StepHint('До ${InterestsEditor.max} · выбрано ${_selected.length}. Удерживайте увлечение, '
+                    'чтобы добавить комментарий.'),
+                _GroupedChips(
+                  groups: [
+                    for (final g in groups) (g.label, [for (final i in g.items) (i.code, i.display)]),
+                  ],
+                  selected: _selected,
+                  max: InterestsEditor.max,
+                  onToggle: _toggle,
+                  onLongPress: (code) => _comment(byCode[code]!),
+                ),
+                _FieldError(widget.c.errors['interestCodes']),
+              ] else ...[
+                const StepHint('Например, «Кофе» — латте и капучино, «Кино» — комедии с Джимом Керри. '
+                    'Комментарии видны в анкете под увлечениями.'),
+                if (_selected.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: Gaps.md),
+                    child: Text('Сначала выберите увлечения'),
+                  ),
                 for (final g in groups)
                   for (final i in g.items)
                     if (_selected.contains(i.code))
-                      Padding(
-                        padding: const EdgeInsets.only(top: Gaps.sm),
-                        child: TextField(
-                          controller: _comment(i.code),
-                          maxLength: _commentMax,
-                          textCapitalization: TextCapitalization.sentences,
-                          decoration: InputDecoration(labelText: i.label, counterText: ''),
-                          onChanged: (text) => widget.c.onChanged(ProfilePatch(interestComments: {i.code: text.trim()})),
-                        ),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(i.display),
+                        subtitle: Text(_comments[i.code] ?? 'Добавить комментарий',
+                            style: _comments[i.code] == null
+                                ? TextStyle(color: Theme.of(context).colorScheme.primary)
+                                : null),
+                        trailing: const Icon(Icons.edit_outlined),
+                        onTap: () => _comment(i),
                       ),
-                _FieldError(widget.c.errors['interestComments']),
               ],
+              _FieldError(widget.c.errors['interestComments']),
             ],
           );
         },

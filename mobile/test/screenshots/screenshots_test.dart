@@ -319,9 +319,26 @@ void main() {
   });
 
   testWidgets('profile', skip: skip, (tester) async {
+    fx.myProfileVerified = false;
+    addTearDown(() => fx.myProfileVerified = true);
     await _feed(tester);
     await _tapTab(tester, 'Профиль');
     await _shot(tester, 'profile');
+    _mainScrollPosition(tester).jumpTo(900);
+    await _settle(tester);
+    await _shot(tester, 'profile_middle');
+    await tester.tap(find.byTooltip('Настройки'));
+    await _settle(tester);
+    await _shot(tester, 'settings');
+    await tester.pageBack();
+    await _settle(tester);
+    _mainScrollPosition(tester).jumpTo(0);
+    await _settle(tester);
+    await tester.tap(find.text('Подтвердите анкету'));
+    await _settle(tester);
+    await _shot(tester, 'verify_intro');
+    await tester.pageBack();
+    await _settle(tester);
     final position = _mainScrollPosition(tester);
     position.jumpTo(position.maxScrollExtent);
     await _settle(tester);
@@ -338,6 +355,14 @@ void main() {
           profile: MyProfile.fromJson(fx.myProfile),
         ));
     await _shot(tester, 'section_interests');
+    await tester.longPress(find.text('📚 Книги'));
+    await _settle(tester);
+    await _shot(tester, 'interest_comment_dialog');
+    await tester.tap(find.text('Отмена'));
+    await _settle(tester);
+    await tester.tap(find.text('Комментарии'));
+    await _settle(tester);
+    await _shot(tester, 'section_interest_comments');
   });
 
   testWidgets('lifestyle section and filters', skip: skip, (tester) async {
@@ -359,6 +384,8 @@ void main() {
         ));
     await _shot(tester, 'section_tags');
     await _pump(tester, DiscoveryFiltersScreen(session: session, initial: const DiscoveryFilters()));
+    await _settle(tester);
+    await _shot(tester, 'filters_top');
     await tester.drag(find.byType(ListView), const Offset(0, -300));
     await _settle(tester);
     await _shot(tester, 'filters_lifestyle');

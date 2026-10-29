@@ -55,23 +55,24 @@ const List<Map<String, Object?>> goals = [
 ];
 
 Map<String, Object?> _interest(
-        String code, String category, String categoryLabel, String label) =>
+        String code, String category, String categoryLabel, String label, String emoji) =>
     {
       'code': code,
       'category': category,
       'categoryLabel': categoryLabel,
       'label': label,
+      'emoji': emoji,
     };
 
 final List<Map<String, Object?>> interests = [
-  _interest('RUNNING', 'sport', 'Спорт', 'Бег'),
-  _interest('YOGA', 'sport', 'Спорт', 'Йога'),
-  _interest('MUSEUMS', 'culture', 'Культура', 'Музеи'),
-  _interest('BOOKS', 'culture', 'Культура', 'Книги'),
-  _interest('COFFEE', 'food', 'Еда', 'Кофе'),
-  _interest('TRAVEL', 'travel', 'Путешествия', 'Путешествия'),
-  _interest('PAINTING', 'creative', 'Творчество', 'Рисование'),
-  _interest('SUP', 'sport', 'Спорт', 'Сапборд'),
+  _interest('RUNNING', 'sport', 'Спорт', 'Бег', '🏃'),
+  _interest('YOGA', 'sport', 'Спорт', 'Йога', '🧘'),
+  _interest('MUSEUMS', 'culture', 'Культура', 'Музеи', '🏛️'),
+  _interest('BOOKS', 'culture', 'Культура', 'Книги', '📚'),
+  _interest('COFFEE', 'food', 'Еда', 'Кофе', '☕'),
+  _interest('TRAVEL', 'travel', 'Путешествия', 'Путешествия', '✈️'),
+  _interest('PAINTING', 'creative', 'Творчество', 'Рисование', '🎨'),
+  _interest('SUP', 'sport', 'Спорт', 'Сапборд', '🛶'),
 ];
 
 final List<Map<String, Object?>> artists = [
@@ -434,6 +435,9 @@ final List<Map<String, Object?>> banners = [
   },
 ];
 
+/// Off for the shot of the «Подтвердите анкету» banner.
+bool myProfileVerified = true;
+
 final Map<String, Object?> myProfile = {
   'id': 'me',
   'displayName': 'Иван',
@@ -541,7 +545,7 @@ http.Response respond(http.Request request) {
       'testAccount': false,
     });
   }
-  if (path == '/me/profile' && get) return _json(myProfile);
+  if (path == '/me/profile' && get) return _json({...myProfile, 'verified': myProfileVerified});
   if (path == '/me/wallet') return _json(wallet);
   if (path == '/me/restrictions') return _json(<Object>[]);
   if (path == '/venues') return _json(<Object>[]);
