@@ -234,6 +234,8 @@ void main() {
     await _settle(tester);
     _scrollSheet(tester, 520);
     await _settle(tester);
+    await tester.tap(find.textContaining('Кофе').first, warnIfMissed: false);
+    await _settle(tester);
     await _shot(tester, 'details_scrolled');
     _scrollSheet(tester, 2000);
     await _settle(tester);

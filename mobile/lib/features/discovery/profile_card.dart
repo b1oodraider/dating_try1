@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/models/decoration.dart';
 import '../../core/models/facts.dart';
+import '../../core/models/interest.dart';
 import '../../core/models/public_profile.dart';
 import '../cosmetics/cosmetic_visuals.dart';
 import '../premium/premium_badge.dart';
@@ -137,21 +138,7 @@ class ProfileCard extends StatelessWidget {
         if (profile.interests.isNotEmpty)
           _Section(
             title: 'Интересы',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _Chips([for (final interest in profile.interests) interest.display]),
-                for (final interest in profile.interests)
-                  if (interest.comment case final comment?)
-                    Padding(
-                      padding: const EdgeInsets.only(top: Gaps.sm),
-                      child: Text.rich(TextSpan(children: [
-                        TextSpan(text: '${interest.display} — ', style: const TextStyle(fontWeight: FontWeight.w600)),
-                        TextSpan(text: comment),
-                      ])),
-                    ),
-              ],
-            ),
+            child: _InterestChips(profile.interests),
           ),
         if (profile.artists.isNotEmpty)
           _Section(
@@ -376,6 +363,58 @@ class _Section extends StatelessWidget {
           child,
         ],
       ),
+    );
+  }
+}
+
+/// Interests; one with a comment opens it under the chips on a tap (tap again to close), others do nothing.
+class _InterestChips extends StatefulWidget {
+  const _InterestChips(this.interests);
+
+  final List<Interest> interests;
+
+  @override
+  State<_InterestChips> createState() => _InterestChipsState();
+}
+
+class _InterestChipsState extends State<_InterestChips> {
+  String? _open;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final open = widget.interests.where((i) => i.code == _open && i.comment != null).firstOrNull;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: Gaps.sm,
+          runSpacing: Gaps.sm,
+          children: [
+            for (final interest in widget.interests)
+              interest.comment == null
+                  ? Chip(label: Text(interest.display), visualDensity: VisualDensity.compact)
+                  : ChoiceChip(
+                      chipAnimationStyle: instantChip,
+                      label: Text(interest.display),
+                      // A small mark: this one has something to tell.
+                      avatar: Icon(Icons.chat_bubble_outline_rounded, size: 14, color: scheme.primary),
+                      showCheckmark: false,
+                      selected: _open == interest.code,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (on) => setState(() => _open = on ? interest.code : null),
+                    ),
+          ],
+        ),
+        if (open != null)
+          Padding(
+            padding: const EdgeInsets.only(top: Gaps.sm),
+            child: Text.rich(TextSpan(children: [
+              TextSpan(text: '${open.display} — ', style: const TextStyle(fontWeight: FontWeight.w600)),
+              TextSpan(text: open.comment),
+            ])),
+          ),
+      ],
     );
   }
 }
