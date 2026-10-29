@@ -7,6 +7,7 @@ import com.dating.common.ratelimit.FixedWindowRateLimiter;
 import com.dating.common.security.Role;
 import com.dating.common.security.RoleAccess;
 import com.dating.communities.api.CommunityRefDto;
+import com.dating.safety.application.ContentPolicy;
 import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -138,6 +139,9 @@ public class CommunityService {
             throw ApiException.validation("VALIDATION_ERROR", "Проверьте комментарий",
                     Map.of("comment", "Комментарий — не длиннее 300 символов"));
         }
+        ContentPolicy.violation(t + " " + (c == null ? "" : c)).ifPresent(message -> {
+            throw ApiException.validation("VALIDATION_ERROR", message, Map.of("title", message));
+        });
         long wait = suggestionLimiter.tryAcquire(viewer.toString());
         if (wait > 0) {
             throw ApiException.tooManyRequests("Сегодня вы уже предложили несколько групп — попробуйте завтра", wait);

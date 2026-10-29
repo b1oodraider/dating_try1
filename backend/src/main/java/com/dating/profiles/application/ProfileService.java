@@ -4,6 +4,7 @@ import com.dating.profiles.api.FactsDto;
 import com.dating.profiles.persistence.ProfileHistoryRepository;
 import com.dating.profiles.persistence.InterestRepository;
 import com.dating.profiles.persistence.ArtistRepository;
+import com.dating.safety.application.ContentPolicy;
 import com.dating.profiles.domain.InterestCategory;
 import com.dating.profiles.domain.Interest;
 import com.dating.profiles.domain.Artist;
@@ -191,6 +192,15 @@ public class ProfileService {
             Set<String> chosen = (interests != null ? interests : profile.getInterests()).stream()
                     .map(Interest::getCode).collect(Collectors.toSet());
             interestComments = resolveInterestComments(dto.interestComments(), chosen, errors);
+        }
+        // Texts others read: obscene words, sex services and drugs are not allowed (ContentPolicy).
+        checkContent("displayName", dto.displayName(), errors);
+        checkContent("aboutText", dto.aboutText(), errors);
+        checkContent("dailyStatusText", dto.dailyStatusText(), errors);
+        checkContent("profession", dto.profession(), errors);
+        checkContent("university", dto.university(), errors);
+        if (dto.interestComments() != null) {
+            dto.interestComments().values().forEach(comment -> checkContent("interestComments", comment, errors));
         }
         Set<Artist> artists = null;
         if (dto.artistIds() != null) {
@@ -398,6 +408,10 @@ public class ProfileService {
         s.put("artists", p.getArtists().stream().map(Artist::getId).sorted().toList());
         s.put("facts", FactsDto.from(p));
         return s;
+    }
+
+    private static void checkContent(String field, String text, Map<String, String> errors) {
+        ContentPolicy.violation(text).ifPresent(message -> errors.putIfAbsent(field, message));
     }
 
     private static Map<String, String> resolveInterestComments(Map<String, String> raw, Set<String> chosen,

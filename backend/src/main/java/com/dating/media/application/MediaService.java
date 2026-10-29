@@ -36,6 +36,7 @@ public class MediaService {
     private final ApplicationEventPublisher eventPublisher;
     private final FaceAnalyzer faces;
     private final FaceProperties faceProperties;
+    private final ExplicitPhotoDetector explicitPhotos;
 
     public MediaService(ProfilePhotoRepository photoRepository,
                         FileStorageService fileStorage,
@@ -46,7 +47,8 @@ public class MediaService {
                         ProductEventPublisher productEvents,
                         ApplicationEventPublisher eventPublisher,
                         FaceAnalyzer faces,
-                        FaceProperties faceProperties) {
+                        FaceProperties faceProperties, ExplicitPhotoDetector explicitPhotos) {
+        this.explicitPhotos = explicitPhotos;
         this.faces = faces;
         this.faceProperties = faceProperties;
         this.eventPublisher = eventPublisher;
@@ -95,6 +97,12 @@ public class MediaService {
             throw ApiException.unsupportedMediaType("Файл повреждён или не является изображением");
         }
 
+        ExplicitPhotoDetector.Verdict explicit = explicitPhotos.check(cleaned);
+        if (explicit == ExplicitPhotoDetector.Verdict.REJECT) {
+            productEvents.publish("photo_rejected_explicit", Map.of());
+            throw ApiException.badRequest("EXPLICIT_PHOTO",
+                    "Откровенные фото нельзя загружать. Выберите другое фото");
+        }
         FaceAnalyzer.Scan scan = faces.scan(cleaned);
         if (scan != null && !scan.person()) {
             throw ApiException.badRequest("NO_PERSON_ON_PHOTO",
@@ -107,7 +115,9 @@ public class MediaService {
             throw ApiException.badRequest("NO_FACE_ON_PHOTO", "Пока селфи не подтверждено, на каждом фото должно "
                     + "быть видно лицо. Фото без лица можно добавить после проверки");
         }
-        boolean toReview = profile.isVerified() && !faceHidden && !matchesReference(profile.getId(), scan);
+        // A borderline photo waits for a moderator like a photo with another face (hidden until approved).
+        boolean toReview = explicit == ExplicitPhotoDetector.Verdict.REVIEW
+                || profile.isVerified() && !faceHidden && !matchesReference(profile.getId(), scan);
 
         String storageKey = fileStorage.save(cleaned, format.extension());
         ProfilePhoto photo = new ProfilePhoto(

@@ -57,7 +57,13 @@ mkdir -p "$MODELS_DIR"
 echo "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4  $MODELS_DIR/face_detection_yunet_2023mar.onnx" | sha256sum -c -
 echo "4b82da9944b88577175ee23a459dce2e26e6e4be573def65b1055dc2d9720186  $MODELS_DIR/object_detection_nanodet_2022nov.onnx" | sha256sum -c -
 echo "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79  $MODELS_DIR/face_recognition_sface_2021dec.onnx" | sha256sum -c -
-chmod 644 "$MODELS_DIR"/*.onnx
+# Explicit photo check: Yahoo open_nsfw (BSD-2-Clause).
+NSFW=https://github.com/yahoo/open_nsfw/raw/master/nsfw_model
+[ -f "$MODELS_DIR/resnet_50_1by2_nsfw.caffemodel" ] || curl -fsSL -o "$MODELS_DIR/resnet_50_1by2_nsfw.caffemodel" "$NSFW/resnet_50_1by2_nsfw.caffemodel"
+[ -f "$MODELS_DIR/open_nsfw_deploy.prototxt" ] || curl -fsSL -o "$MODELS_DIR/open_nsfw_deploy.prototxt" "$NSFW/deploy.prototxt"
+echo "74b7c0374425c2b324f73b134f8a7254eab9bbddc9e452a22d934b8c17015ad2  $MODELS_DIR/resnet_50_1by2_nsfw.caffemodel" | sha256sum -c -
+echo "a359e2d7b23abca938bb52580acf578c1b78870263fea814afa294fb4f315a4b  $MODELS_DIR/open_nsfw_deploy.prototxt" | sha256sum -c -
+chmod 644 "$MODELS_DIR"/*
 
 # --- database (PostgreSQL listens on localhost only by default)
 systemctl enable --now postgresql >/dev/null

@@ -8,6 +8,7 @@ import java.util.UUID;
 import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -89,6 +90,23 @@ class InterestsMusicIntegrationTest extends IntegrationTestBase {
         putProfile(me, "{\"interestCodes\": [\"COFFEE\"]}").andExpect(status().isOk());
         putProfile(me, "{\"interestCodes\": [\"COFFEE\", \"MOVIES\"]}").andExpect(status().isOk())
                 .andExpect(jsonPath("$.interests[?(@.code == 'MOVIES')].comment", contains(nullValue())));
+    }
+
+    @Test
+    void textsWithObsceneWordsSexServicesOrDrugsAreRefused() throws Exception {
+        String me = login(newPhone());
+        putProfile(me, "{\"aboutText\": \"Люблю горы, но иногда всё зае6ало\", \"profession\": \"Эскорт\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.aboutText").value("Уберите нецензурные слова"))
+                .andExpect(jsonPath("$.fieldErrors.profession").exists());
+        putProfile(me, "{\"interestCodes\": [\"COFFEE\"], \"interestComments\": {\"COFFEE\": \"с кокаином\"}}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.interestComments").value("Нельзя упоминать наркотики"));
+        putProfile(me, "{\"aboutText\": \"Люблю горы. Интим не предлагать\", \"dailyStatusText\": \"Страхую жизнь\"}")
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/v1/communities/suggestions").header("Authorization", bearer(me))
+                        .contentType("application/json").content("{\"title\": \"Блядские игры\"}"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
