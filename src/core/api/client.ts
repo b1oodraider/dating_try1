@@ -1,4 +1,8 @@
 import type {
+  AdminCommunity,
+  Community,
+  CommunityInput,
+  CommunitySuggestion,
   Artist,
   City,
   DatePlan,
@@ -496,6 +500,7 @@ export const api = {
     if (query.minHeight !== undefined) params.set('minHeight', String(query.minHeight));
     if (query.maxHeight !== undefined) params.set('maxHeight', String(query.maxHeight));
     if (query.goalCodes && query.goalCodes.length > 0) params.set('goalCodes', query.goalCodes.join(','));
+    if (query.communityIds && query.communityIds.length > 0) params.set('communityIds', query.communityIds.join(','));
     params.set('page', String(query.page ?? 0));
     params.set('limit', String(query.limit ?? 20));
     return request<DiscoveryPage>(`/discovery/profiles?${params.toString()}`, { signal });
@@ -781,6 +786,26 @@ export const api = {
     comment?: string;
   }): Promise<ReportResponse> {
     return request<ReportResponse>('/reports', { method: 'POST', body: payload });
+  },
+
+  // --- Interest groups ---
+  listCommunities(query: { q?: string; kind?: string } = {}, signal?: AbortSignal): Promise<Community[]> {
+    const params = new URLSearchParams();
+    if (query.q?.trim()) params.set('q', query.q.trim());
+    if (query.kind) params.set('kind', query.kind);
+    return request(`/communities?${params.toString()}`, { signal });
+  },
+  getCommunity(communityId: number, signal?: AbortSignal): Promise<Community> {
+    return request(`/communities/${communityId}`, { signal });
+  },
+  getMyCommunities(signal?: AbortSignal): Promise<Community[]> {
+    return request('/me/communities', { signal });
+  },
+  setCommunitySubscription(communityId: number, subscribed: boolean): Promise<Community> {
+    return request(`/communities/${communityId}/subscription`, { method: subscribed ? 'PUT' : 'DELETE' });
+  },
+  suggestCommunity(title: string, comment?: string): Promise<void> {
+    return request('/communities/suggestions', { method: 'POST', body: { title, comment: comment?.trim() || undefined } });
   },
 
   // --- Interests, music, cities, facts, location ---
@@ -1099,6 +1124,23 @@ export const api = {
     /** ADMIN only; back to the config defaults for both lists. */
     resetPremium(): Promise<PremiumView> {
       return request('/admin/premium', { method: 'DELETE' });
+    },
+
+    // --- Interest groups (CONTENT_EDITOR or ADMIN) ---
+    listCommunities(signal?: AbortSignal): Promise<AdminCommunity[]> {
+      return request('/admin/communities', { signal });
+    },
+    createCommunity(body: CommunityInput): Promise<AdminCommunity> {
+      return request('/admin/communities', { method: 'POST', body });
+    },
+    updateCommunity(communityId: number, body: CommunityInput): Promise<AdminCommunity> {
+      return request(`/admin/communities/${communityId}`, { method: 'PUT', body });
+    },
+    listCommunitySuggestions(signal?: AbortSignal): Promise<CommunitySuggestion[]> {
+      return request('/admin/communities/suggestions', { signal });
+    },
+    decideCommunitySuggestion(suggestionId: string, accepted: boolean): Promise<void> {
+      return request(`/admin/communities/suggestions/${id(suggestionId)}/decision`, { method: 'POST', body: { accepted } });
     },
 
     // --- FAQ (CONTENT_EDITOR, SUPPORT or ADMIN) ---

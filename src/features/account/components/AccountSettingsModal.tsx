@@ -92,6 +92,20 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           </div>
         </div>
 
+        {/* Same list as the mobile settings screen; these are not available yet. */}
+        <div className="divide-y divide-zinc-100 border border-zinc-200/80 rounded-xl text-xs">
+          {[
+            ['Двухфакторная аутентификация', 'Вход по коду из SMS. Второй фактор появится позже'],
+            ['Способы оплаты', 'Не привязаны: оплата пока не подключена, покупки тестовые'],
+            ['Язык', 'Русский · другие языки появятся позже'],
+          ].map(([title, subtitle]) => (
+            <div key={title} className="px-4 py-2.5">
+              <div className="font-semibold text-zinc-800">{title}</div>
+              <div className="text-zinc-500">{subtitle}</div>
+            </div>
+          ))}
+        </div>
+
         {/* Security & Data Retention Notice */}
         <div className="p-3.5 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-600 space-y-1.5 leading-relaxed">
           <div className="font-semibold text-stone-800 flex items-center gap-1.5">

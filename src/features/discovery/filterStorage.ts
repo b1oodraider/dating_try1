@@ -21,6 +21,13 @@ export interface DiscoveryFilterState {
   maxHeight?: number;
   /** Premium ADVANCED_FILTERS: "Ищу цели", the profile has at least one of them. */
   goalCodes: string[];
+  /** Only members of any of these interest groups (free); titles for the bar above the feed. */
+  communities: FilterCommunity[];
+}
+
+export interface FilterCommunity {
+  id: number;
+  title: string;
 }
 
 export const EMPTY_DISCOVERY_FILTERS: DiscoveryFilterState = {
@@ -28,6 +35,7 @@ export const EMPTY_DISCOVERY_FILTERS: DiscoveryFilterState = {
   tagCodes: [],
   tagLogic: 'OR',
   goalCodes: [],
+  communities: [],
 };
 
 /** Number of active free filters (city, age, tags). */
@@ -35,7 +43,8 @@ export function countBasicFilters(f: DiscoveryFilterState): number {
   return (
     (f.city ? 1 : 0) +
     (f.minAge !== undefined || f.maxAge !== undefined ? 1 : 0) +
-    (f.tagCodes.length > 0 ? 1 : 0)
+    (f.tagCodes.length > 0 ? 1 : 0) +
+    (f.communities.length > 0 ? 1 : 0)
   );
 }
 
@@ -66,6 +75,17 @@ function codeList(value: unknown): string[] {
   return [...new Set(codes)].slice(0, MAX_CODES);
 }
 
+function communityList(value: unknown): FilterCommunity[] {
+  if (!Array.isArray(value)) return [];
+  const valid = value.filter(
+    (c): c is FilterCommunity =>
+      typeof c === 'object' && c !== null && Number.isInteger(c.id) && c.id > 0 &&
+      typeof c.title === 'string' && c.title.length <= 120
+  );
+  return valid.filter((c, i) => valid.findIndex((o) => o.id === c.id) === i).slice(0, MAX_CODES)
+    .map((c) => ({ id: c.id, title: c.title }));
+}
+
 /** Validates untrusted stored data field by field. */
 export function parseDiscoveryFilters(raw: unknown): DiscoveryFilterState {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return EMPTY_DISCOVERY_FILTERS;
@@ -85,6 +105,7 @@ export function parseDiscoveryFilters(raw: unknown): DiscoveryFilterState {
     minHeight,
     maxHeight,
     goalCodes: codeList(r.goalCodes),
+    communities: communityList(r.communities),
   };
 }
 
@@ -95,4 +116,12 @@ export function loadDiscoveryFilters(accountId: string | null): DiscoveryFilterS
 
 export function saveDiscoveryFilters(accountId: string, filters: DiscoveryFilterState): void {
   writeAccountJson(STORAGE_NAME, accountId, filters);
+}
+
+/** «Начать поиск» on a group page: the saved filters, narrowed to that group's members. */
+export function searchInCommunity(accountId: string, community: FilterCommunity): void {
+  saveDiscoveryFilters(accountId, {
+    ...loadDiscoveryFilters(accountId),
+    communities: [{ id: community.id, title: community.title }],
+  });
 }

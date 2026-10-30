@@ -18,6 +18,8 @@ import type { Match } from './core/types';
 import { RealtimeProvider, useRealtime } from './core/realtime/RealtimeContext';
 import { ToastProvider } from './shared/components/Toast';
 import { AdminView } from './features/admin/components/AdminView';
+import { CommunitiesView } from './features/communities/CommunitiesView';
+import { searchInCommunity } from './features/discovery/filterStorage';
 
 const AppContent: React.FC = () => {
   const { account, isLoading, loadError, reloadSession, forgetSession, refreshProfile } = useAuth();
@@ -175,6 +177,15 @@ const AppContent: React.FC = () => {
               </button>
             </div>
           )
+        )}
+
+        {currentTab === 'communities' && account && (
+          <CommunitiesView
+            onSearch={(c) => {
+              searchInCommunity(account.id, { id: c.id, title: c.emoji ? `${c.emoji} ${c.title}` : c.title });
+              setCurrentTab('discovery');
+            }}
+          />
         )}
 
         {currentTab === 'about' && <AboutView />}

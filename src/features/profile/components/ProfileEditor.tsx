@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { MyCommunitiesCard } from './MyCommunitiesCard';
 import { useAuth } from '../../../core/context/AuthContext';
 import { api, ApiError, getErrorMessage } from '../../../core/api/client';
 import { TagChip } from '../../tags/components/TagChip';
@@ -17,6 +18,7 @@ import {
   ArtistsPicker,
   CityPicker,
   toFacts,
+  commentsOf,
   FactsFields,
   InterestsPicker,
   LIFESTYLE_FACTS,
@@ -103,6 +105,7 @@ export const ProfileEditor: React.FC = () => {
   const [cityId, setCityId] = useState<number | null>(profile?.cityId ?? null);
   const [radius, setRadius] = useState(Math.min(profile?.searchRadiusKm ?? RADIUS_NONE, RADIUS_NONE));
   const [interestCodes, setInterestCodes] = useState<string[]>(profile?.interests?.map((i) => i.code) ?? []);
+  const [interestComments, setInterestComments] = useState<Record<string, string>>(() => commentsOf(profile?.interests));
   const [artists, setArtists] = useState<Artist[]>(profile?.artists ?? []);
   const [facts, setFacts] = useState<Facts>(() => toFacts(profile?.facts));
   const [purchaseKind, setPurchaseKind] = useState<'premium' | null>(null);
@@ -138,6 +141,7 @@ export const ProfileEditor: React.FC = () => {
     (profile?.interests ?? []).map((i) => i.code),
     profile?.artists ?? [],
     toFacts(profile?.facts),
+    commentsOf(profile?.interests),
   ]);
   const profileId = profile?.id;
   useEffect(() => {
@@ -152,10 +156,18 @@ export const ProfileEditor: React.FC = () => {
     setAboutText(serverAbout);
     setHeight(serverHeight);
     setGoalCodes(serverGoalKey ? serverGoalKey.split(',') : []);
-    const [cId, r, i, a, f] = JSON.parse(serverExtras) as [number | null, number | null, string[], Artist[], Facts];
+    const [cId, r, i, a, f, ic] = JSON.parse(serverExtras) as [
+      number | null,
+      number | null,
+      string[],
+      Artist[],
+      Facts,
+      Record<string, string>,
+    ];
     setCityId(cId);
     setRadius(Math.min(r ?? RADIUS_NONE, RADIUS_NONE));
     setInterestCodes(i);
+    setInterestComments(ic);
     setArtists(a);
     setFacts(f);
     setFieldErrors({});
@@ -229,6 +241,8 @@ export const ProfileEditor: React.FC = () => {
     if (radius < RADIUS_NONE) update.searchRadiusKm = radius;
     else if (profile.searchRadiusKm != null) update.clearSearchRadius = true;
     update.interestCodes = interestCodes; // [] clears
+    // Every chosen interest: "" removes its comment; a dropped interest loses its comment on the server.
+    update.interestComments = Object.fromEntries(interestCodes.map((c) => [c, (interestComments[c] ?? '').trim()]));
     update.artistIds = artists.map((a) => a.id);
     // Facts: "" / [] clear.
     update.kidsHas = facts.kidsHas ?? '';
@@ -488,6 +502,8 @@ export const ProfileEditor: React.FC = () => {
           {profile.verified ? 'Статус' : 'Пройти'}
         </Button>
       </div>
+
+      <MyCommunitiesCard />
 
       {/* Main Edit Form */}
       <form onSubmit={handleSave} noValidate className="bg-white p-6 rounded-2xl border border-zinc-200/80 shadow-xs space-y-5">
@@ -755,8 +771,14 @@ export const ProfileEditor: React.FC = () => {
             </span>
           </div>
           <p className="text-[11px] text-zinc-500 mb-2">Общие увлечения поднимают анкеты выше в ленте.</p>
-          <InterestsPicker selected={interestCodes} onChange={setInterestCodes} />
+          <InterestsPicker
+            selected={interestCodes}
+            onChange={setInterestCodes}
+            comments={interestComments}
+            onCommentsChange={setInterestComments}
+          />
           <FieldError message={fieldErrors.interestCodes} />
+          <FieldError message={fieldErrors.interestComments} />
         </div>
 
         {/* Music */}

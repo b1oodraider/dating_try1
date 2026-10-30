@@ -19,6 +19,7 @@ import {
   Music,
 } from 'lucide-react';
 import { describeFact, FACT_SECTIONS, FACT_TITLES } from '../facts';
+import { CommunityChips, InterestChips } from './InterestChips';
 import { GoalPills } from '../../goals/components/GoalChips';
 import { PremiumBadge } from '../../premium/components/PremiumBadge';
 import { Button } from '../../../shared/components/Button';
@@ -276,7 +277,13 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
 
             {(profile.interests ?? []).length > 0 && (
               <Section title="Интересы">
-                <Chips labels={profile.interests!.map((i) => i.label)} />
+                <InterestChips interests={profile.interests!} />
+              </Section>
+            )}
+
+            {(profile.communities ?? []).length > 0 && (
+              <Section title="Группы">
+                <CommunityChips communities={profile.communities!} />
               </Section>
             )}
 

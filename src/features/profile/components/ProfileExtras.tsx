@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Check, Music, Search, X } from 'lucide-react';
 import { api, getErrorMessage } from '../../../core/api/client';
-import type { Artist, City, Facts, InterestGroup, ProfileOptions } from '../../../core/types';
+import type { Artist, City, Facts, Interest, InterestGroup, ProfileOptions } from '../../../core/types';
 import { useToast } from '../../../shared/components/Toast';
 
 export const MAX_INTERESTS = 10;
@@ -39,6 +39,10 @@ const EMPTY_FACTS: Facts = {
 };
 
 /** Server facts with lists never null. */
+/** Interest code -> its comment, for the comment inputs. */
+export const commentsOf = (interests?: Interest[] | null): Record<string, string> =>
+  Object.fromEntries((interests ?? []).filter((i) => i.comment).map((i) => [i.code, i.comment!]));
+
 export const toFacts = (f?: Facts | null): Facts => ({
   ...EMPTY_FACTS,
   ...f,
@@ -148,10 +152,16 @@ export const CityPicker: React.FC<{ cityName: string; onPick: (city: City) => vo
   );
 };
 
-export const InterestsPicker: React.FC<{ selected: string[]; onChange: (codes: string[]) => void }> = ({
-  selected,
-  onChange,
-}) => {
+/** Max length of an interest comment (PUT /me/profile interestComments). */
+export const INTEREST_COMMENT_MAX = 80;
+
+/** Chosen interests and, under them, a short comment for each («латте, капучино»), shown to others on a tap. */
+export const InterestsPicker: React.FC<{
+  selected: string[];
+  onChange: (codes: string[]) => void;
+  comments: Record<string, string>;
+  onCommentsChange: (comments: Record<string, string>) => void;
+}> = ({ selected, onChange, comments, onCommentsChange }) => {
   const [groups, setGroups] = useState<InterestGroup[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -179,7 +189,7 @@ export const InterestsPicker: React.FC<{ selected: string[]; onChange: (codes: s
               return (
                 <Chip
                   key={item.code}
-                  label={item.label}
+                  label={item.emoji ? `${item.emoji} ${item.label}` : item.label}
                   selected={on}
                   disabled={!on && full}
                   onClick={() => onChange(on ? selected.filter((c) => c !== item.code) : [...selected, item.code])}
@@ -189,6 +199,30 @@ export const InterestsPicker: React.FC<{ selected: string[]; onChange: (codes: s
           </div>
         </div>
       ))}
+      {selected.length > 0 && (
+        <div className="pt-2 space-y-1.5">
+          <p className="text-[11px] font-semibold text-zinc-500">Комментарии к увлечениям (видны при нажатии)</p>
+          {selected.map((code) => {
+            const item = groups.flatMap((g) => g.items).find((i) => i.code === code);
+            if (!item) return null;
+            return (
+              <label key={code} className="flex items-center gap-2">
+                <span className="w-36 shrink-0 text-xs text-zinc-700 truncate">
+                  {item.emoji ? `${item.emoji} ${item.label}` : item.label}
+                </span>
+                <input
+                  value={comments[code] ?? ''}
+                  onChange={(e) => onCommentsChange({ ...comments, [code]: e.target.value })}
+                  maxLength={INTEREST_COMMENT_MAX}
+                  placeholder="Например: латте, капучино"
+                  aria-label={`Комментарий: ${item.label}`}
+                  className="flex-1 min-w-0 text-xs bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                />
+              </label>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

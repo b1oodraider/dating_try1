@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import type { FactFilters, ProfileOptions, TagLogic } from '../../../core/types';
+import type { Community, FactFilters, ProfileOptions, TagLogic } from '../../../core/types';
 import { api, getErrorMessage } from '../../../core/api/client';
 import { FACT_TITLES, FILTERABLE_FACTS, type FilterableFact } from '../facts';
 import { Modal } from '../../../shared/components/Modal';
@@ -18,8 +18,9 @@ import {
   HEIGHT_MAX,
   HEIGHT_MIN,
   type DiscoveryFilterState,
+  type FilterCommunity,
 } from '../filterStorage';
-import { AlertCircle, Cake, Coffee, Crown, MapPin, Ruler, SlidersHorizontal, Target } from 'lucide-react';
+import { AlertCircle, Cake, Coffee, Crown, MapPin, Ruler, SlidersHorizontal, Target, Users } from 'lucide-react';
 
 const CITIES = ['Москва', 'Санкт-Петербург', 'Екатеринбург', 'Казань'];
 
@@ -117,6 +118,9 @@ export const DiscoveryFiltersModal: React.FC<DiscoveryFiltersModalProps> = ({
     to: toText(filters.maxHeight),
   });
   const [goalCodes, setGoalCodes] = useState<string[]>(filters.goalCodes);
+  const [communities, setCommunities] = useState<FilterCommunity[]>(filters.communities);
+  /** My groups to choose from («Общие группы»); null while loading. */
+  const [myCommunities, setMyCommunities] = useState<Community[] | null>(null);
   const [ageError, setAgeError] = useState<string | null>(null);
   const [heightError, setHeightError] = useState<string | null>(null);
 
@@ -143,6 +147,21 @@ export const DiscoveryFiltersModal: React.FC<DiscoveryFiltersModalProps> = ({
       });
     return () => controller.abort();
   }, [factsNonce]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    api.getMyCommunities(controller.signal).then(setMyCommunities).catch(() => {
+      if (!controller.signal.aborted) setMyCommunities([]);
+    });
+    return () => controller.abort();
+  }, []);
+  // My groups plus a group chosen from its page («Начать поиск») without a subscription.
+  const communityOptions: FilterCommunity[] = [
+    ...(myCommunities ?? []).map((c) => ({ id: c.id, title: c.emoji ? `${c.emoji} ${c.title}` : c.title })),
+    ...communities.filter((c) => !myCommunities?.some((m) => m.id === c.id)),
+  ];
+  const toggleCommunity = (c: FilterCommunity) =>
+    setCommunities((list) => (list.some((x) => x.id === c.id) ? list.filter((x) => x.id !== c.id) : [...list, c]));
 
   const setFact = (fact: FilterableFact, next: { accept?: string[]; unspecified?: boolean }) =>
     setFactDraft((d) => ({ ...d, [fact]: { accept: d[fact]?.accept ?? [], unspecified: d[fact]?.unspecified ?? true, ...next } }));
@@ -183,6 +202,7 @@ export const DiscoveryFiltersModal: React.FC<DiscoveryFiltersModalProps> = ({
       minHeight: advancedLocked ? filters.minHeight : heightRange.from,
       maxHeight: advancedLocked ? filters.maxHeight : heightRange.to,
       goalCodes: advancedLocked ? filters.goalCodes : goalCodes,
+      communities,
     });
     onClose();
   };
@@ -193,6 +213,7 @@ export const DiscoveryFiltersModal: React.FC<DiscoveryFiltersModalProps> = ({
     setAge({ from: '', to: '' });
     setTagCodes(empty.tagCodes);
     setTagLogic(empty.tagLogic);
+    setCommunities(empty.communities);
     setAgeError(null);
     if (!advancedLocked) {
       setHeight({ from: '', to: '' });
@@ -327,6 +348,40 @@ export const DiscoveryFiltersModal: React.FC<DiscoveryFiltersModalProps> = ({
               </div>
             ))}
           </div>
+        </section>
+
+        {/* ---------------- Interest groups ---------------- */}
+        <section className="space-y-2" aria-label="Общие группы">
+          <span className={sectionTitle}>
+            <Users className="w-3.5 h-3.5 text-zinc-500" /> Общие группы
+          </span>
+          <p className="text-[11px] text-zinc-400">Только участники выбранных групп (хотя бы одной).</p>
+          {myCommunities === null ? (
+            <p className="text-xs text-zinc-400">Загрузка групп...</p>
+          ) : communityOptions.length === 0 ? (
+            <p className="text-xs text-zinc-500">Вы пока не подписаны на группы — их можно найти во вкладке «Интересы».</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {communityOptions.map((c) => {
+                const selected = communities.some((x) => x.id === c.id);
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => toggleCommunity(c)}
+                    className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                      selected
+                        ? 'bg-zinc-900 text-white border-zinc-900'
+                        : 'bg-white text-zinc-700 border-zinc-200 hover:border-zinc-400'
+                    }`}
+                  >
+                    {c.title}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </section>
 
         {/* ---------------- Facts (two-way) ---------------- */}

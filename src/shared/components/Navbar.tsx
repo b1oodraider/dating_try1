@@ -14,10 +14,11 @@ import {
   MessageCircle,
   Gavel,
   LifeBuoy,
+  Users,
 } from 'lucide-react';
 import { isStaff } from '../../features/admin/components/AdminView';
 
-export type AppTab = 'discovery' | 'profile' | 'collection' | 'chats' | 'about' | 'admin';
+export type AppTab = 'discovery' | 'communities' | 'profile' | 'collection' | 'chats' | 'about' | 'admin';
 
 interface NavbarProps {
   currentTab: AppTab;
@@ -101,6 +102,25 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {unreadChatsCount}
               </span>
             )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (!account) {
+                onOpenAuth();
+              } else {
+                onTabChange('communities');
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              currentTab === 'communities'
+                ? 'bg-white text-zinc-900 shadow-xs'
+                : 'text-zinc-600 hover:text-zinc-900'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Интересы</span>
           </button>
 
           <button

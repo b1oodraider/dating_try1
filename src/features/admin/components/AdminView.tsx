@@ -12,6 +12,7 @@ import { CatalogPanel } from './CatalogPanel';
 import { AchievementsPanel } from './AchievementsPanel';
 import { PremiumPanel } from './PremiumPanel';
 import { FaqPanel } from './FaqPanel';
+import { CommunitiesPanel } from './CommunitiesPanel';
 
 /** Moderation endpoints accept MODERATOR or ADMIN. */
 const isModerator = (account: Account | null) => !!account?.roles?.some((r) => r === 'ADMIN' || r === 'MODERATOR');
@@ -32,6 +33,7 @@ type Section =
   | 'content'
   | 'catalog'
   | 'achievements'
+  | 'communities'
   | 'premium'
   | 'faq'
   | 'audit';
@@ -73,6 +75,7 @@ export const AdminView: React.FC = () => {
           { id: 'content' as const, label: 'Карточки и цели' },
           { id: 'catalog' as const, label: 'Каталог' },
           { id: 'achievements' as const, label: 'Достижения' },
+          { id: 'communities' as const, label: 'Группы' },
         ]
       : []),
     ...(isAdmin ? [{ id: 'premium' as const, label: 'Премиум' }] : []),
@@ -100,6 +103,7 @@ export const AdminView: React.FC = () => {
       {section === 'content' && editor && <ContentPanel />}
       {section === 'catalog' && editor && <CatalogPanel isAdmin={isAdmin} />}
       {section === 'achievements' && editor && <AchievementsPanel />}
+      {section === 'communities' && editor && <CommunitiesPanel />}
       {section === 'premium' && isAdmin && <PremiumPanel />}
       {section === 'faq' && <FaqPanel />}
       {section === 'support' && support && <SupportPanel onOpenAccount={moderator ? openAccount : undefined} />}

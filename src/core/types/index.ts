@@ -127,6 +127,8 @@ export interface PublicProfile {
   /** Feed only: codes of the communication cards both chose (highlighted). */
   sharedTags?: string[];
   facts?: Facts;
+  /** Interest groups of the owner; shared = the viewer is in it too. */
+  communities?: CommunityRef[];
 }
 
 export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'DELETED';
@@ -177,6 +179,8 @@ export interface DiscoveryQuery {
   maxHeight?: number;
   /** Premium (ADVANCED_FILTERS): the profile has at least one of these goals. */
   goalCodes?: string[];
+  /** Only members of any of these interest groups. */
+  communityIds?: number[];
   page?: number;
   limit?: number;
 }
@@ -211,6 +215,8 @@ export interface ProfileUpdate {
   clearSearchRadius?: boolean;
   /** <= 10, [] clears. */
   interestCodes?: string[];
+  /** Interest code -> comment (<= 80, only for chosen interests); "" removes one. */
+  interestComments?: Record<string, string>;
   /** <= 5, [] clears. */
   artistIds?: number[];
   showZodiac?: boolean;
@@ -937,8 +943,11 @@ export interface FaqInput {
 export interface Interest {
   code: string;
   label: string;
+  emoji?: string | null;
   category: string;
   categoryLabel: string;
+  /** The owner's short comment (<= 80), shown on a tap. */
+  comment?: string | null;
 }
 
 export interface InterestGroup {
@@ -1080,3 +1089,56 @@ export interface FaqEntry {
 
 /** Products of the purchase STUB (no payment yet). */
 export type StubProduct = 'PREMIUM_MONTH' | 'SUPERLIKE_PACK' | 'BOOST_PACK';
+
+// ---------------------------------------------------------------------------
+// Interest groups (docs/communities.md)
+// ---------------------------------------------------------------------------
+
+export interface Community {
+  id: number;
+  title: string;
+  kind: string;
+  kindLabel: string;
+  emoji: string | null;
+  description: string | null;
+  members: number;
+  subscribed: boolean;
+}
+
+export interface CommunityRef {
+  id: number;
+  title: string;
+  emoji: string | null;
+  shared: boolean;
+}
+
+export interface AdminCommunity {
+  id: number;
+  slug: string;
+  title: string;
+  kind: string;
+  emoji: string | null;
+  description: string | null;
+  sortOrder: number;
+  active: boolean;
+  members: number;
+}
+
+export interface CommunityInput {
+  slug?: string;
+  title: string;
+  kind: string;
+  emoji?: string;
+  description?: string;
+  sortOrder?: number;
+  active?: boolean;
+}
+
+export interface CommunitySuggestion {
+  id: string;
+  accountId: string;
+  title: string;
+  comment: string | null;
+  status: string;
+  createdAt: string;
+}
