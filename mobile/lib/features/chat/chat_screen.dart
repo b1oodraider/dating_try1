@@ -52,6 +52,9 @@ class _ChatScreenState extends State<ChatScreen> {
   DateTime? _typingUntil;
   Timer? _typingTimer;
 
+  /// Re-reads «в сети / был(а)» while the chat is open; the match list alone is loaded once per stream.
+  Timer? _presenceTimer;
+
   /// When I last told the server I am typing (at most every 3 s).
   DateTime _sentTypingAt = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -75,6 +78,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _subscription = widget.events.listen(_onEvent);
     _load();
     _loadRestrictions();
+    _chats.load();
+    _presenceTimer =
+        Timer.periodic(const Duration(minutes: 1), (_) => _chats.load());
   }
 
   /// Best effort: on failure the server still refuses with 403 ACCOUNT_RESTRICTED.
@@ -96,6 +102,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _chats.removeListener(_onChatsChanged);
     _subscription.cancel();
     _typingTimer?.cancel();
+    _presenceTimer?.cancel();
     _input.dispose();
     super.dispose();
   }

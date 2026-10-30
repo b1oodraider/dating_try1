@@ -138,6 +138,14 @@ export const ChatView: React.FC<ChatViewProps> = ({
     void loadMatches();
   }, [loadMatches]);
 
+  // «в сети / был(а)» comes with the match list: re-read it on opening a chat and every minute while one is open.
+  useEffect(() => {
+    if (!selectedMatchId) return;
+    void loadMatches();
+    const timer = setInterval(() => void loadMatches(), 60_000);
+    return () => clearInterval(timer);
+  }, [selectedMatchId, loadMatches]);
+
   useEffect(() => {
     onMatchesChanged?.(matches);
   }, [matches, onMatchesChanged]);
