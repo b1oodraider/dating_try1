@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_exception.dart';
@@ -206,7 +207,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: () => Navigator.of(context)
                       .push<void>(MaterialPageRoute<void>(builder: (_) => SupportScreen(api: api))),
                 ),
-                CheckForUpdatesTile(api: api),
+                // The APK update is Android only; iOS updates come from TestFlight / the App Store.
+                if (defaultTargetPlatform == TargetPlatform.android) CheckForUpdatesTile(api: api),
               ],
             ),
           ),
